@@ -1,11 +1,15 @@
 from fastapi import APIRouter
+from ..core import get_engine
+from ..schemas import MeridianRequest, ScoutRequest
+
+engine = get_engine()
 
 router = APIRouter(tags=["Trip Matcher"])
 
 @router.post("/scout")
-async def scout():
-    return {"message": "This is the trip matcher scout endpoint."}
+async def scout(payload: ScoutRequest):
+    return engine.scout(payload.trip_state, payload.message)
 
 @router.post("/meridian")
-async def meridian():
-    return {"message": "This is the trip matcher meridian endpoint."}
+async def meridian(payload: MeridianRequest):
+    return engine.meridian(payload.trip_context)
