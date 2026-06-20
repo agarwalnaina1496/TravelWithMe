@@ -1,0 +1,56 @@
+services:
+  api:
+    build:
+      context: .
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: uvicorn twm.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./twm:/app/twm
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: n8n
+      POSTGRES_DB: n8n
+    volumes:
+      - n8n_postgres_data:/var/lib/postgresql/data
+
+  n8n:
+    image: ${N8N_IMAGE:-n8nio/n8n:1.84.3}
+    depends_on:
+      - postgres
+      - api
+    env_file:
+      - .env
+    ports:
+      - "5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=n8n
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=http://localhost:5678/
+      - N8N_EDITOR_BASE_URL=http://localhost:5678/
+      # - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - GENERIC_TIMEZONE=Asia/Calcutta
+      - API_BASE_URL=http://api:8000
+      - N8N_SCOUT_WEBHOOK_URL=${N8N_SCOUT_WEBHOOK_URL}
+      - N8N_MERIDIAN_WEBHOOK_URL=${N8N_MERIDIAN_WEBHOOK_URL}
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
+  n8n_postgres_data:
