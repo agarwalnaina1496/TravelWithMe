@@ -1,45 +1,37 @@
 # TravelWithMe
 Helping you choose your destination and plan your trip with confidence.
 
-## What this repo provides
+The product is planned in four phases:
 
-- FastAPI service exposing `POST /scout` and `POST /meridian`
-- n8n self-hosted stack for the visual workflow layer
-- Postgres for n8n persistence
-
-## Run locally
-
-Copy `.env.example` to `.env`, then run:
-
-```bash
-docker compose up --build
+```text
+1. Trip Matcher
+2. Trip Planner
+3. Booking
+4. Concierge
 ```
 
-FastAPI:
-- `http://localhost:8000/`
-- `http://localhost:8000/health`
+## Phase 1: Trip Matcher
 
-n8n:
-- `http://localhost:5678/`
+Trip Matcher helps a traveler move from an open-ended trip idea to a confident destination shortlist.
 
-If this is your first n8n boot, create the `admin` account in the browser and then import the workflow JSON files from `n8n/`.
-The default n8n image is pinned through `N8N_IMAGE` so the stack does not drift with `latest`.
+Details:
 
-## Import n8n workflows
+[Trip Matcher docs](docs/trip-matcher/README.md)
 
-The workflow exports live in the repo here:
+## Phase 2: Trip Planner
 
-- `n8n/scout.json`
-- `n8n/meridian.json`
+Placeholder.
 
-Import them into your self-hosted n8n instance, then confirm the webhook paths remain:
+TODO: Define planning scope, inputs, outputs, and system design.
 
-- `scout`
-- `meridian`
+## Phase 3: Booking
 
-## Architecture
+Placeholder.
 
-- UI calls `POST /scout` and `POST /meridian`
-- n8n stays the visual orchestrator
-- FastAPI stays minimal and swappable
-- Later, the engine behind FastAPI can move to LangGraph without changing the public API
+TODO: Define booking scope, partner integrations, payment boundaries, and user flow.
+
+## Phase 4: Concierge
+
+Placeholder.
+
+TODO: Define in-trip assistance, notifications, itinerary changes, and support behavior.
