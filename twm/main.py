@@ -1,10 +1,12 @@
 import uvicorn
 from fastapi import FastAPI
+from .routers.prompts import router as prompts_api
 from .routers.trip_matcher import router as trip_matcher_api
 
 
 def initialize_app():
     app = FastAPI(title="TravelWithMe Trip Matcher")
+    app.include_router(prompts_api)
     app.include_router(trip_matcher_api)
 
     @app.get("/")

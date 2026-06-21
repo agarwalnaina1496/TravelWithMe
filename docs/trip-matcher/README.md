@@ -6,7 +6,7 @@ Its job is to help a traveler move from an open-ended trip idea to a confident d
 
 ## Scope
 
-Trip Matcher currently focuses on:
+Trip Matcher focuses on:
 
 ```text
 - collecting trip context from the traveler
@@ -35,7 +35,6 @@ See [API contracts](API_CONTRACTS.md).
 
 ## Architecture And Operations
 
-- [Architecture](ARCHITECTURE.md)
-- [Current EC2 deployment](EC2_SETUP.md)
-- [Runbook](RUNBOOK.md)
-- [n8n-specific notes](SELF_HOSTED_N8N.md)
+- [Architecture](../ARCHITECTURE.md)
+- [Current EC2 deployment](../EC2_SETUP.md)
+- [n8n setup and workflow operations](../SELF_HOSTED_N8N.md)
