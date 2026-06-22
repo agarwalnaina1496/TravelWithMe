@@ -51,14 +51,14 @@ Local PEM path: /c/Users/agarw/Desktop/TWM/twm-key.pem
 
 ## Security Group Rules
 
-Current testing rules:
+Current inbound rules in security group `twm-sg`:
 
 ```text
-22    SSH      your IP only
-80    HTTP     0.0.0.0/0
-443   HTTPS    0.0.0.0/0
-8000  FastAPI  your IP only
-5678  n8n      your IP only
+22    TCP  SSH      0.0.0.0/0
+80    TCP  HTTP     0.0.0.0/0
+443   TCP  HTTPS    0.0.0.0/0
+5678  TCP  n8n      0.0.0.0/0
+8000  TCP  FastAPI  0.0.0.0/0
 ```
 
 Later, after domain + HTTPS reverse proxy:
@@ -314,12 +314,12 @@ git pull origin main
 
 ## Prompt Update Flow On EC2
 
-Shared prompt loading behavior is documented in [Prompt Loader](PROMPT_LOADER.md).
-
 Prompt files:
 
-- [Scout system prompt](../twm/prompts/SCOUT_SYSTEM_PROMPT.md)
-- [Meridian system prompt](../twm/prompts/MERIDIAN_SYSTEM_PROMPT.md)
+- [Scout system prompt](../twm/prompts/scout.md)
+- [Meridian system prompt](../twm/prompts/meridian.md)
+
+FastAPI loads these files locally and sends prompt text to the selected `AgentEngine`.
 
 On local machine:
 

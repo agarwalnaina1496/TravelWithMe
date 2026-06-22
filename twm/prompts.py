@@ -3,16 +3,12 @@ from pathlib import Path
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
-PROMPT_FILES = {
-    "scout": "SCOUT_SYSTEM_PROMPT.md",
-    "meridian": "MERIDIAN_SYSTEM_PROMPT.md",
-}
+ALLOWED_PROMPTS = {"scout", "meridian"}
 
 
-def load_prompt(name: str) -> str:
-    try:
-        filename = PROMPT_FILES[name]
-    except KeyError as exc:
-        raise ValueError(f"Unknown prompt: {name}") from exc
+def load_prompt(agent: str) -> str:
+    prompt_name = agent.lower()
+    if prompt_name not in ALLOWED_PROMPTS:
+        raise ValueError(f"Unknown prompt: {agent}")
 
-    return (PROMPTS_DIR / filename).read_text(encoding="utf-8").strip()
+    return (PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8").strip()

@@ -1,6 +1,6 @@
 # Trip Matcher API Contracts
 
-This document records the API contract between the UI and Backend
+This document records the API contract between the UI and Backend.
 
 ## Overview
 
@@ -8,17 +8,18 @@ Trip Matcher has two primary calls:
 
 ```text
 Scout    -> every user interaction
-Meridian -> only when the user taps Generate
+Meridian -> only after the traveler taps Generate
 ```
 
-Trip Matcher is stateless:
+Trip Matcher logic is stateless:
 
 ```text
-- no TripState storage
 - no conversation history
-- no session tracking
-- every request is self-contained
+- no session state
+- every call operates on complete TripState
 ```
+
+For the canonical state model, field ownership, storage model, and stage transitions, see [TripState](../TRIP_STATE.md).
 
 ## Endpoints
 
@@ -35,9 +36,7 @@ Scout is called for:
 
 ```text
 - regular user messages
-- post-Meridian recommendation presentation
-- refinement
-- destination confirmation
+- destination or circuit confirmation
 ```
 
 Scout operates on complete `TripState` for every call.
@@ -82,12 +81,7 @@ message    -> latest user message, or null
 
 `message: string` means regular user interaction.
 
-`message: null` means Scout should infer the situation from `trip_state`, usually one of:
-
-```text
-- post-Meridian presentation if matcher_state.last_recommendations exists
-- page refresh / re-engagement if last_recommendations is null
-```
+`message: null` is not used as a post-Meridian presentation mode. Meridian returns presentable recommendation content, and the UI renders it directly.
 
 ### Request Example: Regular Turn
 
@@ -116,7 +110,7 @@ message    -> latest user message, or null
       "selected_option": null
     },
     "matcher_state": {
-      "generate_ready": false,
+      "recommendation_intent": false,
       "conversation_context": {
         "last_scout_message": "What's your total budget for the trip?",
         "awaiting": "budget"
@@ -126,62 +120,6 @@ message    -> latest user message, or null
     "planner_state": null
   },
   "message": "30k total, 3 nights, we are 4 people"
-}
-```
-
-### Request Example: Post-Meridian Presentation
-
-The UI first writes Meridian output to `matcher_state.last_recommendations`, then calls Scout with `message: null`.
-
-```json
-{
-  "trip_state": {
-    "trip_id": "trip_7f3a9c",
-    "status": "free",
-    "stage": "ready",
-    "trip_context": {
-      "required_inputs": {
-        "origin_city": "Bengaluru",
-        "budget": 30000,
-        "budget_unit": "total",
-        "duration_nights": 3,
-        "num_travelers": 4,
-        "travel_month": "September"
-      },
-      "preferences": {
-        "trip_goal": {
-          "value": "Bachelorette",
-          "confidence": "explicit"
-        },
-        "crowd_tolerance": {
-          "value": "low",
-          "confidence": "high"
-        },
-        "group_type": "friends",
-        "travel_style": ["relaxed", "social"]
-      },
-      "selected_option": null
-    },
-    "matcher_state": {
-      "generate_ready": false,
-      "conversation_context": {
-        "last_scout_message": "Perfect - ready when you are.",
-        "awaiting": null
-      },
-      "last_recommendations": {
-        "options": [
-          "pondicherry_puducherry",
-          "hampi_karnataka",
-          "goa_north"
-        ],
-        "best_match": "pondicherry_puducherry",
-        "generated_at": "2025-09-15T10:45:00Z",
-        "meridian_output": {}
-      }
-    },
-    "planner_state": null
-  },
-  "message": null
 }
 ```
 
@@ -197,10 +135,13 @@ Scout always returns the same top-level shape:
     "trip_context": {
       "required_inputs": {},
       "preferences": {},
-      "selected_option": {}
+      "selected_option": {
+        "type": "destination | circuit",
+        "id": "string"
+      }
     },
     "matcher_state": {
-      "generate_ready": "boolean | omit if unchanged",
+      "recommendation_intent": "boolean | omit if unchanged",
       "conversation_context": {
         "last_scout_message": "string",
         "awaiting": "string | null"
@@ -237,7 +178,7 @@ Rules:
       "preferences": {}
     },
     "matcher_state": {
-      "generate_ready": false,
+      "recommendation_intent": false,
       "conversation_context": {
         "last_scout_message": "Got it - INR 30,000 total, 3 nights, 4 people from Bengaluru. Is there anything else you'd like me to factor in?",
         "awaiting": "additional_preferences"
@@ -263,7 +204,7 @@ Rules:
       }
     },
     "matcher_state": {
-      "generate_ready": true,
+      "recommendation_intent": true,
       "conversation_context": {
         "last_scout_message": "Got it - I'll generate recommendations from what you've shared so far.",
         "awaiting": null
@@ -273,25 +214,7 @@ Rules:
 }
 ```
 
-### Response Example: Presentation
-
-```json
-{
-  "message": "Found three options. Pondicherry comes up top - fits your INR 30,000 budget cleanly at about INR 6,000 per person. Hampi is a strong alternative if you want something more photogenic and offbeat. Goa is possible but tight. Want me to walk through any of these in detail?",
-  "state_delta": {
-    "stage": "ready",
-    "matcher_state": {
-      "generate_ready": false,
-      "conversation_context": {
-        "last_scout_message": "Found three options. Pondicherry comes up top...",
-        "awaiting": "user_response_to_recommendations"
-      }
-    }
-  }
-}
-```
-
-### Response Example: Destination Confirmed
+### Response Example: Option Confirmed
 
 ```json
 {
@@ -307,7 +230,7 @@ Rules:
       }
     },
     "matcher_state": {
-      "generate_ready": false,
+      "recommendation_intent": false,
       "conversation_context": {
         "last_scout_message": "Pondicherry it is. Great choice for a September bachelorette trip.",
         "awaiting": null
@@ -317,41 +240,23 @@ Rules:
 }
 ```
 
-### Response Example: Failure Presentation
-
-```json
-{
-  "message": "Nothing came through that matched everything - the main conflict is that September is tricky for crowd-free options near Bengaluru. Would you be open to October instead?",
-  "state_delta": {
-    "stage": "matching",
-    "matcher_state": {
-      "generate_ready": false,
-      "conversation_context": {
-        "last_scout_message": "Nothing came through that matched everything...",
-        "awaiting": "constraint_relaxation"
-      }
-    }
-  }
-}
-```
-
 ## POST /meridian
 
-Called only when the user taps Generate.
+Called only after the traveler taps Generate.
 
 Scout never calls Meridian directly.
 
 The traveler decides when to generate recommendations.
 
-Scout reflects that traveler intent by returning:
+Scout passes that traveler intent to the UI by returning:
 
 ```text
-state_delta.matcher_state.generate_ready = true
+state_delta.matcher_state.recommendation_intent = true
 ```
 
-The UI uses this flag only to show the Generate Recommendations button. Meridian is called only after the traveler clicks that button.
+The UI uses this flag to display the Generate Recommendations button. Meridian is called only after the traveler taps that button.
 
-`generate_ready` should be set because the traveler asked for recommendations, not merely because the minimum structured inputs are present.
+`recommendation_intent` should be set because the traveler asked for recommendations, not because Scout inferred readiness or because the minimum structured inputs are present.
 
 ### Request
 
@@ -393,6 +298,8 @@ The UI sends `trip_state.trip_context` directly:
 ```json
 {
   "status": "SUCCESS",
+  "generated_at": "2025-09-15T10:45:00Z",
+  "version": "matcher_v1",
   "trip_type": "single",
   "budget_basis": {
     "total": 30000,
@@ -515,10 +422,13 @@ The UI sends `trip_state.trip_context` directly:
 ### Failure Response
 
 Meridian failures are expected business outcomes, not infrastructure errors.
+Failure responses should include the same metadata fields as success responses so debugging can identify which matcher version produced the outcome.
 
 ```json
 {
   "status": "HARD_FAIL",
+  "generated_at": "2025-09-15T10:45:00Z",
+  "version": "matcher_v1",
   "message": "No destinations matched all the stated constraints",
   "eliminating_constraints": [
     "crowd_tolerance: low",
@@ -557,11 +467,11 @@ User sends message
   -> UI writes trip_state to localStorage
   -> UI renders response.message
 
-if generate_ready = false:
+if recommendation_intent = false:
   continue conversation
 
-if generate_ready = true:
-  show Generate Recommendations button because the traveler has indicated recommendation intent
+if recommendation_intent = true:
+  display Generate Recommendations because the traveler asked for recommendations
 ```
 
 ### Generate Recommendations
@@ -573,38 +483,18 @@ User taps Generate Recommendations
        body: { trip_context: trip_state.trip_context }
   -> write full Meridian response to:
        trip_state.matcher_state.last_recommendations
-  -> POST /scout
-       body: { trip_state with last_recommendations, message: null }
-  -> deep-merge Scout state_delta into localStorage
-  -> render Scout presentation
-  -> hide Generate button
+  -> render Meridian response in the UI
+  -> clear recommendation_intent
 ```
 
-Meridian output, success or failure, always goes to `last_recommendations` before calling Scout.
+Meridian output, success or failure, always goes to `last_recommendations`.
 
-The UI does not need to distinguish Meridian success from business failure before calling Scout.
-
-### Refinement
-
-```text
-User sends adjustment
-  -> POST /scout
-       body: { trip_state, message: "What if we go in October instead?" }
-  -> Scout extracts adjustment
-  -> UI deep-merges state_delta into TripState
-
-if generate_ready = true:
-  show Generate button again because the traveler has indicated recommendation intent
-  user taps
-  -> POST /meridian
-  -> POST /scout with message: null
-  -> updated recommendations shown
-```
+`generated_at` and `version` must be preserved in `last_recommendations`. They identify when the recommendation was produced and which matcher contract, prompt set, KB version, and scoring logic produced it.
 
 ### Confirmation
 
 ```text
-User confirms destination
+User confirms destination or circuit
   -> POST /scout
        body: { trip_state, message: "Let's go with Pondicherry" }
   -> Scout returns:
@@ -621,13 +511,10 @@ User refreshes
   -> UI reads trip_state from localStorage
 
 stage = "new" or "matching":
-  POST /scout with { trip_state, message: null }
-  Scout resumes from conversation_context
+  UI resumes from conversation_context
 
 stage = "ready":
-  show Generate button
-  POST /scout with { trip_state, message: null }
-  Scout re-engages from last_scout_message
+  display Generate Recommendations
 
 stage = "matched":
   show confirmed destination
@@ -649,9 +536,8 @@ POST /scout fails with 5xx or network error
 
 ```text
 POST /meridian fails with 5xx or network error
-  -> write { status: "API_ERROR" } to last_recommendations
-  -> POST /scout with message: null
-  -> Scout translates into a retry-friendly message
+  -> write { status: "API_ERROR", generated_at, version } to last_recommendations
+  -> UI shows retry state
 ```
 
 ### Meridian Business Failure
@@ -659,8 +545,5 @@ POST /meridian fails with 5xx or network error
 ```text
 Meridian returns HARD_FAIL / SOFT_FAIL / BUDGET_FAIL / CONFLICT_FAIL
   -> write failure response to last_recommendations
-  -> POST /scout with message: null
-  -> Scout translates into a natural follow-up question
-  -> user adjusts
-  -> refinement loop continues
+  -> UI renders Meridian response
 ```

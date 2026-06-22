@@ -4,6 +4,12 @@ Trip Matcher is Phase 1 of TravelWithMe.
 
 Its job is to help a traveler move from an open-ended trip idea to a confident destination shortlist.
 
+The success metric is simple:
+
+```text
+The traveler reaches a confident destination or circuit decision, grounded in their trip goal, preferences, and constraints.
+```
+
 ## Scope
 
 Trip Matcher focuses on:
@@ -22,12 +28,32 @@ Trip Matcher consists of two agents:
 ```text
 Scout
   -> traveler-facing conversation agent
-  -> collects inputs and presents recommendations conversationally
+  -> collects inputs and passes recommendation intent
+```
 
+[Scout](SCOUT.md)
+
+```
 Meridian
   -> recommendation engine
-  -> evaluates trip context and returns destination matches
+  -> evaluates trip context and returns destination or circuit matches
 ```
+[Meridian](MERIDIAN.md)
+
+## Flow
+
+```text
+Traveler talks to Scout
+  -> Scout updates TripState
+  -> Scout passes recommendation_intent when the traveler says they want recommendations
+  -> UI displays Generate Recommendations
+  -> traveler taps Generate Recommendations
+  -> Meridian returns recommendations
+  -> UI presents them
+  -> traveler confirms a destination or circuit
+```
+
+Scout is the conversation layer. Meridian is the decision layer. TripState is the shared source of truth.
 
 ## API Contracts
 

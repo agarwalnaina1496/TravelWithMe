@@ -1,8 +1,8 @@
 from functools import lru_cache
 
-from .services import get_n8n_engine, n8nEngine
+from .services import AgentEngine, get_agent_engine
 
 
 @lru_cache(maxsize=1)
-def get_engine() -> n8nEngine:
-    return get_n8n_engine()
+def get_engine() -> AgentEngine:
+    return get_agent_engine()

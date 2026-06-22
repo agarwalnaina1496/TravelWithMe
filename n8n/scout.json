@@ -48,9 +48,9 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "={{ $('Webhook').item.json.body }}",
+        "text": "={{ JSON.stringify({ trip_state: $('Webhook').item.json.body.trip_state, message: $('Webhook').item.json.body.message }) }}",
         "options": {
-          "systemMessage": "={{ $('Load Scout Prompt').item.json.prompt }}"
+          "systemMessage": "={{ $('Webhook').item.json.body.prompt }}"
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -81,20 +81,6 @@
           "name": "Groq"
         }
       }
-    },
-    {
-      "parameters": {
-        "url": "http://api:8000/prompts/scout/json",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -360,
-        220
-      ],
-      "id": "load-scout-system-prompt",
-      "name": "Load Scout Prompt"
     }
   ],
   "pinData": {},
@@ -103,7 +89,7 @@
       "main": [
         [
           {
-            "node": "Load Scout Prompt",
+            "node": "Scout",
             "type": "main",
             "index": 0
           }
@@ -138,17 +124,6 @@
           {
             "node": "Scout",
             "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Load Scout Prompt": {
-      "main": [
-        [
-          {
-            "node": "Scout",
-            "type": "main",
             "index": 0
           }
         ]
