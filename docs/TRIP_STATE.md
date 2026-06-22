@@ -76,7 +76,7 @@ committed -> payment made; stage moves forward only
     "selected_option": null
   },
   "matcher_state": {
-    "generate_ready": false,
+    "recommendation_intent": false,
     "conversation_context": {
       "last_scout_message": null,
       "awaiting": null
@@ -127,7 +127,7 @@ For Trip Matcher:
 ```text
 new      -> TripState created
 matching -> Scout is collecting or refining inputs
-ready    -> traveler has indicated they want recommendations now
+ready    -> traveler has told Scout they want recommendations now
 matched  -> traveler confirmed a destination or circuit
 ```
 
@@ -184,7 +184,16 @@ Simple categoricals such as `group_type` can be plain values.
 
 `trip_goal` belongs in `preferences`, not `required_inputs`, because it is a preference signal with confidence rather than a hard input field.
 
-`selected_option` is set when the traveler confirms:
+`selected_option` is set when the traveler confirms a destination or circuit:
+
+```json
+{
+  "type": "destination | circuit",
+  "id": "..."
+}
+```
+
+Destination example:
 
 ```json
 {
@@ -193,7 +202,7 @@ Simple categoricals such as `group_type` can be plain values.
 }
 ```
 
-or:
+Circuit example:
 
 ```json
 {
@@ -208,7 +217,7 @@ or:
 
 ```json
 {
-  "generate_ready": false,
+  "recommendation_intent": false,
   "conversation_context": {
     "last_scout_message": "How many nights are you thinking?",
     "awaiting": "duration_nights"
@@ -217,9 +226,9 @@ or:
 }
 ```
 
-`generate_ready` represents traveler intent, not system readiness.
+`recommendation_intent` represents traveler intent, not system readiness or UI behavior.
 
-It means the traveler has indicated they want destination recommendations generated at this point in the conversation.
+It means the traveler has told Scout they want destination recommendations now.
 
 Examples of recommendation intent:
 
@@ -234,11 +243,11 @@ Examples of recommendation intent:
 
 It does not mean the system merely has enough inputs to generate.
 
-The system may technically have enough structured inputs before the traveler is ready. In that case, `generate_ready` should remain `false` until the traveler signals recommendation intent.
+The system may technically have enough structured inputs before the traveler is ready. In that case, `recommendation_intent` should remain `false` until the traveler tells Scout they are ready for recommendations.
 
 `conversation_context` carries only enough context for Scout to resume gracefully. It is not a conversation transcript.
 
-`last_recommendations` stores the latest Meridian output so Scout can present or re-engage without regenerating.
+`last_recommendations` stores the latest Meridian output so the UI can render it without regenerating.
 
 ### planner_state
 
@@ -302,7 +311,7 @@ The transport shape may change. In the MVP, the UI sends full `TripState`; later
 |---|---|
 | TripState created | `new` |
 | Scout starts collecting | `matching` |
-| Scout reflects recommendation intent | `ready` |
+| Scout passes recommendation intent | `ready` |
 | User sends message after `ready` | `matching` |
 | Destination or circuit confirmed | `matched` |
 | User returns to Matcher from Planner | `matching` |
@@ -334,7 +343,7 @@ Writes:
 trip_context.required_inputs
 trip_context.preferences
 trip_context.selected_option
-matcher_state.generate_ready
+matcher_state.recommendation_intent
 matcher_state.conversation_context
 matcher_state.last_recommendations
 stage

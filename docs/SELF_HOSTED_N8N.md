@@ -4,8 +4,6 @@ This document owns all n8n-specific setup and update instructions.
 
 For EC2/server setup, SSH, Docker install, repo clone, and backend deployment, see [EC2 setup](EC2_SETUP.md).
 
-For shared prompt loading behavior, see [Prompt Loader](PROMPT_LOADER.md).
-
 ## What n8n Does
 
 n8n is the current orchestration layer for Trip Matcher.
@@ -26,11 +24,14 @@ execution data
 ## Required Env Vars
 
 ```env
+AGENT_ENGINE=n8n
 N8N_ENCRYPTION_KEY=long-random-secret
 N8N_IMAGE=n8nio/n8n:1.84.3
 N8N_SCOUT_WEBHOOK_URL=http://n8n:5678/webhook/scout
 N8N_MERIDIAN_WEBHOOK_URL=http://n8n:5678/webhook/meridian
 ```
+
+`AGENT_ENGINE=n8n` tells FastAPI to use the n8n-backed `AgentEngine` implementation. If the backend later switches to LangGraph or code-native orchestration, the Trip Matcher API can stay the same while this implementation changes.
 
 Generate the encryption key:
 
@@ -120,14 +121,17 @@ Initial EC2 n8n setup:
 
 ## Prompt Loading
 
-n8n workflows load system prompts through the shared [Prompt Loader](PROMPT_LOADER.md):
+n8n workflows do not call a prompt API.
+
+FastAPI loads prompt files locally, then sends prompt text in the n8n webhook payload.
+
+n8n reads:
 
 ```text
-http://api:8000/prompts/scout/json
-http://api:8000/prompts/meridian/json
+Webhook body.prompt
 ```
 
-Inside Docker Compose, `api` is the FastAPI service name, so n8n can call `http://api:8000`.
+as the LangChain agent system message.
 
 ## Updating n8n Workflows
 

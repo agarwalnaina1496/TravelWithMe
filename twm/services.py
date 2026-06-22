@@ -1,10 +1,9 @@
 import os
+import httpx
+from .prompts import load_prompt
 from typing import Any, Dict, Optional, Protocol
 
-import httpx
-
-
-class n8nEngine(Protocol):
+class AgentEngine(Protocol):
     def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> Dict[str, Any]:
         ...
 
@@ -12,12 +11,25 @@ class n8nEngine(Protocol):
         ...
 
 
-class DefaultN8NEngine:
+class N8NAgentEngine:
     def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> Dict[str, Any]:
-        return self._forward("N8N_SCOUT_WEBHOOK_URL", {"trip_state": trip_state, "message": message})
+        return self._forward(
+            "N8N_SCOUT_WEBHOOK_URL",
+            {
+                "prompt": load_prompt("scout"),
+                "trip_state": trip_state,
+                "message": message,
+            },
+        )
 
     def meridian(self, trip_context: Dict[str, Any]) -> Dict[str, Any]:
-        return self._forward("N8N_MERIDIAN_WEBHOOK_URL", {"trip_context": trip_context})
+        return self._forward(
+            "N8N_MERIDIAN_WEBHOOK_URL",
+            {
+                "prompt": load_prompt("meridian"),
+                "trip_context": trip_context,
+            },
+        )
 
     def _forward(self, env_key: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         url = os.getenv(env_key)
@@ -36,5 +48,10 @@ class DefaultN8NEngine:
             return response.json()
 
 
-def get_n8n_engine() -> n8nEngine:
-    return DefaultN8NEngine()
+def get_agent_engine() -> AgentEngine:
+    engine_name = os.getenv("AGENT_ENGINE", "n8n").lower()
+
+    if engine_name == "n8n":
+        return N8NAgentEngine()
+
+    raise ValueError(f"Unsupported AGENT_ENGINE: {engine_name}")

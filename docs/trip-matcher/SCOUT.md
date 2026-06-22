@@ -2,7 +2,7 @@
 
 Scout is the Trip Matcher conversation agent.
 
-It is the only Trip Matcher agent the traveler experiences directly. Scout's job is to collect trip context naturally, update `TripState`, surface recommendation intent, present Meridian's output, and manage refinement until the traveler confirms a destination or circuit.
+It is the Trip Matcher conversation agent. Scout's job is to collect trip context naturally, update `TripState`, surface recommendation intent, and recognize when the traveler confirms a destination or circuit.
 
 Scout does not recommend destinations. Destination matching belongs to [Meridian](MERIDIAN.md).
 
@@ -14,13 +14,11 @@ Scout does not recommend destinations. Destination matching belongs to [Meridian
 - resolve ambiguous inputs before writing them to TripState
 - ask for missing critical inputs when needed
 - ask whether there is anything else to factor in before moving to generation
-- set generate_ready when the traveler indicates recommendation intent
-- use Meridian refinement hooks to ask targeted follow-up questions
-- translate Meridian failure states into plain-language next steps
+- pass recommendation_intent when the traveler tells Scout they want recommendations now
 - recognize destination or circuit confirmation and write selected_option
 ```
 
-Scout signals readiness. The traveler decides when to generate.
+Scout passes traveler readiness to the UI. The traveler decides when to generate.
 
 ## Input Collection
 
@@ -93,18 +91,18 @@ Resolve ambiguous inputs before writing them:
 "Relaxing but with things to do" -> clarify the desired balance if it affects matching.
 ```
 
-## generate_ready
+## recommendation_intent
 
-`generate_ready` is traveler intent, not system readiness.
+`recommendation_intent` is traveler intent, not system readiness or UI behavior.
 
 Scout sets:
 
 ```text
-matcher_state.generate_ready = true
+matcher_state.recommendation_intent = true
 stage = ready
 ```
 
-when the traveler indicates they want recommendations now.
+when the traveler tells Scout they want recommendations now.
 
 Examples:
 
@@ -117,9 +115,9 @@ surprise me
 that's enough, show me options
 ```
 
-The UI uses this flag to show the Generate Recommendations button. Meridian is called only after the traveler clicks that button.
+Scout does not decide readiness on its own. It passes the traveler's stated intent to the UI, and the UI displays the Generate Recommendations button. Meridian is called only after the traveler taps that button.
 
-## Presenting Recommendations
+## Recommendation Output
 
 After Meridian runs, the UI stores the Meridian output in:
 
@@ -127,48 +125,7 @@ After Meridian runs, the UI stores the Meridian output in:
 matcher_state.last_recommendations
 ```
 
-Then Scout is called with `message: null`.
-
-Scout reads `last_recommendations` and presents the result in a human way:
-
-```text
-1. lead with the best match and why it fits
-2. mention budget, reachability, timing, and meaningful tradeoffs
-3. offer alternatives instead of dumping every option at once
-4. stay honest about downsides
-```
-
-The traveler should feel guided, not handed a raw ranked list.
-
-## Refinement Loop
-
-After recommendations, the traveler may adjust preferences or ask follow-up questions.
-
-```text
-Scout presents recommendations
-  -> traveler refines or asks a question
-  -> Scout updates TripState through state_delta
-  -> Scout sets generate_ready again if the traveler wants updated recommendations
-  -> traveler clicks Generate
-  -> Meridian runs again
-  -> Scout presents the updated output
-```
-
-The loop ends when the traveler confirms a destination or says they want to stop.
-
-## Failure Handling
-
-Meridian failure states are normal product outcomes. Scout should translate them into helpful conversation.
-
-| Meridian signal | Scout behavior |
-|---|---|
-| `HARD_FAIL` | Explain that nothing matched all criteria and ask what to loosen. |
-| `SOFT_FAIL` | Present the few usable options and explain what limited the set. |
-| `BUDGET_FAIL` | Surface the realistic budget gap and ask whether to adjust. |
-| `CONFLICT_FAIL` | Explain the contradiction and ask the traveler to resolve it. |
-| `MISSING_INPUTS` | Ask for the most important missing field. |
-
-Do not expose internal status codes to the traveler.
+Meridian owns recommendation wording and structured recommendation content. The UI renders Meridian output directly. Scout is not responsible for translating or presenting Meridian recommendations.
 
 ## Tone
 
@@ -176,6 +133,5 @@ Do not expose internal status codes to the traveler.
 - warm, but not overexcited
 - confident, but not prescriptive
 - honest about tradeoffs
-- solution-oriented when constraints fail
 - one clear question at a time
 ```

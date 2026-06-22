@@ -193,6 +193,15 @@ MISSING_INPUTS
 
 The exact response contract lives in [Trip Matcher API contracts](API_CONTRACTS.md).
 
+Every Meridian response must include:
+
+```text
+generated_at -> timestamp for when the recommendation was produced
+version      -> matcher version, for example matcher_v1
+```
+
+`version` should change when prompt behavior, KB schema/versioning, scoring logic, or response semantics change enough to affect recommendation output. This makes stored recommendations debuggable later.
+
 ## Refinement Hooks
 
 Refinement hooks are for Scout, not direct traveler display.

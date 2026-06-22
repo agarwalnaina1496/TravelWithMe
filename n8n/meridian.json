@@ -48,9 +48,9 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "={{ $('Webhook').item.json.body }}",
+        "text": "={{ JSON.stringify({ trip_context: $('Webhook').item.json.body.trip_context }) }}",
         "options": {
-          "systemMessage": "={{ $('Load Meridian Prompt').item.json.prompt }}"
+          "systemMessage": "={{ $('Webhook').item.json.body.prompt }}"
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -81,20 +81,6 @@
           "name": "Groq"
         }
       }
-    },
-    {
-      "parameters": {
-        "url": "http://api:8000/prompts/meridian/json",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -400,
-        80
-      ],
-      "id": "load-meridian-system-prompt",
-      "name": "Load Meridian Prompt"
     }
   ],
   "pinData": {},
@@ -114,7 +100,7 @@
       "main": [
         [
           {
-            "node": "Load Meridian Prompt",
+            "node": "Meridian",
             "type": "main",
             "index": 0
           }
@@ -138,17 +124,6 @@
           {
             "node": "Meridian",
             "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Load Meridian Prompt": {
-      "main": [
-        [
-          {
-            "node": "Meridian",
-            "type": "main",
             "index": 0
           }
         ]

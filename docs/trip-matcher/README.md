@@ -28,7 +28,7 @@ Trip Matcher consists of two agents:
 ```text
 Scout
   -> traveler-facing conversation agent
-  -> collects inputs and presents recommendations conversationally
+  -> collects inputs and passes recommendation intent
 ```
 
 [Scout](SCOUT.md)
@@ -45,8 +45,9 @@ Meridian
 ```text
 Traveler talks to Scout
   -> Scout updates TripState
-  -> Scout sets generate_ready when the traveler wants recommendations
-  -> traveler clicks Generate Recommendations
+  -> Scout passes recommendation_intent when the traveler says they want recommendations
+  -> UI displays Generate Recommendations
+  -> traveler taps Generate Recommendations
   -> Meridian returns recommendations
   -> UI presents them
   -> traveler confirms a destination or circuit

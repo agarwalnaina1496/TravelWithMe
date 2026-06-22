@@ -107,7 +107,7 @@ Writes:
 trip_context.required_inputs
 trip_context.preferences
 trip_context.selected_option
-matcher_state.generate_ready
+matcher_state.recommendation_intent
 matcher_state.conversation_context
 matcher_state.last_recommendations
 stage
@@ -210,6 +210,21 @@ another workflow engine
 
 Today n8n gives a visual workflow layer. Later LangGraph would make the backend lighter and more code-driven.
 
+FastAPI talks to the current implementation through a stable `AgentEngine` interface:
+
+```text
+AgentEngine.scout(trip_state, message)
+AgentEngine.meridian(trip_context)
+```
+
+The selected implementation is controlled by:
+
+```env
+AGENT_ENGINE=n8n
+```
+
+Routes and UI contracts should not change when replacing n8n with LangGraph or custom Python orchestration. A new engine should implement the same `AgentEngine` methods and preserve the same `/scout` and `/meridian` response contracts.
+
 ### LLM Provider
 
 Current:
@@ -309,7 +324,9 @@ The shape stays:
 UI
   -> Backend API
       -> FastAPI or another API framework
-          -> orchestration layer
+          -> AgentEngine
+              -> n8n today
+              -> LangGraph / custom Python later
               -> KB queries
               -> LLM
 ```
