@@ -1,0 +1,242 @@
+# ─────────────────────────────────────────────────────────────
+# TWM Knowledge Base — Global Rules v1.0
+# All schemas must conform to these rules.
+# No new profiles generated until schemas and rules are frozen.
+# ─────────────────────────────────────────────────────────────
+
+schema_version: "1.0"
+
+# ── ID Conventions ───────────────────────────────────────────
+id_conventions:
+  destination_id:
+    format: name_region
+    examples:
+      - coorg_karnataka
+      - jaipur_rajasthan
+      - ooty_tamilnadu
+      - goa_north
+      - goa_south
+    rules:
+      - lowercase only
+      - underscores only — no hyphens, no spaces
+      - must be stable — never changes after first use
+      - must be unique across entire KB
+      - name alone is not a valid ID
+
+  circuit_id:
+    format: descriptive_slug
+    examples:
+      - rajasthan_classic
+      - golden_triangle
+      - kerala_complete
+      - himachal_shimla_manali
+      - karnataka_circuit
+    rules:
+      - lowercase only
+      - underscores only
+      - must be stable — never changes after first use
+      - must be unique across entire KB
+      - avoid prefixes like circ_ or dest_ — not needed
+
+# ── Enum Definitions ─────────────────────────────────────────
+# Only these values are valid. No other values accepted.
+
+enums:
+  FIT_VALUES:
+    - low
+    - medium
+    - high
+    description: >
+      Used for trip_goal_fit, travel_style_fit, group_fit,
+      walkability, navigability, local_authenticity,
+      spontaneity_friendly, discovery_potential,
+      food_culture.quality, food_culture.accessibility,
+      wildlife, nightlife, connectivity,
+      planning_required, logistics_difficulty,
+      experience_variety
+
+  CROWD_LEVELS:
+    - low
+    - moderate
+    - high
+    description: >
+      Used for crowd_profile fields and tourist_density.
+      Note: moderate (not medium) — consistent with
+      how crowd levels are communicated to users
+
+  PACE_VALUES:
+    - relaxed
+    - balanced
+    - fast
+    description: >
+      Unified enum used for both destination experience_attributes.pace
+      and circuit travel_metrics.pace.
+      Previous split (slow/moderate/fast for destinations,
+      relaxed/balanced/fast for circuits) is removed.
+
+  COST_TIERS:
+    - budget
+    - mid
+    - premium
+
+  ACCESSIBILITY_VALUES:
+    - low
+    - medium
+    - high
+    description: >
+      Used for road_accessibility, self_drive_suitability
+
+  CIRCUIT_TYPE_VALUES:
+    - linear
+    - loop
+
+  DATA_SOURCE_VALUES:
+    - curated      # human-authored from scratch
+    - generated    # LLM-generated, pending review
+    - verified     # LLM-generated, human reviewed
+
+  CONFIDENCE_VALUES:
+    - low          # generated, not reviewed
+    - medium       # generated, web-verified
+    - high         # human reviewed
+
+  TRAVEL_BURDEN_VALUES:
+    - low          # total internal travel ≤ 4 hours
+    - medium       # total internal travel 5–12 hours
+    - high         # total internal travel > 12 hours
+
+  DESTINATION_TYPE_VALUES:
+    - hill station
+    - coastal
+    - heritage
+    - wildlife
+    - nature
+    - urban
+    - desert
+    - island
+    - backwaters
+    - spiritual
+    - adventure
+
+  PRIMARY_EXPERIENCE_TYPES:
+    - heritage and history
+    - architecture
+    - nature
+    - wildlife
+    - culture and bazaars
+    - adventure
+    - beaches
+    - backwaters
+    - desert landscape
+    - hill landscape
+    - spiritual
+    - relaxation
+    - food and culinary
+
+  TRANSPORT_MODES:
+    - train
+    - cab
+    - self_drive
+    - bus
+    - flight
+    - ferry
+
+# ── Travel Burden Thresholds ─────────────────────────────────
+travel_burden_thresholds:
+  low:
+    max_hours: 4
+  medium:
+    min_hours: 5
+    max_hours: 12
+  high:
+    min_hours: 13
+
+# ── Data Stability Classification ───────────────────────────
+data_stability:
+  permanent:
+    description: >
+      Does not change unless the destination fundamentally changes.
+      No scheduled review needed.
+    fields:
+      - destination_id / circuit_id
+      - name, aliases, region
+      - destination_type / circuit_type
+      - access (nearest_airport, nearest_railhead, road_accessibility)
+      - trip_goal_fit
+      - travel_style_fit
+      - group_fit
+      - destination_profile
+      - destination_complexity / circuit_complexity
+      - experience_attributes
+      - destination_strengths, uniqueness_notes
+      - circuit_character, primary_experience_types
+      - stops, internal_travel, duration, ideal_trip_length
+      - travel_metrics
+      - experience_variety, experience_variety_notes
+      - known_for, known_pinch_points
+      - common_variations
+
+  semi_stable:
+    description: >
+      Changes slowly. Review every 6 months or when a significant
+      event affects the destination (new infrastructure, viral tourism,
+      natural event).
+    fields:
+      - seasonality
+      - crowd_profile
+      - cost (tier and typical ranges)
+      - circuit_seasonal_notes
+
+  live:
+    description: >
+      Never stored in KB. Always fetched at runtime from APIs or
+      web search.
+    fields:
+      - current hotel and activity prices
+      - live travel times
+      - live transport schedules and availability
+      - current weather and forecasts
+      - road closures and conditions
+      - origin-specific travel times
+      - origin-to-destination feasibility
+      - gateway and return connections
+
+# ── What Must Never Be Stored in KB ─────────────────────────
+never_store:
+  - live travel times between any two points
+  - live transport schedules
+  - current hotel prices or activity prices
+  - current weather or weather forecasts
+  - road closure or condition information
+  - origin-specific travel durations
+  - origin-to-destination feasibility assessments
+  - gateway city connections (origin-dependent)
+  - return journey connections (origin-dependent)
+  description: >
+    These are live facts. They change frequently and vary by origin.
+    Storing them in KB introduces stale data and origin-specific
+    assumptions. Always compute at runtime using Maps API or web search.
+
+# ── Ingest Pipeline Rules ────────────────────────────────────
+ingest_rules:
+  - Validate schema_version before processing any file
+  - Validate all enum fields against this global_rules.yaml
+  - Reject files with invalid enum values — do not store
+  - For circuits: compute total_internal_travel_hours by summing
+    typical_duration_hours across all internal_travel legs.
+    Flag if YAML value differs from computed value by more than 1 hour.
+  - Treat destination_id as source of truth — never use name alone for joins
+  - destination field on circuit stops: use for readability only,
+    never for logic or joins
+  - common_variations.stops must be lists of destination_ids,
+    not destination names
+  - Upsert on ID — duplicate names are not a problem if IDs are unique
+
+# ── Schema Governance ────────────────────────────────────────
+governance:
+  - No new profiles generated until schema_version 1.0 is frozen
+  - Schema changes require a version bump
+  - All existing profiles must be migrated when schema version changes
+  - Add schema_version to every YAML file — ingest pipeline validates it
+  - Profiles with confidence: low are used but flagged in refinement hooks
+  - Profiles older than 6 months trigger a semi_stable fields review

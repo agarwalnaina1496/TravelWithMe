@@ -1,6 +1,6 @@
 # Trip Matcher API Contracts
 
-This document records the API contract between the UI and Backend
+This document records the API contract between the UI and Backend.
 
 ## Overview
 
@@ -11,14 +11,15 @@ Scout    -> every user interaction
 Meridian -> only when the user taps Generate
 ```
 
-Trip Matcher is stateless:
+Trip Matcher logic is stateless:
 
 ```text
-- no TripState storage
 - no conversation history
-- no session tracking
-- every request is self-contained
+- no session state
+- every call operates on complete TripState
 ```
+
+For the canonical state model, field ownership, storage model, and stage transitions, see [TripState](../TRIP_STATE.md).
 
 ## Endpoints
 

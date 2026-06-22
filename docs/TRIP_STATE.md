@@ -1,4 +1,4 @@
-## TripState
+# TripState
 
 `TripState` is the source of truth.
 
@@ -12,6 +12,48 @@ It is shared across phases:
 Trip Matcher reads/writes matching state.
 Trip Planner will later read trip_context and write planner_state.
 Booking and Concierge can build on the same trip lifecycle later.
+```
+
+### Design Principles
+
+#### Single Trip Scope
+
+One `TripState` object represents one trip only.
+
+Multiple trips for the same traveler must have separate `TripState` records.
+
+#### Progressive Discovery
+
+`TripState` reflects only what is currently known about the trip.
+
+Do not create placeholder fields for information that has not been discovered.
+
+The exceptions are:
+
+```text
+trip_context.required_inputs
+status
+stage
+```
+
+`required_inputs` pre-defines the six fields Trip Matcher needs. Lifecycle fields are always present.
+
+#### Separation Of Concerns
+
+`TripState` is split into objects with clear ownership:
+
+| Object | Owner | Lifecycle |
+|---|---|---|
+| `trip_context` | The trip | Created at start, lives until trip is done. Read by Matcher and Planner. |
+| `matcher_state` | Trip Matcher | Active during matching. Not touched by Planner. |
+| `planner_state` | Trip Planner | Null until planning starts. Not touched by Matcher. |
+| `traveler_profile` | User profile | Not in TripState. Managed separately later. |
+
+#### Two-Zone Model
+
+```text
+free      -> exploratory and reversible
+committed -> payment made; stage moves forward only
 ```
 
 ### Top-Level Shape
@@ -55,6 +97,7 @@ Booking and Concierge can build on the same trip lifecycle later.
 - trip_context carries trip-level context forward to later phases.
 - matcher_state is owned by Trip Matcher.
 - planner_state is null until Trip Planner starts.
+- traveler_profile is not part of TripState.
 ```
 
 ### Lifecycle Fields
@@ -126,6 +169,21 @@ matched  -> traveler confirmed a destination or circuit
 }
 ```
 
+Scalar preferences should include a confidence score when useful:
+
+```text
+explicit -> traveler stated it directly
+high     -> strongly implied from context
+medium   -> reasonably inferred
+low      -> tentative signal
+```
+
+Arrays such as `travel_style` and `nuanced_preferences` do not need confidence wrappers.
+
+Simple categoricals such as `group_type` can be plain values.
+
+`trip_goal` belongs in `preferences`, not `required_inputs`, because it is a preference signal with confidence rather than a hard input field.
+
 `selected_option` is set when the traveler confirms:
 
 ```json
@@ -188,6 +246,41 @@ The system may technically have enough structured inputs before the traveler is 
 
 It becomes active only after the traveler enters Trip Planner.
 
+Example:
+
+```json
+{
+  "conversation_context": {
+    "last_message": "Which part of Pondicherry would you prefer to stay in?",
+    "awaiting": "accommodation_area"
+  },
+  "preferences": {
+    "accommodation_area": "White Town",
+    "transport_preference": "scooter rental",
+    "meal_preference": "local restaurants over hotel food"
+  },
+  "itinerary": null
+}
+```
+
+`planner_state.preferences` contains planning-specific preferences that emerge during the planning conversation. These are more granular than trip-level signals.
+
+`planner_state.itinerary` is the output of Trip Planner when complete.
+
+### traveler_profile
+
+`traveler_profile` is not part of `TripState`.
+
+Persistent user-level preferences, travel history, and learned behavior should be managed separately when user accounts are introduced.
+
+At that point, the backend can combine:
+
+```text
+TripState + TravelerProfile
+```
+
+before calling a feature. `TripState` does not need to contain the profile.
+
 ### Storage
 
 Storage is an implementation detail:
@@ -197,6 +290,75 @@ Today: localStorage
 Later: database
 ```
 
-The semantic contract should not change when storage moves from localStorage to a database: It still operates on complete `TripState`.
+The semantic contract should not change when storage moves from localStorage to a database: features still operate on complete `TripState`.
 
-The transport shape may change. In the MVP, the UI sends full `TripState`; later, it might be laoded via database.
+The transport shape may change. In the MVP, the UI sends full `TripState`; later, it might be loaded from a database.
+
+## Stage Transition Reference
+
+### Free Zone
+
+| Action | Stage becomes |
+|---|---|
+| TripState created | `new` |
+| Scout starts collecting | `matching` |
+| Scout reflects recommendation intent | `ready` |
+| User sends message after `ready` | `matching` |
+| Destination or circuit confirmed | `matched` |
+| User returns to Matcher from Planner | `matching` |
+| Planner started | `planning` |
+| Plan complete | `planned` |
+
+### Committed Zone
+
+| Action | Stage becomes |
+|---|---|
+| Payment made | `booked` and `status` becomes `committed` |
+| Trip completed | `done` |
+
+## Feature Read/Write Ownership
+
+### Trip Matcher
+
+Reads:
+
+```text
+trip_context.required_inputs
+trip_context.preferences
+matcher_state
+```
+
+Writes:
+
+```text
+trip_context.required_inputs
+trip_context.preferences
+trip_context.selected_option
+matcher_state.generate_ready
+matcher_state.conversation_context
+matcher_state.last_recommendations
+stage
+```
+
+### Trip Planner
+
+Reads:
+
+```text
+trip_context
+```
+
+Writes:
+
+```text
+planner_state
+stage
+```
+
+Does not read or write:
+
+```text
+matcher_state
+```
+
+Trip Planner should work whether or not Trip Matcher was used. If required planning context is missing, Planner asks the user and writes the answer to `TripState`.
