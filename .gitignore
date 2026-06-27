@@ -2,4 +2,4 @@
 __pycache__/
 *.py[cod]
 .venv/
-.env
+n8n.env

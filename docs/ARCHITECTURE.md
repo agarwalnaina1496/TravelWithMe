@@ -153,7 +153,8 @@ These can change without changing the whole product.
 Current:
 
 ```text
-AWS EC2
+FastAPI on Render
+n8n on AWS EC2
 ```
 
 Swappable with:
@@ -220,7 +221,7 @@ AgentEngine.meridian(trip_context)
 The selected implementation is controlled by:
 
 ```env
-AGENT_ENGINE=n8n
+agent_engine=n8n
 ```
 
 Routes and UI contracts should not change when replacing n8n with LangGraph or custom Python orchestration. A new engine should implement the same `AgentEngine` methods and preserve the same `/scout` and `/meridian` response contracts.
@@ -287,10 +288,9 @@ This is what exists today:
 
 ```text
 UI -> hosted on Vercel
-Backend -> hosted on EC2
+Backend API -> hosted on Render
 
 EC2
-  -> fast api container
   -> self hosted n8n
   -> postgres for n8n only
 
@@ -306,6 +306,10 @@ The KB database does not need to run on the backend server if Supabase is used.
 Current EC2-specific details are in:
 
 [EC2 setup](EC2_SETUP.md)
+
+Current FastAPI Render details are in:
+
+[Render FastAPI deployment](RENDER_FASTAPI.md)
 
 ## Future Orchestration Layer scope
 

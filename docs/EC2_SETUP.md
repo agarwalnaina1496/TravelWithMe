@@ -1,6 +1,8 @@
 # EC2 Deployment Setup
 
-This document records how TravelWithMe was deployed on AWS EC2.
+This document records the EC2 setup that now hosts n8n and n8n's Postgres only.
+
+FastAPI has moved to Render. See [Render FastAPI deployment](RENDER_FASTAPI.md).
 
 For the platform-agnostic architecture, including fixed vs swappable parts and future KB/LangGraph direction, use:
 
@@ -15,15 +17,14 @@ For n8n-specific setup, workflow updates, backups, and rollback, use:
 ```text
 AWS EC2 Ubuntu server
   -> Docker Compose
-      -> FastAPI container
       -> n8n container
       -> Postgres container for n8n only
 ```
 
-The UI should call FastAPI:
+The UI should call FastAPI on Render:
 
 ```text
-http://13.201.32.120:8000
+https://<render-service-host>
 ```
 
 n8n is used as the internal workflow/orchestration layer:
@@ -51,25 +52,14 @@ Local PEM path: /c/Users/agarw/Desktop/TWM/twm-key.pem
 
 ## Security Group Rules
 
-Current inbound rules in security group `twm-sg`:
+Current inbound rules in security group `twm-sg` while n8n is still directly exposed:
 
 ```text
 22    TCP  SSH      0.0.0.0/0
 80    TCP  HTTP     0.0.0.0/0
 443   TCP  HTTPS    0.0.0.0/0
 5678  TCP  n8n      0.0.0.0/0
-8000  TCP  FastAPI  0.0.0.0/0
 ```
-
-Later, after domain + HTTPS reverse proxy:
-
-```text
-22   SSH    your IP only
-80   HTTP   0.0.0.0/0
-443  HTTPS  0.0.0.0/0
-```
-
-At that point, remove direct public access to `8000` and `5678`.
 
 ## Connect To EC2
 
@@ -205,41 +195,33 @@ Repo is expected at:
 ~/TravelWithMe
 ```
 
-## Environment Setup
+## Config Files
 
-Create `.env` on EC2:
+Files under `twm/shared/properties/` are for FastAPI only. Since FastAPI now runs on Render, EC2 n8n should not use those property files.
+
+Create `n8n.env` on EC2 from the template:
 
 ```bash
 cd ~/TravelWithMe
-cp .env.example .env
-nano .env
+cp n8n.env.example n8n.env
+nano n8n.env
 ```
 
-For n8n-specific env vars, encryption key, and public URL settings, see [Self-Hosted n8n](SELF_HOSTED_N8N.md).
+For n8n-specific values, encryption key, and public URL settings, see [Self-Hosted n8n](SELF_HOSTED_N8N.md).
 
-Do not commit `.env`.
+Do not commit `n8n.env`.
 
-## Start The Stack
+## Start The EC2 n8n Stack
 
 On EC2:
 
 ```bash
 cd ~/TravelWithMe
-docker compose up -d --build
+docker compose up -d
 docker compose ps
 ```
 
-Check API:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Expected:
-
-```json
-{"status":"ok"}
-```
+This starts `postgres` and `n8n`. It does not start FastAPI by default.
 
 ## Live URLs
 
@@ -247,7 +229,7 @@ From browser:
 
 ```text
 FastAPI health:
-http://13.201.32.120:8000/health
+https://<render-service-host>/health
 
 n8n:
 http://13.201.32.120:5678
@@ -256,14 +238,14 @@ http://13.201.32.120:5678
 UI base API URL:
 
 ```text
-http://13.201.32.120:8000
+https://<render-service-host>
 ```
 
 UI should call:
 
 ```text
-POST http://13.201.32.120:8000/scout
-POST http://13.201.32.120:8000/meridian
+POST https://<render-service-host>/scout
+POST https://<render-service-host>/meridian
 ```
 
 ## n8n Setup And Updates
@@ -273,7 +255,6 @@ n8n is running on the same EC2 instance, but n8n-specific setup and workflow ope
 Use that doc for:
 
 ```text
-- n8n local setup
 - n8n EC2 setup
 - workflow import/export
 - workflow updates
@@ -281,9 +262,9 @@ Use that doc for:
 - n8n rollback
 ```
 
-## FastAPI Update Flow On EC2
+## FastAPI Update Flow
 
-Use this when code under `twm/`, `Dockerfile`, `requirements.txt`, or API behavior changes.
+FastAPI deploys through Render now. Use [Render FastAPI deployment](RENDER_FASTAPI.md). FastAPI properties are loaded from `twm/shared/properties/properties.ini` and `twm/shared/properties/properties-{ENVIRONMENT}.ini`, following the `[APP]` property-file pattern.
 
 On local machine:
 
@@ -294,25 +275,7 @@ git commit -m "Update FastAPI"
 git push
 ```
 
-On EC2:
-
-```bash
-ssh -i /c/Users/agarw/Desktop/TWM/twm-key.pem ubuntu@13.201.32.120
-cd ~/TravelWithMe
-git pull origin master
-docker compose up -d --build api
-docker compose ps
-docker compose logs --tail=50 api
-curl http://localhost:8000/health
-```
-
-If the default branch is `main`, use:
-
-```bash
-git pull origin main
-```
-
-## Prompt Update Flow On EC2
+## Prompt Update Flow
 
 Prompt files:
 
@@ -320,6 +283,8 @@ Prompt files:
 - [Meridian system prompt](../twm/prompts/meridian.md)
 
 FastAPI loads these files locally and sends prompt text to the selected `AgentEngine`.
+
+Since FastAPI runs on Render, prompt changes deploy through Render with the FastAPI service.
 
 On local machine:
 
@@ -329,42 +294,26 @@ git commit -m "Update prompts"
 git push
 ```
 
-On EC2:
+## EC2 n8n Testing
+
+Check n8n:
 
 ```bash
-cd ~/TravelWithMe
-git pull origin master
-docker compose up -d --build api
+docker compose ps
+docker compose logs --tail=100 n8n
 ```
 
-## EC2 Testing
-
-Health:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Scout:
-
-```bash
-curl -X POST http://localhost:8000/scout \
-  -H "Content-Type: application/json" \
-  -d '{"trip_state": {}, "message": "I want a 3 night trip from Bengaluru"}'
-```
-
-Meridian:
-
-```bash
-curl -X POST http://localhost:8000/meridian \
-  -H "Content-Type: application/json" \
-  -d '{"trip_context": {"required_inputs": {"origin_city": "Bengaluru", "budget": 30000, "budget_unit": "total", "duration_nights": 3, "num_travelers": 4, "travel_month": "September"}, "preferences": {}}}'
-```
-
-From browser:
+FastAPI health is checked on Render:
 
 ```text
-http://13.201.32.120:8000/health
+https://<render-service-host>/health
+```
+
+Scout and Meridian should be tested against Render:
+
+```text
+POST https://<render-service-host>/scout
+POST https://<render-service-host>/meridian
 ```
 
 ## EC2 Docker Commands
@@ -375,22 +324,10 @@ Status:
 docker compose ps
 ```
 
-FastAPI logs:
-
-```bash
-docker compose logs --tail=100 api
-```
-
-Rebuild only FastAPI:
-
-```bash
-docker compose up -d --build api
-```
-
 Start all services:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 Stop all services without deleting data:
@@ -414,21 +351,14 @@ git revert BAD_COMMIT_SHA
 git push
 ```
 
-Then deploy on EC2:
+Then deploy through Render.
 
-```bash
-cd ~/TravelWithMe
-git pull origin master
-docker compose up -d --build api
-```
-
-Emergency rollback on EC2:
+Emergency rollback:
 
 ```bash
 cd ~/TravelWithMe
 git log --oneline
 git checkout GOOD_COMMIT_SHA
-docker compose up -d --build api
 ```
 
 Return to branch later:
@@ -436,5 +366,4 @@ Return to branch later:
 ```bash
 git checkout master
 git pull origin master
-docker compose up -d --build api
 ```

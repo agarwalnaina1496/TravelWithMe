@@ -1,0 +1,97 @@
+schema_version: "1.0"
+schema_type: travel_region
+region_id: spiti_valley
+
+name: Spiti Valley
+aliases:
+  - Spiti
+  - Lahaul-Spiti
+  - Middle Land
+  - Cold Desert
+
+environment:
+  altitude: very_high
+  climate: cold_desert
+  terrain: mountainous
+  landscape: High-altitude trans-Himalayan cold desert with monasteries, barren mountains, river valleys, and remote villages.
+  water_bodies: moderate
+  forest_cover: low
+  urbanization: very_low
+
+destination_character:
+  remoteness: very_high
+  physical_exertion: medium
+  scenic_value: very_high
+  spiritual_culture: very_high
+  social_scene: low
+  nightlife: low
+  pace: slow
+  novelty: very_high
+
+seasonality:
+  best_months:
+    - Jun
+    - Jul
+    - Aug
+    - Sep
+  acceptable_months:
+    - May
+    - Oct
+  avoid_months:
+    - Jan
+    - Feb
+    - Mar
+    - Dec
+  monsoon_character: Spiti itself is a rain-shadow cold desert with limited rainfall, but approach roads through Kinnaur, Manali, and Kullu can face monsoon landslides and water crossings.
+
+cost:
+  in_destination_tier: mid
+  notes: Budget homestays and basic guesthouses are available, but transport and remote logistics make full Spiti trips costlier than easier Himachal hill stations.
+
+constraints:
+  altitude_above_4000m: true
+  medical_facilities_limited: true
+  road_conditions_challenging: true
+  luxury_inventory_available: false
+  trekking_available: true
+  trekking_required: false
+  permit_required: true
+  beach: false
+  wildlife: true
+  connectivity: low
+
+experience_attributes:
+  walkability: medium
+  local_authenticity: very_high
+  food_accessibility: medium
+  spontaneity_friendly: low
+
+crowd_profile:
+  typical_level: moderate
+  peak_level: high
+  off_peak_level: low
+  peak_months:
+    - Jun
+    - Jul
+    - Aug
+
+uniqueness_factor:
+  - High-altitude cold desert landscape in the trans-Himalayan region of Himachal Pradesh.
+  - Strong Tibetan Buddhist cultural presence through monasteries such as Key, Tabo, and Dhankar.
+  - Includes fragile high-altitude habitats such as Pin Valley National Park, Kibber Wildlife Sanctuary, and Chandratal Wetland.
+  - Kaza functions as the main travel base and commercial centre for most Spiti itineraries.
+
+known_for:
+  - Cold desert landscapes
+  - Tibetan Buddhist monasteries
+  - Kaza village circuit
+  - Key Monastery
+  - Tabo Monastery
+  - Chandratal Lake
+  - High-altitude road trips
+  - Stargazing
+
+meta:
+  last_updated: 2026-06-23
+  data_source: generated
+  confidence: medium
