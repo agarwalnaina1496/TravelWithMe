@@ -2,7 +2,9 @@
 
 This document owns all n8n-specific setup and update instructions.
 
-For EC2/server setup, SSH, Docker install, repo clone, and backend deployment, see [EC2 setup](EC2_SETUP.md).
+For EC2/server setup, SSH, Docker install, repo clone, and n8n deployment, see [EC2 setup](EC2_SETUP.md).
+
+FastAPI now runs on Render. See [Render FastAPI deployment](RENDER_FASTAPI.md).
 
 ## What n8n Does
 
@@ -21,17 +23,22 @@ credentials
 execution data
 ```
 
-## Required Env Vars
+## Required n8n Env File
 
-```env
-AGENT_ENGINE=n8n
+EC2 n8n uses `n8n.env`, not the FastAPI property files under `twm/shared/properties/`.
+
+```properties
+N8N_HOST=13.201.32.120
+N8N_PORT=5678
+N8N_PROTOCOL=http
+N8N_SECURE_COOKIE=false
+WEBHOOK_URL=http://13.201.32.120:5678/
+N8N_EDITOR_BASE_URL=http://13.201.32.120:5678/
 N8N_ENCRYPTION_KEY=long-random-secret
-N8N_IMAGE=n8nio/n8n:1.84.3
-N8N_SCOUT_WEBHOOK_URL=http://n8n:5678/webhook/scout
-N8N_MERIDIAN_WEBHOOK_URL=http://n8n:5678/webhook/meridian
+API_BASE_URL=https://<render-service-host>
 ```
 
-`AGENT_ENGINE=n8n` tells FastAPI to use the n8n-backed `AgentEngine` implementation. If the backend later switches to LangGraph or code-native orchestration, the Trip Matcher API can stay the same while this implementation changes.
+FastAPI-specific config belongs in `twm/shared/properties/properties.ini` / `twm/shared/properties/properties-{ENVIRONMENT}.ini`. `agent_engine`, `n8n_scout_webhook_url`, and `n8n_meridian_webhook_url` are FastAPI settings, not EC2 n8n settings.
 
 Generate the encryption key:
 
@@ -40,41 +47,6 @@ openssl rand -hex 32
 ```
 
 Keep `N8N_ENCRYPTION_KEY` stable. If it changes, saved n8n credentials may stop decrypting.
-
-## Local n8n Setup
-
-From repo root:
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-docker compose ps
-```
-
-Open:
-
-```text
-http://localhost:5678
-```
-
-First-time setup:
-
-```text
-1. Create n8n admin account.
-2. Import n8n/scout.json.
-3. Import n8n/meridian.json.
-4. Activate both workflows.
-5. Verify webhook paths:
-   - scout
-   - meridian
-```
-
-Local service URLs:
-
-```text
-FastAPI: http://localhost:8000
-n8n:     http://localhost:5678
-```
 
 ## EC2 n8n Setup
 
@@ -123,7 +95,7 @@ Initial EC2 n8n setup:
 
 n8n workflows do not call a prompt API.
 
-FastAPI loads prompt files locally, then sends prompt text in the n8n webhook payload.
+FastAPI on Render loads prompt files locally, then sends prompt text in the n8n webhook payload.
 
 n8n reads:
 
@@ -188,6 +160,7 @@ On EC2:
 ```bash
 cd ~/TravelWithMe
 git pull origin master
+docker compose up -d
 ```
 
 Then import in n8n UI:
@@ -230,7 +203,6 @@ Safe commands:
 ```bash
 docker compose restart n8n
 docker compose up -d
-docker compose up -d --build api
 ```
 
 Do not run unless intentionally deleting n8n/Postgres data:
