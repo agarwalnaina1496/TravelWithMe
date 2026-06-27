@@ -366,6 +366,9 @@ Rules for success output:
 - Use `destination_id` for single destinations and `circuit_id` for circuits. Use `null` for the non-applicable id field.
 - Keep all traveler-facing explanation inside `match_sections`, `tradeoffs`, and `final_recommendation`.
 - Do not put Markdown tables, bullets, headings, or prose outside JSON.
+- Return a complete, parseable JSON object. Do not stop mid-field, mid-string, or mid-object.
+- Use ASCII-safe text only: plain hyphens, straight quotes, normal spaces, and `INR` instead of the rupee symbol.
+- Do not use smart quotes, en dashes, em dashes, non-breaking hyphens, non-breaking spaces, narrow spaces, or other special Unicode punctuation.
 - `generated_at` must be the current run timestamp in ISO-8601 format.
 - `version` must be `"matcher_v1"` unless the contract changes.
 
