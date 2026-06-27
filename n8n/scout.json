@@ -8,10 +8,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        200,
-        20
+        560,
+        0
       ],
-      "id": "fec04425-4ced-4a1b-8212-7bbe9d380db3",
+      "id": "892ae446-3a07-4acf-beec-de666ff0dc58",
       "name": "Output parser"
     },
     {
@@ -24,25 +24,26 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -360,
-        20
+        0,
+        0
       ],
-      "id": "67146fe4-71a5-4dac-a6b8-4f60dcd81c9f",
+      "id": "067fad9e-2b14-4a9e-9ce9-0f0b35d4eae4",
       "name": "Webhook",
       "webhookId": "4207bdee-78f4-4d90-8d2f-3d5de97022af"
     },
     {
       "parameters": {
         "respondWith": "json",
+        "responseBody": "={{ $json }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        400,
-        20
+        760,
+        0
       ],
-      "id": "865bd016-a3b2-4a8e-82ce-4db11dbacebb",
+      "id": "80207876-8331-40e3-a602-e8053ad96225",
       "name": "Respond to Webhook"
     },
     {
@@ -56,10 +57,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.8,
       "position": [
-        -140,
-        20
+        220,
+        0
       ],
-      "id": "a62ea838-42c6-4983-a1e8-8ebe51741388",
+      "id": "961558c7-4f17-4a63-a375-0abf46f5d369",
       "name": "Scout"
     },
     {
@@ -70,15 +71,15 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
       "typeVersion": 1,
       "position": [
-        -140,
-        200
+        220,
+        180
       ],
-      "id": "5eee3eab-ba2c-4653-8f52-933ef1d64143",
+      "id": "d61eb72d-5ca0-4cb9-9b4d-ec57e0dd6dd8",
       "name": "Groq Chat Model",
       "credentials": {
         "groqApi": {
-          "id": "RD7T7IK88fuowEI9",
-          "name": "Groq"
+          "id": "HBYxDE4k9lhrrGOL",
+          "name": "Groq account"
         }
       }
     }
@@ -130,15 +131,15 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "778c00c4-ed8b-4d6e-9315-245f56232d0f",
+  "versionId": "f07d70bd-8300-462c-bcb5-bd5c6c3c4aa2",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "4ee2fc9d027b00e4012c6007485e6c692d638673139c999bd0f2de313b590edc"
+    "instanceId": "111d80fe232db9ee76f854ab72cbe1edcebe23e73237176ddf890a8073d51fa7"
   },
-  "id": "3bCUEKqhjBWAArpE",
+  "id": "n87OoBysB3SvmwiO",
   "tags": []
 }

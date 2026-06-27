@@ -246,126 +246,172 @@ Before returning output, check for failure conditions:
 
 ## Output
 
-### Standard Output — Single Destination
-*Use when duration is 1–3 nights, or when a single destination scores higher than all circuits.*
+Return ONLY valid JSON. Do not return Markdown. Do not wrap the JSON in code fences. Do not include explanatory text before or after the JSON.
 
-Return top 3 destinations, ranked. For each:
+The UI stores the full response in `trip_state.matcher_state.last_recommendations` and renders it directly. The response must match this API contract.
 
-```
-[Destination Name]
+### Success Output
 
-Why It Matches
-✓ [style match]
-✓ [group fit]
-✓ [seasonality]
-✓ [crowd match]
-
-Budget Expectations
-Stay:       ₹X,XXX – ₹X,XXX
-Food:       ₹X,XXX – ₹X,XXX
-Travel:     ₹X,XXX – ₹X,XXX
-Total:      ₹XX,XXX – ₹XX,XXX
-Per person: ₹X,XXX – ₹X,XXX
-
-Reachability
-Distance:    ~XXX km from [Origin City]
-Travel time: X–Y hours
-Transport:   [mode]
-
-Weather in [Travel Month]
-[Character and what the traveler should expect]
-
-Crowd Expectations
-[Low / Moderate / High — with context specific to this destination and month]
-
-Tradeoffs
-Pros:
-- ...
-Cons:
-- ...
-```
-
-### Standard Output — Circuit Trip
-*Use when duration is 4+ nights and a circuit scores highest.*
-
-Return top 3 circuits, ranked. For each:
-
-```
-[Circuit Name]
-
-Why It Matches
-✓ [goal-relevant character]
-✓ [group fit]
-✓ [seasonality]
-✓ [internal travel is proportionate]
-
-Stops
-| Stop     | Nights | What It Offers |
-|----------|--------|----------------|
-| [Stop 1] | N      | [description]  |
-
-Internal Travel
-| Leg              | Duration  | Mode          |
-|------------------|-----------|---------------|
-| [Stop 1 → Stop 2]| X–Y hours | [Train / cab] |
-
-Budget Expectations
-Stay:            ₹XX,XXX – ₹XX,XXX (across all stops)
-Food:            ₹XX,XXX – ₹XX,XXX
-Internal travel: ₹XX,XXX – ₹XX,XXX
-Entry to origin: ₹XX,XXX – ₹XX,XXX
-Total:           ₹XX,XXX – ₹XX,XXX
-Per person:      ₹X,XXX – ₹X,XXX
-
-Entry to Circuit
-From [Origin City] to [First Stop]: [duration / transport / cost estimate]
-
-Return from Circuit
-From [Last Stop] to [Origin City]: [duration / transport / cost estimate]
-
-Weather in [Travel Month]
-[Circuit-level character — note variation across stops if meaningful]
-
-Crowd Expectations
-[Per stop if meaningfully different, otherwise circuit-level]
-
-Tradeoffs
-Pros:
-- ...
-Cons:
-- ...
-```
-
-### Final Recommendation
-
-```
-Best Match — [Destination or Circuit]: Why it ranks first for this specific trip.
-Alternative 1 — [Destination or Circuit]: What different experience or pace it offers.
-Alternative 2 — [Destination or Circuit]: What different need it serves.
-```
-
-### Refinement Hooks
-*Returned to Scout. Not shown to the traveler.*
+Return this top-level shape for successful recommendations:
 
 ```json
-"refinement_hooks": {
-  "weakest_scoring_factor": "[factor name]",
-  "constraint_with_highest_elimination": "[constraint]",
-  "budget_headroom": "tight | comfortable | flexible",
-  "seasonality_note": "[flag if travel month is suboptimal — or null]",
-  "nuanced_preference_gaps": "[any nuanced preferences no option satisfied well — or null]",
-  "travel_to_experience_flag": "[flag if any circuit was close to the 0.3 ratio threshold — or null]"
+{
+  "status": "SUCCESS",
+  "generated_at": "ISO-8601 timestamp",
+  "version": "matcher_v1",
+  "trip_type": "single | circuit",
+  "budget_basis": {
+    "total": 50000,
+    "per_person": 16667,
+    "num_travelers": 3
+  },
+  "options": [
+    {
+      "rank": 1,
+      "type": "single | circuit",
+      "name": "Destination or circuit name",
+      "destination_id": "stable_destination_id_or_null",
+      "circuit_id": "stable_circuit_id_or_null",
+      "match_sections": [
+        {
+          "type": "budget",
+          "heading": "Budget fit",
+          "stay": {
+            "notes": "string",
+            "estimate_per_person": 0,
+            "estimate_group": 0,
+            "assumption": "string"
+          },
+          "food": {
+            "notes": "string",
+            "estimate_per_person": 0,
+            "estimate_group": 0,
+            "assumption": "string"
+          },
+          "travel": {
+            "notes": "string",
+            "estimate_per_person": 0,
+            "estimate_group": 0,
+            "assumption": "string"
+          },
+          "activities": {
+            "notes": "string",
+            "estimate_per_person": 0,
+            "estimate_group": 0,
+            "assumption": "string"
+          },
+          "local_transport": {
+            "notes": "string",
+            "estimate_per_person": 0,
+            "estimate_group": 0,
+            "assumption": "string"
+          },
+          "per_person_total": 0,
+          "group_total": 0,
+          "budget_given": 0,
+          "verdict": "tight | comfortable | flexible"
+        },
+        {
+          "type": "trip_goal",
+          "heading": "Why it matches",
+          "points": ["string"]
+        },
+        {
+          "type": "reachability",
+          "heading": "Reachability",
+          "points": ["string"]
+        },
+        {
+          "type": "weather",
+          "heading": "Weather in the travel month",
+          "contextual": true,
+          "points": ["string"]
+        },
+        {
+          "type": "crowd_preference",
+          "heading": "Crowd expectations",
+          "points": ["string"]
+        }
+      ],
+      "tradeoffs": [
+        {
+          "point": "string",
+          "affects": "budget | weather | reachability | trip_goal | crowd_preference | other"
+        }
+      ]
+    }
+  ],
+  "final_recommendation": {
+    "best_match": "string",
+    "best_match_reason": "string",
+    "alternative_1": "string",
+    "alternative_1_reason": "string",
+    "alternative_2": "string",
+    "alternative_2_reason": "string"
+  },
+  "refinement_hooks": {
+    "weakest_scoring_factor": "string or null",
+    "constraint_with_highest_elimination": "string or null",
+    "budget_headroom": "tight | comfortable | flexible",
+    "seasonality_note": "string or null",
+    "nuanced_preference_gaps": "string or null",
+    "travel_to_experience_flag": "string or null"
+  }
 }
 ```
 
----
+Rules for success output:
+- Return exactly three objects in `options` when at least three viable candidates exist.
+- For 1-3 night trips, prefer `type: "single"` unless a circuit clearly fits better.
+- Use `destination_id` for single destinations and `circuit_id` for circuits. Use `null` for the non-applicable id field.
+- Keep all traveler-facing explanation inside `match_sections`, `tradeoffs`, and `final_recommendation`.
+- Do not put Markdown tables, bullets, headings, or prose outside JSON.
+- `generated_at` must be the current run timestamp in ISO-8601 format.
+- `version` must be `"matcher_v1"` unless the contract changes.
+
+### Circuit-Specific Fields
+
+For circuit options, include additional `match_sections` with these shapes when relevant:
+
+```json
+{
+  "type": "stops",
+  "heading": "Stops",
+  "stops": [
+    {
+      "name": "string",
+      "nights": 0,
+      "what_it_offers": "string"
+    }
+  ]
+}
+```
+
+```json
+{
+  "type": "internal_travel",
+  "heading": "Internal travel",
+  "legs": [
+    {
+      "from": "string",
+      "to": "string",
+      "duration": "string",
+      "mode": "string"
+    }
+  ]
+}
+```
 
 ### Failure Output
+
+If recommendations cannot be produced, return ONLY this JSON shape with fields relevant to the failure:
 
 ```json
 {
   "status": "HARD_FAIL | SOFT_FAIL | BUDGET_FAIL | CONFLICT_FAIL | MISSING_INPUTS",
-  "message": "Human-readable explanation for Scout to translate into conversational language",
+  "generated_at": "ISO-8601 timestamp",
+  "version": "matcher_v1",
+  "message": "Human-readable explanation",
   "eliminating_constraints": ["constraint_1", "constraint_2"],
   "relaxation_suggestions": ["Suggestion 1", "Suggestion 2"],
   "minimum_viable_budget": 45000,
@@ -375,7 +421,7 @@ Alternative 2 — [Destination or Circuit]: What different need it serves.
 }
 ```
 
-All fields are optional except `status` and `message`. Return only the fields relevant to the failure type.
+All failure fields are optional except `status`, `generated_at`, `version`, and `message`. Return only the fields relevant to the failure type.
 
 ---
 
