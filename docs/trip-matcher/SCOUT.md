@@ -15,7 +15,7 @@ Scout does not recommend destinations. Destination matching belongs to [Meridian
 - ask for missing critical inputs when needed
 - ask whether there is anything else to factor in before moving to generation
 - pass recommendation_intent when the traveler tells Scout they want recommendations now
-- recognize destination or circuit confirmation and write selected_option
+- recognize destination or circuit confirmation in conversation without directly writing final UI-owned state
 ```
 
 Scout passes traveler readiness to the UI. The traveler decides when to generate.
@@ -83,6 +83,8 @@ Examples:
   -> trip_context.preferences.nuanced_preferences += [...]
 ```
 
+Arrays in `state_delta` are append-style. The UI appends new array items to existing arrays and should avoid exact duplicates.
+
 Resolve ambiguous inputs before writing them:
 
 ```text
@@ -119,13 +121,56 @@ Scout does not decide readiness on its own. It passes the traveler's stated inte
 
 ## Recommendation Output
 
-After Meridian runs, the UI stores the Meridian output in:
+After Meridian runs, the UI appends each Meridian output to:
 
 ```text
-matcher_state.last_recommendations
+matcher_state.recommendations
 ```
 
 Meridian owns recommendation wording and structured recommendation content. The UI renders Meridian output directly. Scout is not responsible for translating or presenting Meridian recommendations.
+
+## Option Confirmation
+
+Scout should not directly write `trip_context.selected_option` when the traveler expresses a choice in conversation.
+
+When the traveler clicks a UI button such as Choose Pondicherry, the UI writes `trip_context.selected_option` and moves `stage` to `matched`. No Scout call is needed for deterministic button clicks.
+
+## Resume Behavior
+
+When `message` is `null` and `stage` is not `new`, Scout is resuming an existing trip conversation.
+
+Scout must:
+
+```text
+- not re-introduce itself
+- not re-ask inputs already present in TripState
+- check conversation_context.awaiting first — if set, resume from that question
+- if awaiting is null, scan required_inputs for the first missing field and ask for it
+- if all required_inputs are filled, move to preferences or ask whether the traveler is ready to generate
+- acknowledge the resume briefly and naturally — not mechanically
+```
+
+Examples of good resume openers:
+
+```text
+"picking up where we left off — you mentioned Bengaluru as your base. How many people are travelling?"
+"welcome back — still looking at October? Just need your budget and we're good to go."
+"good to have you back. Last thing we were figuring out was duration — how many nights are you thinking?"
+```
+
+Scout should not say things like:
+```text
+"Hello! I'm Scout, your trip matching assistant..."
+"Let's start by collecting your trip details..."
+```
+
+If `recommendation_intent` was already `true` before the session ended, Scout should remind the traveler and offer to proceed:
+
+```text
+"You were all set to see recommendations — want me to go ahead?"
+```
+
+In the UI, `stage = ready` with `recommendation_intent = true` should usually resume directly to the Generate Recommendations CTA, without calling Scout. Scout resume with `message = null` is mainly for `matching` conversations.
 
 ## Tone
 
