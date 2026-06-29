@@ -109,7 +109,8 @@ trip_context.preferences
 trip_context.selected_option
 matcher_state.recommendation_intent
 matcher_state.conversation_context
-matcher_state.last_recommendations
+matcher_state.recommendations
+matcher_state.rejected_options
 stage
 ```
 

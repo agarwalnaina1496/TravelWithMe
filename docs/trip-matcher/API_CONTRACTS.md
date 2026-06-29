@@ -7,7 +7,7 @@ This document records the API contract between the UI and Backend.
 Trip Matcher has two primary calls:
 
 ```text
-Scout    -> every user interaction
+Scout    -> conversation turns
 Meridian -> only after the traveler taps Generate
 ```
 
@@ -61,7 +61,9 @@ Scout gets complete TripState.
 Scout does not rely on hidden memory outside TripState.
 ```
 
-Every Scout response returns only a `state_delta`. The UI deep-merges `state_delta` back into `TripState` and stores the updated result.
+Every Scout response returns a `state_delta`. The UI deep-merges `state_delta` back into `TripState` and stores the updated result.
+
+The UI owns deterministic button actions such as Generate Recommendations, Choose Option, and Not For Me. Scout signals intent through conversation; the UI writes the final state when the traveler clicks.
 
 ### Request
 
@@ -115,7 +117,8 @@ message    -> latest user message, or null
         "last_scout_message": "What's your total budget for the trip?",
         "awaiting": "budget"
       },
-      "last_recommendations": null
+      "recommendations": [],
+      "rejected_options": []
     },
     "planner_state": null
   },
@@ -157,6 +160,7 @@ Rules:
 - UI deep-merges state_delta into TripState.
 - UI does not replace full sections unless the delta explicitly contains replacement values.
 - Only changed fields should appear.
+- Arrays in state_delta are append-style. The UI appends new array items and should avoid exact duplicates.
 - Omit sections with no changes.
 - matcher_state.conversation_context.last_scout_message should be included.
 ```
@@ -207,32 +211,6 @@ Rules:
       "recommendation_intent": true,
       "conversation_context": {
         "last_scout_message": "Got it - I'll generate recommendations from what you've shared so far.",
-        "awaiting": null
-      }
-    }
-  }
-}
-```
-
-### Response Example: Option Confirmed
-
-```json
-{
-  "message": "Pondicherry it is. Great choice for a September bachelorette trip.",
-  "state_delta": {
-    "stage": "matched",
-    "trip_context": {
-      "required_inputs": {},
-      "preferences": {},
-      "selected_option": {
-        "type": "destination",
-        "id": "pondicherry_puducherry"
-      }
-    },
-    "matcher_state": {
-      "recommendation_intent": false,
-      "conversation_context": {
-        "last_scout_message": "Pondicherry it is. Great choice for a September bachelorette trip.",
         "awaiting": null
       }
     }
@@ -481,28 +459,53 @@ User taps Generate Recommendations
   -> button enters loading state
   -> POST /meridian
        body: { trip_context: trip_state.trip_context }
-  -> write full Meridian response to:
-       trip_state.matcher_state.last_recommendations
+  -> append full Meridian response to:
+       trip_state.matcher_state.recommendations
   -> render Meridian response in the UI
   -> clear recommendation_intent
 ```
 
-Meridian output, success or failure, always goes to `last_recommendations`.
+Meridian business output, success or failure, always appends to `recommendations`.
 
-`generated_at` and `version` must be preserved in `last_recommendations`. They identify when the recommendation was produced and which matcher contract, prompt set, KB version, and scoring logic produced it.
+`generated_at` and `version` must be preserved in each recommendation history item. They identify when the recommendation was produced and which matcher contract, prompt set, KB version, and scoring logic produced it.
 
 ### Confirmation
 
 ```text
-User confirms destination or circuit
-  -> POST /scout
-       body: { trip_state, message: "Let's go with Pondicherry" }
-  -> Scout returns:
-       state_delta.trip_context.selected_option = { type, id }
-       state_delta.stage = "matched"
-  -> UI deep-merges into localStorage
+User clicks Choose destination/circuit
+  -> UI writes:
+       trip_state.trip_context.selected_option = { type, id }
+       trip_state.stage = "matched"
+  -> UI writes trip_state to localStorage
   -> Trip Matcher complete
 ```
+
+If the traveler expresses confirmation in chat, the UI should still own the final `selected_option` write. Chat-based confirmation handling can be added later without changing the deterministic button-click contract.
+
+### Rejection And Refinement
+
+```text
+User clicks Not for me
+  -> UI appends the rejected option to:
+       trip_state.matcher_state.rejected_options
+  -> UI sets:
+       trip_state.stage = "matching"
+       trip_state.matcher_state.recommendation_intent = false
+  -> UI sends a refinement message to Scout
+```
+
+Rejected options are matcher state, not trip preferences.
+
+If the user sends a new message while `stage = "ready"`, the UI should first set:
+
+```text
+stage = "matching"
+matcher_state.recommendation_intent = false
+```
+
+Then it sends the message to Scout. New information makes the previous readiness stale.
+
+If the user refines after `stage = "matched"`, the UI should clear `trip_context.selected_option` and move back to `matching`.
 
 ### Page Refresh
 
@@ -510,11 +513,15 @@ User confirms destination or circuit
 User refreshes
   -> UI reads trip_state from localStorage
 
-stage = "new" or "matching":
+stage = "new":
+  UI shows the starting Scout experience
+
+stage = "matching":
   UI resumes from conversation_context
 
 stage = "ready":
   display Generate Recommendations
+  no Scout call needed
 
 stage = "matched":
   show confirmed destination
@@ -536,14 +543,15 @@ POST /scout fails with 5xx or network error
 
 ```text
 POST /meridian fails with 5xx or network error
-  -> write { status: "API_ERROR", generated_at, version } to last_recommendations
+  -> do not append to recommendations
   -> UI shows retry state
+  -> user retries with same trip_state
 ```
 
 ### Meridian Business Failure
 
 ```text
 Meridian returns HARD_FAIL / SOFT_FAIL / BUDGET_FAIL / CONFLICT_FAIL
-  -> write failure response to last_recommendations
+  -> append failure response to recommendations
   -> UI renders Meridian response
 ```

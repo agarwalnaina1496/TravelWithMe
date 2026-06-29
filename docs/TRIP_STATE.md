@@ -81,7 +81,8 @@ committed -> payment made; stage moves forward only
       "last_scout_message": null,
       "awaiting": null
     },
-    "last_recommendations": null
+    "recommendations": [],
+    "rejected_options": []
   },
   "planner_state": null
 }
@@ -193,6 +194,8 @@ Simple categoricals such as `group_type` can be plain values.
 }
 ```
 
+`selected_option` means the traveler has made a final choice. It should remain `null` while the traveler is comparing, refining, or rejecting recommendations.
+
 Destination example:
 
 ```json
@@ -222,7 +225,8 @@ Circuit example:
     "last_scout_message": "How many nights are you thinking?",
     "awaiting": "duration_nights"
   },
-  "last_recommendations": null
+  "recommendations": [],
+  "rejected_options": []
 }
 ```
 
@@ -247,7 +251,24 @@ The system may technically have enough structured inputs before the traveler is 
 
 `conversation_context` carries only enough context for Scout to resume gracefully. It is not a conversation transcript.
 
-`last_recommendations` stores the latest Meridian output so the UI can render it without regenerating.
+`recommendations` stores Meridian output history. Each successful Meridian response, including business failures such as `HARD_FAIL` or `BUDGET_FAIL`, is appended to this array. The latest recommendation is the last item in the array.
+
+Infrastructure failures such as network errors or 5xx responses are not appended to `recommendations`; the UI should show a retry state and keep the existing trip state.
+
+`rejected_options` stores recommendation options the traveler rejected during the matcher refinement loop:
+
+```json
+[
+  {
+    "type": "destination",
+    "id": "goa_north_budget",
+    "name": "Goa",
+    "reason": "user_rejected"
+  }
+]
+```
+
+Rejected options are matcher-specific state, not durable trip preferences.
 
 ### planner_state
 
@@ -312,8 +333,9 @@ The transport shape may change. In the MVP, the UI sends full `TripState`; later
 | TripState created | `new` |
 | Scout starts collecting | `matching` |
 | Scout passes recommendation intent | `ready` |
-| User sends message after `ready` | `matching` |
+| User sends message after `ready` | `matching` and `recommendation_intent` becomes `false` |
 | Destination or circuit confirmed | `matched` |
+| User refines after `matched` | `matching` and `selected_option` becomes `null` |
 | User returns to Matcher from Planner | `matching` |
 | Planner started | `planning` |
 | Plan complete | `planned` |
@@ -345,7 +367,8 @@ trip_context.preferences
 trip_context.selected_option
 matcher_state.recommendation_intent
 matcher_state.conversation_context
-matcher_state.last_recommendations
+matcher_state.recommendations
+matcher_state.rejected_options
 stage
 ```
 
