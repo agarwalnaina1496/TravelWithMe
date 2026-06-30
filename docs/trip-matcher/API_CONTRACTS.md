@@ -36,7 +36,9 @@ Scout is called for:
 
 ```text
 - regular user messages
-- destination or circuit confirmation
+- active matching resume with message = null
+- refinement messages
+- destination or circuit confirmation messages
 ```
 
 Scout operates on complete `TripState` for every call.
@@ -63,7 +65,7 @@ Scout does not rely on hidden memory outside TripState.
 
 Every Scout response returns a `state_delta`. The UI deep-merges `state_delta` back into `TripState` and stores the updated result.
 
-The UI owns deterministic button actions such as Generate Recommendations, Choose Option, and Not For Me. Scout signals intent through conversation; the UI writes the final state when the traveler clicks.
+The UI owns deterministic actions such as Generate Recommendations, Choose Option, and Refine with Scout. Scout signals intent through conversation; the UI writes deterministic state changes.
 
 ### Request
 
@@ -81,9 +83,11 @@ trip_state -> full current TripState from localStorage
 message    -> latest user message, or null
 ```
 
-`message: string` means regular user interaction.
+`message: string` means regular user interaction, including refinement.
 
-`message: null` is not used as a post-Meridian presentation mode. Meridian returns presentable recommendation content, and the UI renders it directly.
+`message: null` is only used to resume an active matcher conversation when `trip_state.stage = "matching"`.
+
+`message: null` is not used as a post-Meridian presentation mode, refinement trigger, or option confirmation mode. Meridian returns presentable recommendation content, and the UI renders it directly.
 
 ### Request Example: Regular Turn
 
@@ -134,14 +138,9 @@ Scout always returns the same top-level shape:
 {
   "message": "string",
   "state_delta": {
-    "stage": "string | omit if unchanged",
     "trip_context": {
       "required_inputs": {},
-      "preferences": {},
-      "selected_option": {
-        "type": "destination | circuit",
-        "id": "string"
-      }
+      "preferences": {}
     },
     "matcher_state": {
       "recommendation_intent": "boolean | omit if unchanged",
@@ -163,6 +162,7 @@ Rules:
 - Arrays in state_delta are append-style. The UI appends new array items and should avoid exact duplicates.
 - Omit sections with no changes.
 - matcher_state.conversation_context.last_scout_message should be included.
+- Scout must not return stage, trip_context.selected_option, matcher_state.recommendations, or matcher_state.rejected_options.
 ```
 
 ### Response Example: Still Collecting
@@ -171,7 +171,6 @@ Rules:
 {
   "message": "Got it - INR 30,000 total, 3 nights, 4 people from Bengaluru. Is there anything else you'd like me to factor in?",
   "state_delta": {
-    "stage": "matching",
     "trip_context": {
       "required_inputs": {
         "budget": 30000,
@@ -198,7 +197,6 @@ Rules:
 {
   "message": "Got it - I'll generate recommendations from what you've shared so far.",
   "state_delta": {
-    "stage": "ready",
     "trip_context": {
       "required_inputs": {},
       "preferences": {
@@ -232,7 +230,7 @@ Scout passes that traveler intent to the UI by returning:
 state_delta.matcher_state.recommendation_intent = true
 ```
 
-The UI uses this flag to display the Generate Recommendations button. Meridian is called only after the traveler taps that button.
+The UI uses this flag to move to `recommendation_ready` and display the Generate Recommendations button. Meridian is called only after the traveler taps that button.
 
 `recommendation_intent` should be set because the traveler asked for recommendations, not because Scout inferred readiness or because the minimum structured inputs are present.
 
@@ -463,6 +461,7 @@ User taps Generate Recommendations
        trip_state.matcher_state.recommendations
   -> render Meridian response in the UI
   -> clear recommendation_intent
+  -> set stage = "recommended"
 ```
 
 Meridian business output, success or failure, always appends to `recommendations`.
@@ -482,21 +481,19 @@ User clicks Choose destination/circuit
 
 If the traveler expresses confirmation in chat, the UI should still own the final `selected_option` write. Chat-based confirmation handling can be added later without changing the deterministic button-click contract.
 
-### Rejection And Refinement
+### Refinement
 
 ```text
-User clicks Not for me
-  -> UI appends the rejected option to:
-       trip_state.matcher_state.rejected_options
+User clicks Refine with Scout
   -> UI sets:
        trip_state.stage = "matching"
        trip_state.matcher_state.recommendation_intent = false
-  -> UI sends a refinement message to Scout
+  -> UI sends message = "I want to refine these recommendations." to Scout
 ```
 
-Rejected options are matcher state, not trip preferences.
+Refinement always uses `message: string`, never `message: null`.
 
-If the user sends a new message while `stage = "ready"`, the UI should first set:
+If the user sends a new message while `stage = "recommendation_ready"`, the UI should first set:
 
 ```text
 stage = "matching"
@@ -517,11 +514,15 @@ stage = "new":
   UI shows the starting Scout experience
 
 stage = "matching":
-  UI resumes from conversation_context
+  UI may resume from conversation_context by calling Scout with message = null
 
-stage = "ready":
+stage = "recommendation_ready":
   display Generate Recommendations
   no Scout call needed
+
+stage = "recommended":
+  show existing recommendations
+  no Scout call needed unless user refines
 
 stage = "matched":
   show confirmed destination

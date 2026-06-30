@@ -4,7 +4,7 @@ Meridian is the Trip Matcher decision engine.
 
 It receives complete trip context, runs travel region matching, and returns ranked recommendations with reasoning, tradeoffs, and refinement hooks.
 
-Meridian is stateless. It does not hold conversation history. It does not decide when to run. The traveler triggers generation from the UI after Scout sets recommendation intent.
+Meridian is stateless. It does not hold conversation history. It does not decide when to run. The traveler triggers generation from the UI after Scout returns recommendation intent.
 
 ## Responsibilities
 
