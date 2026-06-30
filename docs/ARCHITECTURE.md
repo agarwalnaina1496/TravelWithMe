@@ -101,17 +101,27 @@ trip_context.preferences
 matcher_state
 ```
 
-Writes:
+Scout returns deltas for:
 
 ```text
 trip_context.required_inputs
 trip_context.preferences
-trip_context.selected_option
 matcher_state.recommendation_intent
 matcher_state.conversation_context
+```
+
+Meridian returns recommendation output for:
+
+```text
 matcher_state.recommendations
-matcher_state.rejected_options
+```
+
+The UI owns deterministic matcher state writes:
+
+```text
 stage
+trip_context.selected_option
+matcher_state.rejected_options
 ```
 
 ### Trip Planner

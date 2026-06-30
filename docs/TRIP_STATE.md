@@ -115,7 +115,8 @@ committed -> payment made; stage moves forward only
 ```text
 new
 matching
-ready
+recommendation_ready
+recommended
 matched
 planning
 planned
@@ -128,7 +129,8 @@ For Trip Matcher:
 ```text
 new      -> TripState created
 matching -> Scout is collecting or refining inputs
-ready    -> traveler has told Scout they want recommendations now
+recommendation_ready -> traveler has told Scout they want recommendations now
+recommended -> Meridian recommendations have been generated and stored
 matched  -> traveler confirmed a destination or circuit
 ```
 
@@ -194,7 +196,7 @@ Simple categoricals such as `group_type` can be plain values.
 }
 ```
 
-`selected_option` means the traveler has made a final choice. It should remain `null` while the traveler is comparing, refining, or rejecting recommendations.
+`selected_option` means the traveler has made a final choice. It should remain `null` while the traveler is comparing or refining recommendations.
 
 Destination example:
 
@@ -255,7 +257,7 @@ The system may technically have enough structured inputs before the traveler is 
 
 Infrastructure failures such as network errors or 5xx responses are not appended to `recommendations`; the UI should show a retry state and keep the existing trip state.
 
-`rejected_options` stores recommendation options the traveler rejected during the matcher refinement loop:
+`rejected_options` is optional legacy matcher state for recommendation options the traveler rejected during older refinement flows:
 
 ```json
 [
@@ -268,7 +270,7 @@ Infrastructure failures such as network errors or 5xx responses are not appended
 ]
 ```
 
-Rejected options are matcher-specific state, not durable trip preferences.
+Rejected options are matcher-specific state, not durable trip preferences. Current refinement should not depend on this field.
 
 ### planner_state
 
@@ -332,8 +334,10 @@ The transport shape may change. In the MVP, the UI sends full `TripState`; later
 |---|---|
 | TripState created | `new` |
 | Scout starts collecting | `matching` |
-| Scout passes recommendation intent | `ready` |
-| User sends message after `ready` | `matching` and `recommendation_intent` becomes `false` |
+| UI receives Scout recommendation intent | `recommendation_ready` |
+| Meridian response is returned to UI | `recommended` |
+| User sends message after `recommendation_ready` | `matching` and `recommendation_intent` becomes `false` |
+| User refines recommendations after `recommended` | `matching` and `recommendation_intent` becomes `false` |
 | Destination or circuit confirmed | `matched` |
 | User refines after `matched` | `matching` and `selected_option` becomes `null` |
 | User returns to Matcher from Planner | `matching` |
@@ -351,7 +355,7 @@ The transport shape may change. In the MVP, the UI sends full `TripState`; later
 
 ### Trip Matcher
 
-Reads:
+Trip Matcher reads:
 
 ```text
 trip_context.required_inputs
@@ -359,17 +363,28 @@ trip_context.preferences
 matcher_state
 ```
 
-Writes:
+Scout returns deltas for:
 
 ```text
 trip_context.required_inputs
 trip_context.preferences
-trip_context.selected_option
 matcher_state.recommendation_intent
 matcher_state.conversation_context
+```
+
+Meridian returns recommendation output for:
+
+```text
+matcher_state.recommendations
+```
+
+The UI owns deterministic matcher state writes:
+
+```text
+stage
+trip_context.selected_option
 matcher_state.recommendations
 matcher_state.rejected_options
-stage
 ```
 
 ### Trip Planner

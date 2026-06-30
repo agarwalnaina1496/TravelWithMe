@@ -44,8 +44,9 @@ Meridian
 
 ```text
 Traveler talks to Scout
-  -> Scout updates TripState
-  -> Scout passes recommendation_intent when the traveler says they want recommendations
+  -> Scout returns state_delta
+  -> UI merges state_delta into TripState
+  -> Scout returns recommendation_intent when the traveler says they want recommendations
   -> UI displays Generate Recommendations
   -> traveler taps Generate Recommendations
   -> Meridian returns recommendations
