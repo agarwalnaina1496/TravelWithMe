@@ -18,8 +18,9 @@ class MeridianRequest(BaseModel):
 
 
 class ScoutResponse(BaseModel):
-    message: str
+    message: Optional[str] = None
     state_delta: Dict[str, Any]
+    intent: Optional[str] = None
 
 
 class MeridianResponse(BaseModel):
