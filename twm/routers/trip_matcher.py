@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from typing import Any, Dict
 from ..core import get_engine
-from ..schemas import MeridianRequest, ScoutRequest, ScoutResponse
+from ..schemas import MeridianRequest, MeridianResponse, ScoutRequest, ScoutResponse
 
 router = APIRouter(tags=["Trip Matcher"])
 
@@ -31,11 +31,25 @@ def _normalize_scout_response(raw_response: Any) -> ScoutResponse:
     )
 
 
+def _normalize_meridian_response(raw_response: Any) -> MeridianResponse:
+    response = _unwrap_agent_response(raw_response)
+    return MeridianResponse(
+        **{
+            **response,
+            "status": response.get("status") or "HARD_FAIL",
+            "message": response.get("message") or "",
+            "state_delta": response.get("state_delta") or {},
+            "options": response.get("options") or [],
+        }
+    )
+
+
 @router.post("/scout", response_model=ScoutResponse)
 async def scout(payload: ScoutRequest):
     raw_response = engine.scout(payload.trip_state, payload.message)
     return _normalize_scout_response(raw_response)
 
-@router.post("/meridian")
+@router.post("/meridian", response_model=MeridianResponse)
 async def meridian(payload: MeridianRequest):
-    return engine.meridian(payload.trip_context)
+    raw_response = engine.meridian(payload.trip_state, payload.message)
+    return _normalize_meridian_response(raw_response)
