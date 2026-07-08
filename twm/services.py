@@ -7,7 +7,11 @@ class AgentEngine(Protocol):
     def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> Dict[str, Any]:
         ...
 
-    def meridian(self, trip_context: Dict[str, Any]) -> Dict[str, Any]:
+    def meridian(
+        self,
+        trip_state: Dict[str, Any],
+        message: Optional[str] = None,
+    ) -> Dict[str, Any]:
         ...
 
 
@@ -22,12 +26,17 @@ class N8NAgentEngine:
             },
         )
 
-    def meridian(self, trip_context: Dict[str, Any]) -> Dict[str, Any]:
+    def meridian(
+        self,
+        trip_state: Dict[str, Any],
+        message: Optional[str] = None,
+    ) -> Dict[str, Any]:
         return self._forward(
             "n8n_meridian_webhook_url",
             {
                 "prompt": load_prompt("meridian"),
-                "trip_context": trip_context,
+                "trip_state": trip_state,
+                "message": message,
             },
         )
 
@@ -38,9 +47,10 @@ class N8NAgentEngine:
             return {
                 "status": "HARD_FAIL",
                 "message": f"{property_key} is not configured.",
-                "eliminating_constraints": [],
-                "relaxation_suggestions": [],
-                "surviving_destinations": [],
+                "state_delta": {},
+                "options": [],
+                "final_recommendation": {},
+                "refinement_hooks": {},
             }
 
         with httpx.Client(timeout=60.0) as client:
