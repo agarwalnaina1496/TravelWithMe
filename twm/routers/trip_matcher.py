@@ -27,7 +27,7 @@ def _normalize_scout_response(raw_response: Any) -> ScoutResponse:
     return ScoutResponse(
         message=response.get("message") or "",
         state_delta=response.get("state_delta") or {},
-        intent=None,
+        intent=response.get("intent"),
     )
 
 
