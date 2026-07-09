@@ -7,11 +7,7 @@ class AgentEngine(Protocol):
     def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> Dict[str, Any]:
         ...
 
-    def meridian(
-        self,
-        trip_state: Dict[str, Any],
-        message: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    def meridian(self, trip_state: Dict[str, Any]) -> Dict[str, Any]:
         ...
 
 
@@ -26,17 +22,12 @@ class N8NAgentEngine:
             },
         )
 
-    def meridian(
-        self,
-        trip_state: Dict[str, Any],
-        message: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    def meridian(self, trip_state: Dict[str, Any]) -> Dict[str, Any]:
         return self._forward(
             "n8n_meridian_webhook_url",
             {
                 "prompt": load_prompt("meridian"),
                 "trip_state": trip_state,
-                "message": message,
             },
         )
 
