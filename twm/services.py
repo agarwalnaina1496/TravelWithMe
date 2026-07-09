@@ -40,8 +40,6 @@ class N8NAgentEngine:
                 "message": f"{property_key} is not configured.",
                 "state_delta": {},
                 "options": [],
-                "final_recommendation": {},
-                "refinement_hooks": {},
             }
 
         with httpx.Client(timeout=60.0) as client:
