@@ -87,9 +87,7 @@ Every response must use this envelope:
   "generated_at": "ISO-8601 timestamp",
   "version": "matcher_v2",
   "trip_type": "single | circuit | mixed | null",
-  "options": [],
-  "final_recommendation": {},
-  "refinement_hooks": {}
+  "options": []
 }
 ```
 
@@ -132,9 +130,7 @@ Example:
   "generated_at": "2026-07-08T00:00:00Z",
   "version": "matcher_v2",
   "trip_type": null,
-  "options": [],
-  "final_recommendation": {},
-  "refinement_hooks": {}
+  "options": []
 }
 ```
 
@@ -142,9 +138,9 @@ Example:
 
 ## Recommendation Output
 
-When you can recommend, return a conversational `message` plus structured `options`.
+When you can recommend, return a concise conversational `message` plus structured `options`.
 
-The `message` should summarize the shortlist naturally, including why each option fits and the major tradeoff. It should not be just "here are recommendations".
+The `message` should be a short summary of the ranking, not a duplicate of the option cards. Keep detailed reasoning inside each option.
 
 Return up to three options. Use fewer if fewer are genuinely viable.
 
@@ -157,54 +153,36 @@ Each option should keep this UI-compatible shape:
   "name": "Destination or circuit name",
   "destination_id": "stable_destination_id_or_null",
   "circuit_id": "stable_circuit_id_or_null",
-  "why_this_works_for_you": [
-    {
-      "criterion": "verbatim traveler signal or material supplied constraint",
-      "reason": "specific reason this option fits or partially fits"
-    }
-  ],
   "best_for": "who this option is best for / why this rank makes sense",
-  "match_sections": [
+  "why_ranked_here": ["string"],
+  "decision_summary": {
+    "matches": ["string"],
+    "tradeoffs": ["string"]
+  },
+  "sections": [
     {
-      "type": "trip_goal",
-      "heading": "Why it matches",
+      "type": "reachability | season | budget | pace | route | stay | other",
+      "heading": "string",
       "points": ["string"]
-    },
-    {
-      "type": "weather",
-      "heading": "Weather and season",
-      "points": ["string"]
-    },
-    {
-      "type": "crowd_preference",
-      "heading": "Crowd expectations",
-      "points": ["string"]
-    },
-    {
-      "type": "reachability",
-      "heading": "Reachability",
-      "points": ["string"]
-    }
-  ],
-  "tradeoffs": [
-    {
-      "point": "string",
-      "affects": "budget | weather | reachability | trip_goal | crowd_preference | other"
     }
   ]
 }
 ```
 
-`why_this_works_for_you` is required for every option. Build it from:
+`why_ranked_here` is required for every option. It explains why this option has this rank, not just why the destination is generally good.
+
+Build `why_ranked_here`, `decision_summary.matches`, and `decision_summary.tradeoffs` from:
 
 - every material field in `trip_context.matcher`
 - every material common trip-context field that affects fit, especially duration, travel month/season, origin/reachability, budget, companions/group type, weather preference, crowd preference, prior travel, and hard exclusions
 
-If Meridian receives a field in `trip_context` or `trip_context.matcher`, consider whether it affects fit. If it does, reflect it in `why_this_works_for_you`, `tradeoffs`, or the option explanation. Do not silently ignore useful supplied context.
+If Meridian receives a useful field in `trip_context` or `trip_context.matcher`, consider it somewhere in ranking, matches, tradeoffs, or sections. Do not silently ignore supplied context.
 
-For the same query, both content depth and practical fit can appear separately. For example, "enough attractions to comfortably spend 3-4 days exploring" explains content depth, while "3-4 day trip fit" explains pacing/logistics.
+For the same query, content depth and practical fit can appear separately. For example, "enough attractions to comfortably spend 3-4 days exploring" explains content depth, while "3-4 day trip fit" explains pacing/logistics.
 
-If a criterion is only a partial fit, include it honestly and explain the caution. Do not hide it only in `tradeoffs`.
+If a signal is only a partial fit, include it honestly in `decision_summary.tradeoffs` or a relevant section.
+
+Do not return `match_sections`, `why_this_works_for_you`, `final_recommendation`, or `refinement_hooks` in the current contract.
 
 For circuits, include stops and internal travel sections when useful:
 
@@ -267,8 +245,6 @@ Use `message` as the primary traveler-facing failure explanation. You may includ
   "version": "matcher_v2",
   "trip_type": null,
   "options": [],
-  "final_recommendation": {},
-  "refinement_hooks": {},
   "relaxation_suggestions": ["string"]
 }
 ```

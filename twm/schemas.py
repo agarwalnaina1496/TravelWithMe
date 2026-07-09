@@ -26,6 +26,4 @@ class MeridianResponse(BaseModel):
     version: Optional[str] = None
     trip_type: Optional[str] = None
     options: Optional[List[Dict[str, Any]]] = None
-    final_recommendation: Optional[Dict[str, Any]] = None
-    refinement_hooks: Optional[Dict[str, Any]] = None
     relaxation_suggestions: Optional[List[str]] = None
