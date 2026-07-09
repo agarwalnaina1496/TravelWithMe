@@ -51,5 +51,5 @@ async def scout(payload: ScoutRequest):
 
 @router.post("/meridian", response_model=MeridianResponse)
 async def meridian(payload: MeridianRequest):
-    raw_response = engine.meridian(payload.trip_state, payload.message)
+    raw_response = engine.meridian(payload.trip_state)
     return _normalize_meridian_response(raw_response)

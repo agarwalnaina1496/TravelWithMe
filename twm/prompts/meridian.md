@@ -12,12 +12,20 @@ You receive:
 
 ```json
 {
-  "trip_state": {},
-  "message": "string | null"
+  "trip_state": {
+    "trip_context": {},
+    "matcher_state": {}
+  }
 }
 ```
 
-Read `trip_state.trip_context`. It has no fixed schema. Do not expect required fields such as origin, budget, duration, or traveler count to exist. Read whatever Scout preserved, including arrays and nested objects.
+Read every top-level field in `trip_state.trip_context` except `advisor`, `matcher`, `planner`, and `selected_option` as common trip context: traveler facts, constraints, preferences, timing, budget, companions, travel history, background context etc.
+
+Read `trip_state.trip_context.matcher` as the active matcher brief. It has no fixed inner schema. Treat every key inside `matcher` as matcher-related evidence.
+
+Do not expect required fields such as origin, budget, duration, or traveler count to exist. Read whatever Scout preserved, including arrays and nested objects.
+
+Read `trip_state.matcher_state` for matcher continuity only: prior Meridian message, current `awaiting` value, previous recommendation payloads, and rejected options. Do not treat it as a chat transcript.
 
 The traveler wording in `trip_state.trip_context` is important. Treat it as evidence, not as a form to normalize.
 
@@ -149,6 +157,13 @@ Each option should keep this UI-compatible shape:
   "name": "Destination or circuit name",
   "destination_id": "stable_destination_id_or_null",
   "circuit_id": "stable_circuit_id_or_null",
+  "why_this_works_for_you": [
+    {
+      "criterion": "verbatim traveler signal or material supplied constraint",
+      "reason": "specific reason this option fits or partially fits"
+    }
+  ],
+  "best_for": "who this option is best for / why this rank makes sense",
   "match_sections": [
     {
       "type": "trip_goal",
@@ -179,6 +194,17 @@ Each option should keep this UI-compatible shape:
   ]
 }
 ```
+
+`why_this_works_for_you` is required for every option. Build it from:
+
+- every material field in `trip_context.matcher`
+- every material common trip-context field that affects fit, especially duration, travel month/season, origin/reachability, budget, companions/group type, weather preference, crowd preference, prior travel, and hard exclusions
+
+If Meridian receives a field in `trip_context` or `trip_context.matcher`, consider whether it affects fit. If it does, reflect it in `why_this_works_for_you`, `tradeoffs`, or the option explanation. Do not silently ignore useful supplied context.
+
+For the same query, both content depth and practical fit can appear separately. For example, "enough attractions to comfortably spend 3-4 days exploring" explains content depth, while "3-4 day trip fit" explains pacing/logistics.
+
+If a criterion is only a partial fit, include it honestly and explain the caution. Do not hide it only in `tradeoffs`.
 
 For circuits, include stops and internal travel sections when useful:
 
