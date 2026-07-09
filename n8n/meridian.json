@@ -3,19 +3,6 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  return {\n    json: JSON.parse(item.json.output)\n  };\n});"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        160,
-        -120
-      ],
-      "id": "504abfdc-aa35-4530-807d-223a080cf81d",
-      "name": "Output parser"
-    },
-    {
-      "parameters": {
         "httpMethod": "POST",
         "path": "meridian",
         "responseMode": "responseNode",
@@ -24,31 +11,32 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -400,
-        -120
+        -80,
+        0
       ],
-      "id": "661ae0ce-6f57-45bd-a588-960de13ae5cd",
+      "id": "488c3640-3d83-4568-babd-afd0925cc29b",
       "name": "Webhook",
       "webhookId": "4207bdee-78f4-4d90-8d2f-3d5de97022af"
     },
     {
       "parameters": {
         "respondWith": "json",
+        "responseBody": "={{ $json }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        360,
-        -120
+        840,
+        0
       ],
-      "id": "ac1da79e-ed04-45f4-bdf9-11da0622d161",
+      "id": "8f0b5ed5-9a84-48be-87fb-b58d9445e118",
       "name": "Respond to Webhook"
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "={{ JSON.stringify({ trip_context: $('Webhook').item.json.body.trip_context }) }}",
+        "text": "={{ JSON.stringify({\n  trip_state: $('Webhook').item.json.body.trip_state || {},\n  message: $('Webhook').item.json.body.message || null\n}) }}",
         "options": {
           "systemMessage": "={{ $('Webhook').item.json.body.prompt }}"
         }
@@ -56,10 +44,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.8,
       "position": [
-        -180,
-        -120
+        200,
+        0
       ],
-      "id": "26a56a9c-eb45-4dc8-91fc-e6a88a694f6f",
+      "id": "d8d4a246-e995-4031-ab74-4d394f3bd976",
       "name": "Meridian"
     },
     {
@@ -70,32 +58,34 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
       "typeVersion": 1,
       "position": [
-        -160,
-        80
+        220,
+        200
       ],
-      "id": "d0d7d390-8df6-476c-aff4-149711968fc7",
+      "id": "20e79d0f-c117-436b-91d0-54b996f36a90",
       "name": "Groq Chat Model",
       "credentials": {
         "groqApi": {
-          "id": "OOGaswauojFHwM7l",
-          "name": "Groq"
+          "id": "HBYxDE4k9lhrrGOL",
+          "name": "Groq account"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  return {\n    json: JSON.parse(item.json.output)\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        0
+      ],
+      "id": "ca30f444-8d6d-4de9-9359-c5beb24e897b",
+      "name": "Output parser"
     }
   ],
   "pinData": {},
   "connections": {
-    "Output parser": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Webhook": {
       "main": [
         [
@@ -128,17 +118,28 @@
           }
         ]
       ]
+    },
+    "Output parser": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "27eab359-a4d5-494b-8381-85f3469406a0",
+  "versionId": "50e8ee14-ba18-455b-b3f9-7e994cff4f20",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "4ee2fc9d027b00e4012c6007485e6c692d638673139c999bd0f2de313b590edc"
+    "instanceId": "111d80fe232db9ee76f854ab72cbe1edcebe23e73237176ddf890a8073d51fa7"
   },
-  "id": "gXo4qWCWl3oRwelo",
+  "id": "vF6LsSc1aeyPsTHc",
   "tags": []
 }

@@ -100,11 +100,11 @@ Every response must follow this envelope:
   "message": "string",
   "state_delta": {
     "trip_context": {},
-    "matcher_state": {
+    "advisor_state": {
       "conversation_context": {
-        "last_scout_message": "string - always include",
-        "awaiting": "string | null"
-      }
+        "last_advisor_message": "string"
+      },
+      "artifacts": []
     }
   },
   "intent": "advise | matcher | planner | null"
@@ -113,7 +113,34 @@ Every response must follow this envelope:
 
 Only include `trip_context` keys that are new or updated this turn. Preserve existing trip context unless the traveler changes it.
 
-Always include `matcher_state.conversation_context.last_scout_message` and `matcher_state.conversation_context.awaiting`. When Scout is the visible responder, `last_scout_message` must exactly match `message`. For `intent = matcher` or `intent = planner`, downstream UI/agents own the visible reply, so `message` may be empty.
+Only write phase-owned state for the active visible phase:
+
+- For `intent = "advise"`, write `advisor_state`.
+- For `intent = "matcher"`, do not write `advisor_state` or `matcher_state`; Meridian owns matcher state.
+- For `intent = "planner"`, do not write `advisor_state`, `matcher_state`, or `planner_state`; the planner layer owns planner state.
+- For `intent = null`, write only `trip_context` unless the reply is substantial travel advice.
+
+When `intent = "advise"` and the answer is substantial enough to be useful on resume, include:
+
+```json
+"advisor_state": {
+  "conversation_context": {
+    "last_advisor_message": "same text as message"
+  },
+  "artifacts": [
+    {
+      "type": "advice",
+      "source": "scout",
+      "assistant_message": "same text as message",
+      "created_at": "ISO-8601 timestamp"
+    }
+  ]
+}
+```
+
+`advisor_state.artifacts[].assistant_message` must be verbatim identical to the top-level `message`. Do not summarize it. Do not include the user's message in the artifact; useful user-provided context belongs in `trip_context`.
+
+Do not create advisor artifacts for short acknowledgements, thanks, planner coming-soon replies, matcher routing turns, or Meridian recommendation output.
 
 Do not write `stage` in `state_delta`.
 
@@ -156,7 +183,7 @@ If Scout is not the visible responder, `message` may be an empty string.
 
 ## Resume Behavior
 
-If `message = null`, do not extract anything. Resume from `trip_state.matcher_state.conversation_context` and the existing `trip_context`.
+If `message = null`, do not extract anything. Resume from existing `trip_context`, `advisor_state`, and matcher/planner state as relevant.
 
 Do not re-introduce yourself. If Scout is the visible responder, briefly acknowledge the existing context and continue naturally.
 
