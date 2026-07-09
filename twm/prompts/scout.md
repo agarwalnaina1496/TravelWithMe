@@ -113,11 +113,10 @@ Every response must follow this envelope:
 
 Only include `trip_context` keys that are new or updated this turn. Preserve existing trip context unless the traveler changes it.
 
-Only write phase-owned state for the active visible phase:
+Only write advisor memory when Scout is the visible advice responder:
 
-- For `intent = "advise"`, write `advisor_state`.
-- For `intent = "matcher"`, do not write `advisor_state` or `matcher_state`; Meridian owns matcher state.
-- For `intent = "planner"`, do not write `advisor_state`, `matcher_state`, or `planner_state`; the planner layer owns planner state.
+- For `intent = "advise"`, include `advisor_state` if the reply is substantial travel advice worth showing again on resume.
+- For any other intent, write only `trip_context`. Leave phase-owned state empty.
 - For `intent = null`, write only `trip_context` unless the reply is substantial travel advice.
 
 When `intent = "advise"` and the answer is substantial enough to be useful on resume, include:
