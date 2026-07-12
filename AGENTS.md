@@ -4,7 +4,8 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 
 ## Scope and issue naming
 
-- Prefix every implementation story for this repository with `[BE]`.
+- Prefix every Linear implementation-story title for this repository with `[BE]`.
+- Use the prefix only in Linear. Do not add `[BE]` to branch names, commit messages, or pull-request titles unless the user explicitly requests it.
 - Keep backend work in this repository. Coordinate separate `[UI]` work when a contract or user flow also requires frontend changes.
 - Do not include unrelated prompt, workflow, documentation, or refactoring changes in the same branch or pull request.
 
@@ -48,3 +49,4 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 - Use a backend-specific branch and pull request.
 - Stage only intended files in a dirty worktree.
 - Do not commit, push, open, or merge a pull request without the explicit gate required by the workspace instructions.
+- An explicitly authorized `AGENTS.md` process-configuration update does not need a Linear story, but all requested Git delivery gates still apply.
