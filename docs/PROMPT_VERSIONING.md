@@ -53,4 +53,4 @@ This mechanism defines prompt releases only. FastAPI response provenance is a se
 
 The GitHub Actions workflow at `.github/workflows/ci-runner.yaml` runs the prompt version policy check for pull requests targeting `main`. It compares the pull request with its base branch and fails when a changed Scout or Meridian prompt does not include the corresponding version bump and changelog heading.
 
-The workflow delegates the policy logic to `scripts/check_prompt_version_changes.py`; the script remains the single implementation that developers can also run locally. To prevent merging after a failure, repository branch protection or a ruleset must require the `Prompt version check` status check.
+The workflow delegates the policy logic to `scripts/check_prompt_version_changes.py`; the script remains the single implementation that developers can also run locally. To prevent merging after a failure, repository branch protection or a ruleset must require the generic `CI Runner` status check. Additional backend CI validations can be added to the same runner over time.

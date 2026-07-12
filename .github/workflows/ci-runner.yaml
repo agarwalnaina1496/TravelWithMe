@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  prompt-version-check:
-    name: Prompt version check
+  ci-runner:
+    name: CI Runner
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository history
