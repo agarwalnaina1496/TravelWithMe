@@ -34,7 +34,9 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 
 - Documentation updates are mandatory for every implementation story.
 - Include affected API contracts, prompt behavior, state ownership, versioning rules, and operational flow in the story scope, acceptance criteria, and verification plan.
-- When canonical documentation lives in `TWM_Docs/`, plan and verify the coordinated documentation change without folding that repository into this repository's Git history or pull request.
+- Keep product behavior and shared-contract docs in `TWM_Docs/`, including Scout/Meridian behavior, the playbook, product architecture, TripState/stages/CTA mappings, and shared API/user flows.
+- Keep backend technical and operational docs in this repository, including prompt versioning/changelogs, FastAPI internals, n8n, EC2, deployment/runtime configuration, and backend troubleshooting.
+- Do not create a duplicate `TWM_Docs/` change for backend-only technical or operational documentation.
 - A backend story is not complete while its documented behavior or contract is stale.
 
 ## Verification
@@ -50,3 +52,4 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 - Stage only intended files in a dirty worktree.
 - Do not commit, push, open, or merge a pull request without the explicit gate required by the workspace instructions.
 - An explicitly authorized `AGENTS.md` process-configuration update does not need a Linear story, but all requested Git delivery gates still apply.
+- A request to address PR review comments authorizes brief replies and resolution of verified addressed threads unless the user says otherwise.
