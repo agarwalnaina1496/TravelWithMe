@@ -1,4 +1,5 @@
-"""Require prompt behavior changes to carry a version bump and changelog entry."""
+# Developer/CI check: compare prompts with a base ref and require a matching
+# version bump plus changelog heading for every changed prompt.
 
 from __future__ import annotations
 

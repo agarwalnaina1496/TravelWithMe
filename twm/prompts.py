@@ -33,6 +33,7 @@ def _normalize_agent(agent: str) -> str:
 
 
 def load_prompt_versions() -> dict[str, str]:
+    # Versions are backend-owned, so reject partial or loose registries.
     try:
         raw_versions = json.loads(VERSIONS_FILE.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -73,6 +74,7 @@ def load_prompt(agent: str) -> str:
 
 
 def load_prompt_release(agent: str) -> PromptRelease:
+    # Pair content and version so provenance cannot drift from the loaded prompt.
     prompt_name = _normalize_agent(agent)
     return PromptRelease(
         agent=prompt_name,
@@ -82,6 +84,7 @@ def load_prompt_release(agent: str) -> PromptRelease:
 
 
 def validate_prompt_release_files() -> None:
+    # Every current version needs a human-readable release entry.
     versions = load_prompt_versions()
     try:
         changelog = CHANGELOG_FILE.read_text(encoding="utf-8")
