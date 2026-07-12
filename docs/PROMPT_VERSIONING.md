@@ -45,12 +45,25 @@ python scripts/check_prompt_version_changes.py origin/main
 
 The first versioning change is treated as a bootstrap because its base ref has no version registry.
 
-## Runtime Boundary
+## Runtime provenance
 
-This mechanism defines prompt releases only. FastAPI response provenance is a separate capability. Runtime version metadata must be attached by backend code, not trusted from LLM or n8n output.
+FastAPI attaches backend-owned provenance to every normalized Scout and Meridian response:
+
+```json
+{
+  "agent_meta": {
+    "agent": "scout",
+    "prompt_version": "1.0.0"
+  }
+}
+```
+
+The backend loads prompt content and its version as one release before agent execution, then attaches `agent_meta` during response normalization. Any `agent_meta` claimed by LLM or n8n output is ignored. Missing or invalid version configuration stops execution rather than returning misleading provenance.
+
+Meridian's legacy top-level `version` remains part of its existing output contract for compatibility, but it is not prompt provenance. Consumers must use `agent_meta.prompt_version` when identifying the deployed prompt release. Error responses produced after a valid prompt release is loaded also include `agent_meta`; configuration failures that prevent loading a release do not produce a normalized agent response.
 
 ## Pull request enforcement
 
-The GitHub Actions workflow at `.github/workflows/ci-runner.yaml` runs the prompt version policy check for pull requests targeting `main`. It compares the pull request with its base branch and fails when a changed Scout or Meridian prompt does not include the corresponding version bump and changelog heading.
+The GitHub Actions workflow at `.github/workflows/ci-runner.yaml` installs backend dependencies, runs the prompt version policy check, and executes backend tests for pull requests targeting `main`. The policy check compares the pull request with its base branch and fails when a changed Scout or Meridian prompt does not include the corresponding version bump and changelog heading.
 
 The workflow delegates the policy logic to `scripts/check_prompt_version_changes.py`; the script remains the single implementation that developers can also run locally. To prevent merging after a failure, repository branch protection or a ruleset must require the generic `CI Runner` status check. Additional backend CI validations can be added to the same runner over time.
