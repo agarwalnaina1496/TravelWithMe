@@ -32,12 +32,13 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 
 ## Documentation
 
-- Documentation updates are mandatory for every implementation story.
-- Include affected API contracts, prompt behavior, state ownership, versioning rules, and operational flow in the story scope, acceptance criteria, and verification plan.
+- Require documentation when a story changes product behavior, a shared/public contract, prompt behavior, state ownership, architecture, or a material operational workflow.
+- Do not require standalone documentation for every small internal or technical change. Tests, concise PR context, and code comments are sufficient when no product or operational contract changes.
+- Include only genuinely affected documentation in story scope, acceptance criteria, and verification.
 - Keep product behavior and shared-contract docs in `TWM_Docs/`, including Scout/Meridian behavior, the playbook, product architecture, TripState/stages/CTA mappings, and shared API/user flows.
 - Keep backend technical and operational docs in this repository, including prompt versioning/changelogs, FastAPI internals, n8n, EC2, deployment/runtime configuration, and backend troubleshooting.
 - Do not create a duplicate `TWM_Docs/` change for backend-only technical or operational documentation.
-- A backend story is not complete while its documented behavior or contract is stale.
+- A backend story is not complete while affected product, contract, or operational documentation is stale.
 
 ## Verification
 
