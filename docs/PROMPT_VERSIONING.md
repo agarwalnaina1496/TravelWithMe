@@ -48,3 +48,9 @@ The first versioning change is treated as a bootstrap because its base ref has n
 ## Runtime Boundary
 
 This mechanism defines prompt releases only. FastAPI response provenance is a separate capability. Runtime version metadata must be attached by backend code, not trusted from LLM or n8n output.
+
+## Pull request enforcement
+
+The GitHub Actions workflow at `.github/workflows/ci-runner.yaml` runs the prompt version policy check for pull requests targeting `main`. It compares the pull request with its base branch and fails when a changed Scout or Meridian prompt does not include the corresponding version bump and changelog heading.
+
+The workflow delegates the policy logic to `scripts/check_prompt_version_changes.py`; the script remains the single implementation that developers can also run locally. To prevent merging after a failure, repository branch protection or a ruleset must require the `Prompt version check` status check.
