@@ -1,0 +1,27 @@
+name: CI Runner
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ci-runner:
+    name: CI Runner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Enforce prompt release metadata
+        run: python scripts/check_prompt_version_changes.py "origin/${{ github.base_ref }}"

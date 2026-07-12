@@ -35,3 +35,10 @@ TODO: Define booking scope, partner integrations, payment boundaries, and user f
 Placeholder.
 
 TODO: Define in-trip assistance, notifications, itinerary changes, and support behavior.
+
+## Backend Technical Documentation
+
+- [Prompt versioning](docs/PROMPT_VERSIONING.md)
+- [Render FastAPI deployment](docs/RENDER_FASTAPI.md)
+- [Self-hosted n8n](docs/SELF_HOSTED_N8N.md)
+- [EC2 setup](docs/EC2_SETUP.md)
