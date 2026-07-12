@@ -1,35 +1,49 @@
-import httpx
-from .prompts import load_prompt
-from .shared.properties import property_loader
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Protocol
 
+import httpx
+
+from .prompts import PromptRelease, load_prompt_release
+from .shared.properties import property_loader
+
+
+@dataclass(frozen=True)
+class AgentExecution:
+    response: Dict[str, Any]
+    prompt_release: PromptRelease
+
+
 class AgentEngine(Protocol):
-    def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> Dict[str, Any]:
+    def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> AgentExecution:
         ...
 
-    def meridian(self, trip_state: Dict[str, Any]) -> Dict[str, Any]:
+    def meridian(self, trip_state: Dict[str, Any]) -> AgentExecution:
         ...
 
 
 class N8NAgentEngine:
-    def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> Dict[str, Any]:
-        return self._forward(
+    def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> AgentExecution:
+        release = load_prompt_release("scout")
+        response = self._forward(
             "n8n_scout_webhook_url",
             {
-                "prompt": load_prompt("scout"),
+                "prompt": release.content,
                 "trip_state": trip_state,
                 "message": message,
             },
         )
+        return AgentExecution(response=response, prompt_release=release)
 
-    def meridian(self, trip_state: Dict[str, Any]) -> Dict[str, Any]:
-        return self._forward(
+    def meridian(self, trip_state: Dict[str, Any]) -> AgentExecution:
+        release = load_prompt_release("meridian")
+        response = self._forward(
             "n8n_meridian_webhook_url",
             {
-                "prompt": load_prompt("meridian"),
+                "prompt": release.content,
                 "trip_state": trip_state,
             },
         )
+        return AgentExecution(response=response, prompt_release=release)
 
     def _forward(self, property_key: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -49,7 +63,9 @@ class N8NAgentEngine:
 
 
 def get_agent_engine() -> AgentEngine:
-    engine_name = property_loader.get_string_property_with_default("agent_engine", "n8n").lower()
+    engine_name = property_loader.get_string_property_with_default(
+        "agent_engine", "n8n"
+    ).lower()
 
     if engine_name == "n8n":
         return N8NAgentEngine()
