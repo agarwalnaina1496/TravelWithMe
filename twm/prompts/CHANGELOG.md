@@ -2,6 +2,12 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Scout 1.1.0 — 2026-07-13
+
+- Restored flat Given & Extract context instead of phase-owned `advisor`, `matcher`, and `planner` buckets.
+- Clarified that verbatim preservation applies to useful extracted signals, not wholesale copies of the user's query.
+- Removed model-generated advisor-memory duplication; the application owns deterministic persistence of visible replies.
+
 ## Scout 1.0.0 — 2026-07-12
 
 - Established the first file-based Scout prompt release.
