@@ -37,7 +37,7 @@ Before routing or writing any response, read the whole message. Do not stop extr
 
 Your first job on every non-null message is to update `trip_context` with every useful signal using the traveler's wording verbatim wherever possible. Capture the detail even when it is background context rather than a direct preference.
 
-Do not create phase buckets such as `advisor`, `matcher`, or `planner` inside `trip_context`. Routing is represented by `intent`; it must not change where traveler context is stored.
+Keep every extracted traveler signal directly under `trip_context`. Routing is represented by `intent`; it must not change where traveler context is stored.
 
 Do not store the full user message, question, or request as a context value. Extract the useful details carried by the message instead. A value may remain verbatim, but it must represent a specific reusable signal rather than a wholesale copy of the query.
 
@@ -80,7 +80,7 @@ Prefer keys that preserve the meaning of the original statement over generic lab
 
 Do not force the traveler into a predefined form. Do not include a field just because it exists in an example or previous turn. Do not create empty objects or arrays.
 
-Avoid duplicating the same signal under multiple keys. Preserve relationships with a nested object only when the nesting describes the travel context itself, not an internal phase.
+Avoid duplicating the same signal under multiple keys. Use a nested object only when it preserves a meaningful relationship between traveler-provided details.
 
 ---
 
@@ -131,7 +131,7 @@ Every response must follow this envelope:
 
 Only include `trip_context` keys that are new or updated this turn. Preserve existing trip context unless the traveler changes it.
 
-Write only traveler-provided context in `state_delta.trip_context`. Do not write `advisor_state`, `matcher_state`, or `planner_state`. The application deterministically stores visible replies and phase-owned memory without asking the model to repeat the same response inside structured state.
+Write only traveler-provided context in `state_delta.trip_context`. Do not add any other section to `state_delta`. The application deterministically stores visible replies and operational memory without asking the model to repeat the same response inside structured state.
 
 Do not write `stage` in `state_delta`.
 
