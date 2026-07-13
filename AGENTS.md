@@ -11,9 +11,7 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 
 ## Product intent and discovery
 
-- The user's explicit decisions in the active discovery define intended product behavior.
 - This product is currently pre-MVP. Do not add backward compatibility, migrations, rollout layers, or support for legacy request/state shapes unless the user explicitly requests them; implement the current approved canonical contract directly.
-- Treat prompts, code, tests, and documentation as evidence of current behavior. Surface conflicts and ask the user to decide rather than silently selecting an artifact as product authority.
 - Inspect the relevant UI integration before finalizing changes to an API or end-to-end user flow.
 
 ## Agent prompts and workflows
@@ -33,13 +31,10 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 
 ## Documentation
 
-- Require documentation when a story changes product behavior, a shared/public contract, prompt behavior, state ownership, architecture, or a material operational workflow.
-- Do not require standalone documentation for every small internal or technical change. Tests, concise PR context, and code comments are sufficient when no product or operational contract changes.
-- Include only genuinely affected documentation in story scope, acceptance criteria, and verification.
 - Keep product behavior and shared-contract docs in `TWM_Docs/`, including Scout/Meridian behavior, the playbook, product architecture, TripState/stages/CTA mappings, and shared API/user flows.
 - Keep backend technical and operational docs in this repository, including prompt versioning/changelogs, FastAPI internals, n8n, EC2, deployment/runtime configuration, and backend troubleshooting.
 - Do not create a duplicate `TWM_Docs/` change for backend-only technical or operational documentation.
-- A backend story is not complete while affected product, contract, or operational documentation is stale.
+- Keep affected Backend-owned technical or operational documentation aligned with the implementation.
 
 ## Verification
 
@@ -48,12 +43,9 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 - When a change includes both prompt and backend code, run the relevant backend unit tests in addition to prompt-behavior verification.
 - Validate both Scout and Meridian handoff behavior when routing or shared context changes.
 - For API changes, verify normalized FastAPI responses rather than only raw n8n/LLM output.
-- Report backend checks, documentation verification, compatibility risks, and rollback instructions separately from UI results.
+- Report Backend checks, affected documentation verification, known limitations, and rollback instructions separately from UI results.
 
 ## Git delivery
 
 - Use a backend-specific branch and pull request.
 - Stage only intended files in a dirty worktree.
-- Do not commit, push, open, or merge a pull request without the explicit gate required by the workspace instructions.
-- An explicitly authorized `AGENTS.md` process-configuration update does not need a Linear story, but all requested Git delivery gates still apply.
-- A request to address PR review comments authorizes brief replies and resolution of verified addressed threads unless the user says otherwise.
