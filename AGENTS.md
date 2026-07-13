@@ -4,14 +4,14 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 
 ## Scope and issue naming
 
-- Prefix every implementation story for this repository with `[BE]`.
+- Prefix every Linear implementation-story title for this repository with `[BE]`.
+- Use the prefix only in Linear. Do not add `[BE]` to branch names, commit messages, or pull-request titles unless the user explicitly requests it.
 - Keep backend work in this repository. Coordinate separate `[UI]` work when a contract or user flow also requires frontend changes.
 - Do not include unrelated prompt, workflow, documentation, or refactoring changes in the same branch or pull request.
 
 ## Product intent and discovery
 
-- The user's explicit decisions in the active discovery define intended product behavior.
-- Treat prompts, code, tests, and documentation as evidence of current behavior. Surface conflicts and ask the user to decide rather than silently selecting an artifact as product authority.
+- This product is currently pre-MVP. Do not add backward compatibility, migrations, rollout layers, or support for legacy request/state shapes unless the user explicitly requests them; implement the current approved canonical contract directly.
 - Inspect the relevant UI integration before finalizing changes to an API or end-to-end user flow.
 
 ## Agent prompts and workflows
@@ -27,24 +27,25 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 - Backend request and response schemas are the implementation source of truth for API contracts after the intended behavior is approved.
 - Keep FastAPI schemas, response normalization, agent-engine forwarding, and workflow structured-output schemas aligned.
 - Agents must not write UI-owned deterministic fields such as lifecycle stage, selected option, or stored recommendation history unless an approved contract explicitly changes ownership.
-- Prefer backward-compatible response additions. Document compatibility and rollout sequencing for any breaking change.
+- Do not preserve superseded API or state shapes by default during pre-MVP development.
 
 ## Documentation
 
-- Documentation updates are mandatory for every implementation story.
-- Include affected API contracts, prompt behavior, state ownership, versioning rules, and operational flow in the story scope, acceptance criteria, and verification plan.
-- When canonical documentation lives in `TWM_Docs/`, plan and verify the coordinated documentation change without folding that repository into this repository's Git history or pull request.
-- A backend story is not complete while its documented behavior or contract is stale.
+- Keep product behavior and shared-contract docs in `TWM_Docs/`, including Scout/Meridian behavior, the playbook, product architecture, TripState/stages/CTA mappings, and shared API/user flows.
+- Keep backend technical and operational docs in this repository, including prompt versioning/changelogs, FastAPI internals, n8n, EC2, deployment/runtime configuration, and backend troubleshooting.
+- Do not create a duplicate `TWM_Docs/` change for backend-only technical or operational documentation.
+- Keep affected Backend-owned technical or operational documentation aligned with the implementation.
 
 ## Verification
 
-- Run focused prompt/contract regression tests plus relevant backend tests for every changed path.
+- Require unit tests for backend code changes. Prompt-only Markdown changes do not require unit tests that assert prompt text.
+- Validate prompt-only changes through representative behavioral cases, prompt release/version checks, structured-output checks, and relevant manual or workflow verification.
+- When a change includes both prompt and backend code, run the relevant backend unit tests in addition to prompt-behavior verification.
 - Validate both Scout and Meridian handoff behavior when routing or shared context changes.
 - For API changes, verify normalized FastAPI responses rather than only raw n8n/LLM output.
-- Report backend checks, documentation verification, compatibility risks, and rollback instructions separately from UI results.
+- Report Backend checks, affected documentation verification, known limitations, and rollback instructions separately from UI results.
 
 ## Git delivery
 
 - Use a backend-specific branch and pull request.
 - Stage only intended files in a dirty worktree.
-- Do not commit, push, open, or merge a pull request without the explicit gate required by the workspace instructions.
