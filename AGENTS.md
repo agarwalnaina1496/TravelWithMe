@@ -12,6 +12,7 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 ## Product intent and discovery
 
 - The user's explicit decisions in the active discovery define intended product behavior.
+- This product is currently pre-MVP. Do not add backward compatibility, migrations, rollout layers, or support for legacy request/state shapes unless the user explicitly requests them; implement the current approved canonical contract directly.
 - Treat prompts, code, tests, and documentation as evidence of current behavior. Surface conflicts and ask the user to decide rather than silently selecting an artifact as product authority.
 - Inspect the relevant UI integration before finalizing changes to an API or end-to-end user flow.
 
@@ -28,7 +29,7 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 - Backend request and response schemas are the implementation source of truth for API contracts after the intended behavior is approved.
 - Keep FastAPI schemas, response normalization, agent-engine forwarding, and workflow structured-output schemas aligned.
 - Agents must not write UI-owned deterministic fields such as lifecycle stage, selected option, or stored recommendation history unless an approved contract explicitly changes ownership.
-- Prefer backward-compatible response additions. Document compatibility and rollout sequencing for any breaking change.
+- Do not preserve superseded API or state shapes by default during pre-MVP development.
 
 ## Documentation
 
@@ -42,7 +43,9 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 
 ## Verification
 
-- Run focused prompt/contract regression tests plus relevant backend tests for every changed path.
+- Require unit tests for backend code changes. Prompt-only Markdown changes do not require unit tests that assert prompt text.
+- Validate prompt-only changes through representative behavioral cases, prompt release/version checks, structured-output checks, and relevant manual or workflow verification.
+- When a change includes both prompt and backend code, run the relevant backend unit tests in addition to prompt-behavior verification.
 - Validate both Scout and Meridian handoff behavior when routing or shared context changes.
 - For API changes, verify normalized FastAPI responses rather than only raw n8n/LLM output.
 - Report backend checks, documentation verification, compatibility risks, and rollback instructions separately from UI results.
