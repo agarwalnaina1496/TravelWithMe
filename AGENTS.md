@@ -38,7 +38,9 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 
 ## Verification
 
-- Run focused prompt/contract regression tests plus relevant backend tests for every changed path.
+- Require unit tests for backend code changes. Prompt-only Markdown changes do not require unit tests that assert prompt text.
+- Validate prompt-only changes through representative behavioral cases, prompt release/version checks, structured-output checks, and relevant manual or workflow verification.
+- When a change includes both prompt and backend code, run the relevant backend unit tests in addition to prompt-behavior verification.
 - Validate both Scout and Meridian handoff behavior when routing or shared context changes.
 - For API changes, verify normalized FastAPI responses rather than only raw n8n/LLM output.
 - Report backend checks, documentation verification, compatibility risks, and rollback instructions separately from UI results.
