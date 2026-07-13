@@ -10,7 +10,11 @@ from ..schemas import (
     ScoutRequest,
     ScoutResponse,
 )
-from ..services import AgentExecution
+from ..services import (
+    AgentExecution,
+    _extract_context_from_message,
+    build_conversation_clarification,
+)
 
 router = APIRouter(tags=["Trip Matcher"])
 
@@ -69,5 +73,15 @@ async def scout(payload: ScoutRequest):
 
 @router.post("/meridian", response_model=MeridianResponse)
 async def meridian(payload: MeridianRequest):
-    execution = engine.meridian(payload.trip_state)
+    prepared_trip_state = _extract_context_from_message(payload.trip_state, payload.message)
+    clarification = build_conversation_clarification(prepared_trip_state, payload.message)
+    if clarification is not None:
+        return MeridianResponse(**clarification)
+
+    execution = engine.meridian(prepared_trip_state)
     return _normalize_meridian_response(execution)
+
+
+@router.post("/conversation", response_model=MeridianResponse)
+async def conversation(payload: MeridianRequest):
+    return await meridian(payload)

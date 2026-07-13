@@ -10,6 +10,7 @@ class ScoutRequest(BaseModel):
 
 class MeridianRequest(BaseModel):
     trip_state: Dict[str, Any] = Field(default_factory=dict)
+    message: Optional[str] = None
 
 
 class AgentMeta(BaseModel):
