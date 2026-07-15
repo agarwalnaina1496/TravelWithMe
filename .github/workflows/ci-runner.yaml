@@ -24,7 +24,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install backend dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install -r requirements.txt
 
       - name: Enforce prompt release metadata
         run: python scripts/check_prompt_version_changes.py "origin/${{ github.base_ref }}"
