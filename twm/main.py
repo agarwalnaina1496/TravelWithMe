@@ -6,7 +6,7 @@ from .routers.health import router as health_api
 from .routers.trip_matcher import router as trip_matcher_api
 
 
-def initialize_app():
+def initialize_app() -> FastAPI:
     app = FastAPI(title="TravelWithMe Trip Matcher")
     app.add_middleware(
         CORSMiddleware,

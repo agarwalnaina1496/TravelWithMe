@@ -1,11 +1,10 @@
-from typing import Any, Dict, List, Literal, Optional
+"""Meridian API contracts and ownership validation."""
+
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
-class ScoutRequest(BaseModel):
-    trip_state: Dict[str, Any] = Field(default_factory=dict)
-    message: Optional[str] = None
+from .common import AgentMeta
 
 
 class MeridianAdvisorConversationContext(BaseModel):
@@ -25,9 +24,9 @@ class MeridianAdvisorState(BaseModel):
 class MeridianTripState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_context: Dict[str, Any] = Field(default_factory=dict)
+    trip_context: dict[str, Any] = Field(default_factory=dict)
     advisor_state: MeridianAdvisorState = Field(default_factory=MeridianAdvisorState)
-    matcher_state: Dict[str, Any] = Field(default_factory=dict)
+    matcher_state: dict[str, Any] = Field(default_factory=dict)
 
 
 class MeridianRequest(BaseModel):
@@ -37,23 +36,11 @@ class MeridianRequest(BaseModel):
     message: Optional[str] = None
 
 
-class AgentMeta(BaseModel):
-    agent: Literal["scout", "meridian"]
-    prompt_version: str
-
-
-class ScoutResponse(BaseModel):
-    message: Optional[str] = None
-    state_delta: Dict[str, Any]
-    intent: Optional[str] = None
-    agent_meta: AgentMeta
-
-
 class MeridianStateDelta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_context: Dict[str, Any] = Field(default_factory=dict)
-    matcher_state: Dict[str, Any] = Field(default_factory=dict)
+    trip_context: dict[str, Any] = Field(default_factory=dict)
+    matcher_state: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def reject_ui_owned_state(self) -> "MeridianStateDelta":
@@ -82,8 +69,8 @@ class MeridianResponse(BaseModel):
     message: Optional[str] = None
     generated_at: Optional[str] = None
     trip_type: Optional[Literal["single", "circuit", "mixed"]] = None
-    options: List[Dict[str, Any]] = Field(default_factory=list)
-    constraint_adjustment_suggestions: Optional[List[str]] = None
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    constraint_adjustment_suggestions: Optional[list[str]] = None
     agent_meta: AgentMeta
 
     @model_validator(mode="after")
