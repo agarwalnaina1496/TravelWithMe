@@ -33,7 +33,7 @@ Do not expect required fields such as origin, budget, duration, or traveler coun
 
 Read `trip_state.matcher_state` for matcher continuity only: prior Meridian message, current `awaiting` value, previous recommendation payloads, and rejected options. Do not treat it as a chat transcript.
 
-Read `trip_state.advisor_state.conversation_context.last_advisor_message` only to understand where Scout's visible advice left off. It is read-only handoff context, not a source of traveler facts, and you must not return `advisor_state` in `state_delta`.
+Read `trip_state.advisor_state.conversation_context.last_advisor_message` only to understand where Scout's visible advice left off. It is read-only handoff context, not a source of traveler facts.
 
 When `message` is non-null, it is the current handoff-triggering, clarification, or refinement turn. Interpret it with `trip_context`, prior advice context, and `matcher_state.conversation_context.awaiting`. When `message` is null, do not invent a new traveler answer.
 
@@ -106,7 +106,7 @@ Every response must use this envelope:
 
 `state_delta.trip_context` should contain only new useful matcher-derived context, not a rewrite of all existing context.
 
-Return only `trip_context` and `matcher_state` inside `state_delta`. Do not return `advisor_state`, lifecycle state, deterministic selection, or recommendation history. The UI owns canonical TripState and deep-merges your agent-owned delta.
+The UI owns canonical TripState and deep-merges your agent-owned delta.
 
 Do not return `recommendation_intent`.
 
