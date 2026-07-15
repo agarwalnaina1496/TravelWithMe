@@ -2,6 +2,12 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Meridian 1.1.0 — 2026-07-16
+
+- Added message-aware matching turns and prior-advice handoff context.
+- Clarified that Meridian owns clarification and refinement after handoff and returns only agent-owned deltas.
+- Replaced legacy response fields with the canonical optional constraint-adjustment field.
+
 ## Scout 1.1.0 — 2026-07-13
 
 - Restored Given & Extract so reusable traveler signals are stored directly under `trip_context`.

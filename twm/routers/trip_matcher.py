@@ -48,17 +48,21 @@ def _normalize_scout_response(execution: AgentExecution) -> ScoutResponse:
 
 def _normalize_meridian_response(execution: AgentExecution) -> MeridianResponse:
     response = _unwrap_agent_response(execution.response)
-    return MeridianResponse(
-        **{
-            **response,
-            "status": response.get("status") or "HARD_FAIL",
-            "message": response.get("message") or "",
-            "state_delta": response.get("state_delta") or {},
-            "options": response.get("options") or [],
-            # Backend release metadata always wins over model/n8n output.
-            "agent_meta": _agent_meta(execution),
-        }
-    )
+    normalized = {
+        "status": response.get("status") or "HARD_FAIL",
+        "message": response.get("message") or "",
+        "state_delta": response.get("state_delta") or {},
+        "generated_at": response.get("generated_at"),
+        "trip_type": response.get("trip_type"),
+        "options": response.get("options") or [],
+        # Backend release metadata always wins over model/n8n output.
+        "agent_meta": _agent_meta(execution),
+    }
+    if "constraint_adjustment_suggestions" in response:
+        normalized["constraint_adjustment_suggestions"] = response[
+            "constraint_adjustment_suggestions"
+        ]
+    return MeridianResponse(**normalized)
 
 
 @router.post("/scout", response_model=ScoutResponse)
@@ -67,7 +71,9 @@ async def scout(payload: ScoutRequest):
     return _normalize_scout_response(execution)
 
 
-@router.post("/meridian", response_model=MeridianResponse)
+@router.post(
+    "/meridian", response_model=MeridianResponse, response_model_exclude_none=True
+)
 async def meridian(payload: MeridianRequest):
-    execution = engine.meridian(payload.trip_state)
+    execution = engine.meridian(payload.trip_state.model_dump(), payload.message)
     return _normalize_meridian_response(execution)

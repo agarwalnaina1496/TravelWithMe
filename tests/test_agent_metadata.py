@@ -41,9 +41,9 @@ class AgentMetadataTests(unittest.TestCase):
 
         response = _normalize_meridian_response(execution)
 
-        self.assertEqual(response.version, "matcher_v2")
         self.assertEqual(response.agent_meta.agent, "meridian")
         self.assertEqual(response.agent_meta.prompt_version, "2.4.0")
+        self.assertNotIn("version", response.model_dump())
 
 
 if __name__ == "__main__":

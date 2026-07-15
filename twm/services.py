@@ -17,7 +17,9 @@ class AgentEngine(Protocol):
     def scout(self, trip_state: Dict[str, Any], message: Optional[str]) -> AgentExecution:
         ...
 
-    def meridian(self, trip_state: Dict[str, Any]) -> AgentExecution:
+    def meridian(
+        self, trip_state: Dict[str, Any], message: Optional[str]
+    ) -> AgentExecution:
         ...
 
 
@@ -34,13 +36,16 @@ class N8NAgentEngine:
         )
         return AgentExecution(response=response, prompt_release=release)
 
-    def meridian(self, trip_state: Dict[str, Any]) -> AgentExecution:
+    def meridian(
+        self, trip_state: Dict[str, Any], message: Optional[str]
+    ) -> AgentExecution:
         release = load_prompt_release("meridian")
         response = self._forward(
             "n8n_meridian_webhook_url",
             {
                 "prompt": release.content,
                 "trip_state": trip_state,
+                "message": message,
             },
         )
         return AgentExecution(response=response, prompt_release=release)
