@@ -2,6 +2,12 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Meridian 1.2.0 — 2026-07-16
+
+- Added recommendation-type-specific readiness with safe general guidance and one targeted clarification when a material input is missing.
+- Made hard requirements, preferences, budget boundaries, considered destinations, and traveler-specific trade-offs explicit in recommendation reasoning.
+- Added qualified time-sensitive guidance and internally reconciled circuit legs, totals, daily driving, duration, and feasibility.
+
 ## Scout 1.3.0 — 2026-07-16
 
 - Preserved material traveler context, comparison goals, uncertainty qualifiers, destination categories, route distinctions, and multi-stop intent without inventing adjacent facts.
