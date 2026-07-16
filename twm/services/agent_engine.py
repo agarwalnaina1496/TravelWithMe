@@ -78,9 +78,18 @@ class N8NAgentEngine:
 def get_agent_engine() -> AgentEngine:
     engine_name = property_loader.get_string_property_with_default(
         "agent_engine", "n8n"
-    ).lower()
+    ).strip().lower()
 
     if engine_name == "n8n":
         return N8NAgentEngine()
 
-    raise ValueError(f"Unsupported agent_engine: {engine_name}")
+    if engine_name == "langgraph":
+        raise ValueError(
+            "AGENT_ENGINE=langgraph is reserved for TWM-56 and is not "
+            "available in the runtime-foundation release"
+        )
+
+    raise ValueError(
+        f"Unsupported AGENT_ENGINE: {engine_name or '<empty>'}. "
+        "Expected n8n or langgraph."
+    )
