@@ -2,7 +2,9 @@
 
 from unittest.mock import Mock
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from twm.prompts import (
     PromptRelease,
@@ -12,6 +14,7 @@ from twm.prompts import (
 )
 from twm.routers import trip_matcher
 from twm.services import AgentExecution, N8NAgentEngine
+from twm.schemas.scout import ScoutResponse
 
 
 def test_active_phase_prompt_releases_are_complete() -> None:
@@ -62,6 +65,26 @@ def test_scout_api_preserves_entry_contract(
     engine.scout.assert_called_once_with(
         payload["trip_state"], "Tell me about Uttarakhand."
     )
+
+
+@pytest.mark.parametrize(
+    "state_delta",
+    [
+        {"trip_context": {"selected_option": {"id": "ui-owned"}}},
+        {"matcher_state": {"conversation_context": {"awaiting": "budget"}}},
+        {"advisor_state": {"conversation_context": {}}},
+    ],
+)
+def test_scout_response_rejects_non_owned_state_delta(
+    state_delta: dict,
+) -> None:
+    with pytest.raises(ValidationError):
+        ScoutResponse(
+            message="Invalid state write.",
+            state_delta=state_delta,
+            intent="advise",
+            agent_meta={"agent": "scout", "prompt_version": "1.2.0"},
+        )
 
 
 def test_meridian_api_forwards_phase_slice_and_message(
