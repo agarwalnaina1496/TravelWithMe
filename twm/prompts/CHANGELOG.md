@@ -4,9 +4,9 @@ Scout and Meridian are released independently. Add a separate entry whenever a p
 
 ## Scout 1.3.0 — 2026-07-16
 
-- Preserved material traveler context, comparison goals, uncertainty qualifiers, destination categories, route distinctions, and multi-stop intent without inventing adjacent facts.
-- Made direct advice answer-first, traveler-complete, practical, and limited to one decision-changing clarification when needed.
-- Added qualified seasonal and safety guidance with near-departure checks and disruption buffers when live verification is unavailable.
+- Preserved material traveler context, qualifiers, relationships, budget boundaries, route distinctions, seasonal relevance, and trip shape without inventing adjacent facts.
+- Kept Scout limited to extraction, initial routing, and complete general advice while Meridian owns destination and circuit recommendation work.
+- Consolidated answer-first advice and qualified time-sensitive guidance without concrete prompt examples or duplicated routing rules.
 
 ## Scout 1.2.0 — 2026-07-16
 
