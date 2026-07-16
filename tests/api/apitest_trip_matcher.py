@@ -22,7 +22,7 @@ def test_active_phase_prompt_releases_are_complete() -> None:
 
     assert load_prompt_versions() == {
         "scout": "1.4.0",
-        "meridian": "1.1.0",
+        "meridian": "1.2.0",
     }
     meridian_prompt = load_prompt_release("meridian").content
     assert "conversation_context.awaiting" in meridian_prompt
@@ -191,7 +191,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     assert response.status_code == 200
     assert response.json()["agent_meta"] == {
         "agent": "meridian",
-        "prompt_version": "1.1.0",
+        "prompt_version": "1.2.0",
     }
     release = load_prompt_release("meridian")
     forward.assert_called_once_with(
