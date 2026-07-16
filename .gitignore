@@ -1,5 +1,6 @@
 .vscode
 venv
 __pycache__/
+.pytest_cache/
 *.py[cod]
 n8n.env
