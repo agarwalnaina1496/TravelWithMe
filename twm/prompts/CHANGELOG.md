@@ -2,11 +2,11 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
-## Scout 1.3.0 — 2026-07-16
+## Scout 1.4.0 — 2026-07-16
 
-- Preserved material traveler context, qualifiers, relationships, budget boundaries, route distinctions, seasonal relevance, and trip shape without inventing adjacent facts.
+- Preserved extracted traveler values verbatim under semantic keys while keeping qualifiers, relationships, budget boundaries, route distinctions, seasonal relevance, and trip shape intact.
 - Kept Scout limited to extraction, initial routing, and complete general advice while Meridian owns destination and circuit recommendation work.
-- Consolidated answer-first advice and qualified time-sensitive guidance without concrete prompt examples or duplicated routing rules.
+- Required answer-first advice to address every material ask with a practical verdict, useful guidance beyond query repetition, relevant pacing, trade-offs, and qualified time-sensitive guidance.
 
 ## Scout 1.2.0 — 2026-07-16
 
