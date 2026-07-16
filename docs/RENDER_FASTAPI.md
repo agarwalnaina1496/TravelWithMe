@@ -11,7 +11,7 @@ UI on Vercel
           -> n8n Postgres on EC2
 ```
 
-n8n remains self-hosted on EC2. Only the FastAPI service moves to Render.
+n8n remains self-hosted on EC2. The current release adds LangGraph runtime prerequisites but keeps n8n selected; see [Agent engine foundation](AGENT_ENGINE.md).
 
 ## Files Changed For Render
 
@@ -20,7 +20,9 @@ Dockerfile
   -> uses Render's PORT environment variable when present
 
 render.yaml
-  -> defines the Render web service and sets ENVIRONMENT=prod
+  -> defines the Render web service
+  -> keeps AGENT_ENGINE=n8n during foundation and parity work
+  -> records the planned LangGraph model without storing credentials
 
 twm/shared/properties/properties.ini
   -> stores common FastAPI config in the [APP] section
@@ -55,6 +57,7 @@ Required Render environment variable:
 
 ```properties
 ENVIRONMENT=prod
+AGENT_ENGINE=n8n
 ```
 
 FastAPI config is loaded from:
@@ -108,4 +111,6 @@ http://13.201.32.120:5678/webhook/scout
 http://13.201.32.120:5678/webhook/meridian
 ```
 
-So EC2 security group access to port `5678` must remain available to Render unless n8n is later placed behind a domain, reverse proxy, or allowlist.
+EC2 access to the n8n webhook port must remain available to Render unless n8n is placed behind a domain, reverse proxy, or allowlist.
+
+Do not select `AGENT_ENGINE=langgraph` until the concrete Scout and Meridian graphs are delivered and verified.
