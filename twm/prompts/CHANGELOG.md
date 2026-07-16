@@ -4,9 +4,9 @@ Scout and Meridian are released independently. Add a separate entry whenever a p
 
 ## Meridian 1.2.0 — 2026-07-16
 
-- Added recommendation-type-specific readiness with safe general guidance and one targeted clarification when a material input is missing.
-- Made hard requirements, preferences, budget boundaries, considered destinations, and traveler-specific trade-offs explicit in recommendation reasoning.
-- Added qualified time-sensitive guidance and internally reconciled circuit legs, totals, daily driving, duration, and feasibility.
+- Made Meridian the sole owner of destination and circuit recommendations, comparisons, ranking, narrowing, readiness, and refinement.
+- Consolidated hard requirements, preferences, budget boundaries, considered choices, qualification, and traveler-specific trade-offs into one reasoning flow.
+- Preserved matcher continuity, status contracts, and circuit feasibility rules without concrete prompt examples or duplicated clarification rules.
 
 ## Scout 1.3.0 — 2026-07-16
 
