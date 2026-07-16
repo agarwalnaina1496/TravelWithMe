@@ -2,6 +2,14 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Meridian 1.2.0 — 2026-07-16
+
+- Made Meridian the sole owner of destination and circuit recommendations, comparisons, ranking, narrowing, readiness, and refinement.
+- Required Meridian to address the current ask before one material clarification and to recommend after the answer when ready.
+- Made `why_ranked_here` the traveler-specific **Why this works for you** explanation, with every mismatch, uncertainty, cost, and allowed trade-off disclosed separately.
+- Consolidated hard requirements, preferences, budget boundaries, considered choices, practical guidance, and qualification into one reasoning flow.
+- Preserved matcher continuity, status contracts, and circuit feasibility rules without concrete prompt examples or duplicated clarification rules.
+
 ## Scout 1.4.0 — 2026-07-16
 
 - Preserved extracted traveler values verbatim under semantic keys while keeping qualifiers, relationships, budget boundaries, route distinctions, seasonal relevance, and trip shape intact.
