@@ -11,7 +11,7 @@ UI on Vercel
           -> n8n Postgres on EC2
 ```
 
-n8n remains self-hosted on EC2. TWM-54 adds LangGraph runtime prerequisites but keeps n8n selected; see [Agent engine foundation](AGENT_ENGINE.md).
+n8n remains self-hosted on EC2. The current release adds LangGraph runtime prerequisites but keeps n8n selected; see [Agent engine foundation](AGENT_ENGINE.md).
 
 ## Files Changed For Render
 
@@ -113,4 +113,4 @@ http://13.201.32.120:5678/webhook/meridian
 
 EC2 access to the n8n webhook port must remain available to Render unless n8n is placed behind a domain, reverse proxy, or allowlist.
 
-Do not select `AGENT_ENGINE=langgraph` until TWM-56 delivers and verifies the concrete Scout and Meridian graphs.
+Do not select `AGENT_ENGINE=langgraph` until the concrete Scout and Meridian graphs are delivered and verified.

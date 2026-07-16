@@ -85,8 +85,8 @@ def get_agent_engine() -> AgentEngine:
 
     if engine_name == "langgraph":
         raise ValueError(
-            "AGENT_ENGINE=langgraph is reserved for TWM-56 and is not "
-            "available in the runtime-foundation release"
+            "AGENT_ENGINE=langgraph is not available in the "
+            "runtime-foundation release"
         )
 
     raise ValueError(

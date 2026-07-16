@@ -1,4 +1,4 @@
-"""Unit coverage for the TWM-54 LangGraph runtime foundation."""
+"""Unit coverage for the LangGraph runtime foundation."""
 
 from typing import Any, TypedDict
 from unittest.mock import Mock
@@ -49,7 +49,7 @@ def test_n8n_remains_the_committed_default() -> None:
     assert isinstance(agent_engine.get_agent_engine(), N8NAgentEngine)
 
 
-def test_langgraph_selection_is_reserved_for_twm_56(
+def test_langgraph_selection_is_disabled_until_agents_are_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -58,7 +58,7 @@ def test_langgraph_selection_is_reserved_for_twm_56(
         lambda key, default: "langgraph",
     )
 
-    with pytest.raises(ValueError, match="reserved for TWM-56"):
+    with pytest.raises(ValueError, match="not available"):
         agent_engine.get_agent_engine()
 
 

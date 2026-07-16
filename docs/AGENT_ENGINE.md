@@ -10,13 +10,13 @@ The committed and deployed default remains:
 AGENT_ENGINE=n8n
 ```
 
-Scout and Meridian continue using the existing n8n webhooks. TWM-54 does not provide production Scout or Meridian LangGraph execution and does not authorize selecting LangGraph in a deployed environment.
+Scout and Meridian continue using the existing n8n webhooks. This foundation release does not provide production Scout or Meridian LangGraph execution and does not authorize selecting LangGraph in a deployed environment.
 
-If `AGENT_ENGINE=langgraph` is selected in this foundation release, FastAPI fails startup with a clear message that the concrete implementation is owned by TWM-56. There is no silent fallback.
+If `AGENT_ENGINE=langgraph` is selected in this foundation release, FastAPI fails startup with a clear message that the concrete agent implementation is not available. There is no silent fallback.
 
 ## Planned Global Contract
 
-TWM-56 will complete the manual startup/redeploy contract:
+The concrete agent implementation will complete the manual startup/redeploy contract:
 
 ```properties
 AGENT_ENGINE=n8n
@@ -56,9 +56,9 @@ N8N_MERIDIAN_WEBHOOK_URL=https://<n8n-host>/webhook/meridian
 
 Both live workflows must remain active. The versioned `n8n/*.json` files are backups; changing a Git export does not update the live workflow. See [Self-hosted n8n](SELF_HOSTED_N8N.md).
 
-## TWM-56 Completion Work
+## Completion Work
 
-TWM-56 owns:
+The concrete agent implementation must add:
 
 * production Scout and Meridian LangGraph graphs;
 * shared behavioral parity tests;
