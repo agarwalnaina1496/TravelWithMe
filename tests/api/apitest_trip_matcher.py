@@ -21,7 +21,7 @@ def test_active_phase_prompt_releases_are_complete() -> None:
     validate_prompt_release_files()
 
     assert load_prompt_versions() == {
-        "scout": "1.2.0",
+        "scout": "1.3.0",
         "meridian": "1.1.0",
     }
     meridian_prompt = load_prompt_release("meridian").content
