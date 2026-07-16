@@ -1,0 +1,163 @@
+{
+  "suite": "twm-43-scout-quality",
+  "cases": [
+    {
+      "id": "tc1-nationality-is-not-origin",
+      "request": {
+        "trip_state": {"stage": "new", "trip_context": {}, "advisor_state": {}},
+        "message": "Indians who travel extensively, where would u go for honeymoon on a 4L budget. Preference (non-negotiable): travel month is September, 4-5 nights stay, all inclusive. Within India or any visa free/on arrival countries. If in India, high mountains. Other countries, beach front. Budget is 4 lakh + tickets ofc."
+      },
+      "expected": {
+        "intent": "matcher",
+        "message_mode": "empty",
+        "required_context_value_groups": [
+          ["Indian", "Indians"],
+          ["honeymoon"],
+          ["September"],
+          ["4-5 nights", "4–5 nights"],
+          ["4 lakh + tickets"],
+          ["visa free/on arrival", "visa-free", "visa on arrival"],
+          ["high mountains"],
+          ["beach front", "beachfront"]
+        ],
+        "forbidden_context_keys": ["origin"]
+      },
+      "semantic_rubric": [
+        "Nationality is preserved as traveler identity and never converted into a departure point.",
+        "Domestic and international destination conditions remain associated with their respective scopes.",
+        "Budget wording preserves that tickets are outside the stated four-lakh amount."
+      ]
+    },
+    {
+      "id": "tc2-relative-safety-and-destination-type",
+      "request": {
+        "trip_state": {"stage": "new", "trip_context": {}, "advisor_state": {}},
+        "message": "Hill stations around 20-25 August from Delhi, relatively safe from landslides and with good weather. My friend and I have 2-3 days, will travel by bus, want pleasant weather and easy bus access, and are considering Landour-Mussoorie. We know weather can be unpredictable and would love recommendations and travel tips."
+      },
+      "expected": {
+        "intent": "matcher",
+        "message_mode": "empty",
+        "required_context_value_groups": [
+          ["hill station", "hill stations"],
+          ["relatively safe from landslides"],
+          ["20-25 August", "20–25 August"],
+          ["Delhi"],
+          ["bus"],
+          ["2-3 days", "2–3 days"],
+          ["Landour", "Mussoorie"],
+          ["weather can be unpredictable", "unpredictable"]
+        ]
+      },
+      "semantic_rubric": [
+        "The destination category is explicitly preserved.",
+        "Relative safety and weather uncertainty remain qualified instead of becoming guarantees.",
+        "The considered destination and bus-access constraint remain available to Meridian."
+      ]
+    },
+    {
+      "id": "tc3-comparison-verdict-and-pacing",
+      "request": {
+        "trip_state": {"stage": "new", "trip_context": {}, "advisor_state": {}},
+        "message": "Scotland or Ireland for a 10 day late September trip? My partner and I want dramatic coastal scenery, old historic ruins, evening pub culture, raw landscapes and relaxed village vibes. Scotland looks amazing for photography but single track driving worries me. Ireland has the Wild Atlantic Way and traditional music in tiny pubs. I like an organized casual trip where we explore independently without manually coordinating public transport. Which is more visually rewarding and easier to pace?"
+      },
+      "expected": {
+        "intent": "advise",
+        "message_mode": "non_empty",
+        "required_context_value_groups": [
+          ["Scotland"],
+          ["Ireland"],
+          ["10 day", "10-day"],
+          ["late September"],
+          ["historic ruins", "old historic ruins"],
+          ["raw landscapes"],
+          ["relaxed village vibes"],
+          ["organized casual"],
+          ["independently"],
+          ["public transport"]
+        ],
+        "required_message_term_groups": [
+          ["Scotland"],
+          ["Ireland"],
+          ["10 day", "10-day", "ten day"],
+          ["September"],
+          ["ruins"],
+          ["pub", "music"],
+          ["pace", "pacing", "base", "nights"],
+          ["drive", "driving", "transport"]
+        ],
+        "forbidden_message_phrases": ["Would you like me to help you narrow it down?"],
+        "max_question_marks": 1
+      },
+      "semantic_rubric": [
+        "The response gives a clear comparative verdict instead of restating the query.",
+        "The verdict accounts for scenery, ruins, pub or music culture, driving stress, independent pacing, and village atmosphere.",
+        "Practical ten-day pacing guidance or route shape is included for the recommended direction.",
+        "Any remaining question is specific to a missing decision-changing detail."
+      ]
+    },
+    {
+      "id": "tc4-route-specific-seasonal-advice",
+      "request": {
+        "trip_state": {"stage": "new", "trip_context": {}, "advisor_state": {}},
+        "message": "Spiti Valley in late July/August vs September, which is better? I understand Spiti itself does not receive much rainfall, but roads leading to Spiti can be affected by monsoon, landslides and water crossings."
+      },
+      "expected": {
+        "intent": "advise",
+        "message_mode": "non_empty",
+        "required_context_value_groups": [
+          ["Spiti Valley", "Spiti"],
+          ["late July/August", "July/August"],
+          ["September"],
+          ["does not receive much rainfall", "little rainfall"],
+          ["roads leading to Spiti", "approach roads"],
+          ["monsoon"],
+          ["landslides"],
+          ["water crossings"]
+        ],
+        "required_message_term_groups": [
+          ["July", "August"],
+          ["September"],
+          ["Spiti"],
+          ["road", "route", "approach"],
+          ["forecast"],
+          ["road status", "closure", "advisory", "advisories"],
+          ["buffer"]
+        ],
+        "forbidden_message_phrases": ["Would you like me to help you narrow it down?"],
+        "max_question_marks": 1
+      },
+      "semantic_rubric": [
+        "The response distinguishes conditions inside Spiti from exposure on its approach routes.",
+        "Seasonal risk is relative and qualified, never framed as a safety guarantee.",
+        "Water crossings and route choice receive practical treatment.",
+        "Near-departure checks and disruption buffer guidance are actionable without claiming live verification."
+      ]
+    },
+    {
+      "id": "tc5-current-season-and-multi-stop-intent",
+      "request": {
+        "trip_state": {"stage": "new", "trip_context": {}, "advisor_state": {}},
+        "message": "Places to visit in July in South India. What are some places to visit right now in Kerala and Karnataka, this time of the year? We are planning a 4/5-day trip, going by car, and can visit multiple places."
+      },
+      "expected": {
+        "intent": "matcher",
+        "message_mode": "empty",
+        "required_context_value_groups": [
+          ["July"],
+          ["South India"],
+          ["Kerala"],
+          ["Karnataka"],
+          ["right now", "this time of the year"],
+          ["4/5-day", "4/5 day", "4-5 day", "4–5 day"],
+          ["car"],
+          ["visit multiple places", "multiple places", "multi-stop"]
+        ]
+      },
+      "semantic_rubric": [
+        "The extraction preserves that current seasonal suitability is material.",
+        "The multi-place preference remains a descriptive road-trip intent rather than a generic yes or no flag.",
+        "All regions, duration, and transport details remain distinct inputs for matching."
+      ]
+    }
+  ]
+}

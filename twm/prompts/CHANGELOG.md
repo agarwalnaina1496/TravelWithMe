@@ -2,6 +2,12 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Scout 1.3.0 — 2026-07-16
+
+- Preserved material traveler context, comparison goals, uncertainty qualifiers, destination categories, route distinctions, and multi-stop intent without inventing adjacent facts.
+- Made direct advice answer-first, traveler-complete, practical, and limited to one decision-changing clarification when needed.
+- Added qualified seasonal and safety guidance with near-departure checks and disruption buffers when live verification is unavailable.
+
 ## Scout 1.2.0 — 2026-07-16
 
 - Clarified that Scout owns entry routing and advice only until UI performs a specialist handoff.
