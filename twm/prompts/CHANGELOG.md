@@ -2,6 +2,17 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Scout 1.2.0 — 2026-07-16
+
+- Clarified that Scout owns entry routing and advice only until UI performs a specialist handoff.
+- Limited null-message resume behavior to Scout-owned context; active specialist continuations bypass Scout.
+
+## Meridian 1.1.0 — 2026-07-16
+
+- Added the canonical prior-advice and traveler-message handoff inputs delivered by TWM-38.
+- Made persisted `conversation_context.awaiting` authoritative for direct clarification answers and refinement turns.
+- Defined continuing versus terminal outcomes and aligned examples with the canonical response cleanup.
+
 ## Scout 1.1.0 — 2026-07-13
 
 - Restored Given & Extract so reusable traveler signals are stored directly under `trip_context`.

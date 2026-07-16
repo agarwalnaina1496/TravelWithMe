@@ -4,9 +4,28 @@ from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
-from twm.prompts import PromptRelease
+from twm.prompts import (
+    PromptRelease,
+    load_prompt_release,
+    load_prompt_versions,
+    validate_prompt_release_files,
+)
 from twm.routers import trip_matcher
-from twm.services import AgentExecution
+from twm.services import AgentExecution, N8NAgentEngine
+
+
+def test_active_phase_prompt_releases_are_complete() -> None:
+    validate_prompt_release_files()
+
+    assert load_prompt_versions() == {
+        "scout": "1.2.0",
+        "meridian": "1.1.0",
+    }
+    meridian_prompt = load_prompt_release("meridian").content
+    assert "conversation_context.awaiting" in meridian_prompt
+    assert "constraint_adjustment_suggestions" in meridian_prompt
+    assert '"version": "matcher_v2"' not in meridian_prompt
+    assert '"relaxation_suggestions"' not in meridian_prompt
 
 
 def test_scout_api_preserves_entry_contract(
@@ -100,6 +119,65 @@ def test_meridian_api_forwards_phase_slice_and_message(
     }
     engine.meridian.assert_called_once_with(
         payload["trip_state"], "Please narrow those down."
+    )
+
+
+def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
+    api_client: TestClient, monkeypatch
+) -> None:
+    engine = N8NAgentEngine()
+    forward = Mock(
+        return_value={
+            "status": "SUCCESS",
+            "message": "I used that clarification to update the matches.",
+            "state_delta": {
+                "trip_context": {"budget": "mid-range"},
+                "matcher_state": {
+                    "conversation_context": {
+                        "last_meridian_message": "I used that clarification to update the matches.",
+                        "awaiting": None,
+                    }
+                },
+            },
+            "trip_type": "single",
+            "options": [],
+        }
+    )
+    monkeypatch.setattr(engine, "_forward", forward)
+    monkeypatch.setattr(trip_matcher, "engine", engine)
+    payload = {
+        "trip_state": {
+            "trip_context": {"destination_scope": "mountains"},
+            "advisor_state": {
+                "conversation_context": {
+                    "last_advisor_message": "A mountain trip can work well."
+                }
+            },
+            "matcher_state": {
+                "conversation_context": {
+                    "last_meridian_message": "What budget range should I use?",
+                    "awaiting": "budget",
+                }
+            },
+        },
+        "message": "Keep it mid-range.",
+    }
+
+    response = api_client.post("/meridian", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["agent_meta"] == {
+        "agent": "meridian",
+        "prompt_version": "1.1.0",
+    }
+    release = load_prompt_release("meridian")
+    forward.assert_called_once_with(
+        "n8n_meridian_webhook_url",
+        {
+            "prompt": release.content,
+            "trip_state": payload["trip_state"],
+            "message": "Keep it mid-range.",
+        },
     )
 
 
