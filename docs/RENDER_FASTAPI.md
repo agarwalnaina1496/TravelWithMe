@@ -106,7 +106,7 @@ The UI should not call n8n directly.
 
 ## Selected Engine Requirements
 
-With `AGENT_ENGINE=n8n`, execution stays inside FastAPI and requires `GROQ_API_KEY`.
+With `AGENT_ENGINE=langgraph`, execution stays inside FastAPI and requires `GROQ_API_KEY`.
 
 With `AGENT_ENGINE=n8n`, FastAPI calls n8n on EC2 through:
 
