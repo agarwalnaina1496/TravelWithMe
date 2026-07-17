@@ -2,6 +2,10 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Scout 1.5.0 — 2026-07-17
+
+- Made complete advice end naturally after the useful guidance and limited follow-up questions to missing details that materially change Scout-owned advice.
+
 ## Meridian 1.2.0 — 2026-07-16
 
 - Made Meridian the sole owner of destination and circuit recommendations, comparisons, ranking, narrowing, readiness, and refinement.
