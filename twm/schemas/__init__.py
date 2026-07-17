@@ -4,6 +4,7 @@ from .common import AgentMeta
 from .meridian import (
     MeridianAdvisorConversationContext,
     MeridianAdvisorState,
+    MeridianAgentOutput,
     MeridianRequest,
     MeridianResponse,
     MeridianStateDelta,
@@ -28,6 +29,7 @@ __all__ = [
     "AgentMeta",
     "MeridianAdvisorConversationContext",
     "MeridianAdvisorState",
+    "MeridianAgentOutput",
     "MeridianRequest",
     "MeridianResponse",
     "MeridianStateDelta",

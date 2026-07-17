@@ -14,6 +14,7 @@ from twm.prompts import (
     validate_prompt_release_files,
 )
 from twm.routers import trip_matcher
+from twm.schemas import MeridianAgentOutput
 from twm.services import (
     AgentExecution,
     LangGraphAgentEngine,
@@ -84,11 +85,14 @@ def test_active_phase_prompt_releases_are_complete() -> None:
 
     assert load_prompt_versions() == {
         "scout": "1.5.0",
-        "meridian": "1.2.0",
+        "meridian": "1.3.0",
     }
     meridian_prompt = load_prompt_release("meridian").content
     assert "conversation_context.awaiting" in meridian_prompt
     assert "constraint_adjustment_suggestions" in meridian_prompt
+    assert "traveler_criteria" in meridian_prompt
+    assert "why_ranked_here" not in meridian_prompt
+    assert "decision_summary" not in meridian_prompt
     assert '"version": "matcher_v2"' not in meridian_prompt
     assert '"relaxation_suggestions"' not in meridian_prompt
 
@@ -254,7 +258,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     assert response.status_code == 200
     assert response.json()["agent_meta"] == {
         "agent": "meridian",
-        "prompt_version": "1.2.0",
+        "prompt_version": "1.3.0",
     }
     release = load_prompt_release("meridian")
     forward.assert_called_once_with(
@@ -264,6 +268,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
             "prompt": release.content,
             "trip_state": payload["trip_state"],
             "message": "Keep it mid-range.",
+            "output_schema": MeridianAgentOutput.model_json_schema(),
         },
     )
 
@@ -568,5 +573,5 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         },
         "message": "What budget should I use?",
         "options": [],
-        "agent_meta": {"agent": "meridian", "prompt_version": "1.2.0"},
+        "agent_meta": {"agent": "meridian", "prompt_version": "1.3.0"},
     }

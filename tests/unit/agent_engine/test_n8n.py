@@ -1,5 +1,8 @@
 """n8n engine fallback contract tests."""
 
+import json
+from pathlib import Path
+
 from twm.prompts import PromptRelease
 from twm.services import N8NAgentEngine
 from twm.services.agent_engine import n8n as n8n_module
@@ -30,3 +33,26 @@ def test_configuration_failures_preserve_each_agent_contract(monkeypatch) -> Non
     assert meridian.state_delta.matcher_state == {
         "conversation_context": {"awaiting": None}
     }
+
+
+def test_meridian_workflow_uses_backend_output_schema() -> None:
+    workflow_path = Path(__file__).parents[3] / "n8n" / "meridian.json"
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    nodes = {node["name"]: node for node in workflow["nodes"]}
+
+    assert nodes["Meridian"]["parameters"]["hasOutputParser"] is True
+    assert "hasOutputParser" not in nodes["Meridian"]["parameters"]["options"]
+    assert (
+        "body.output_schema"
+        in nodes["Meridian output schema"]["parameters"]["inputSchema"]
+    )
+    assert workflow["connections"]["Meridian output schema"] == {
+        "ai_outputParser": [
+            [{"node": "Meridian", "type": "ai_outputParser", "index": 0}]
+        ]
+    }
+    parser_code = nodes["Output parser"]["parameters"]["jsCode"]
+    assert "status: 'HARD_FAIL'" in parser_code
+    assert "conversation_context: { awaiting: null }" in parser_code
+    assert "intent: null" not in parser_code
+    assert "parser_error" not in parser_code
