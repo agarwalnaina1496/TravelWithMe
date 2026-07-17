@@ -5,7 +5,6 @@ from typing import Any, Optional
 import httpx
 
 from ...prompts import load_prompt_release
-from ...schemas import MeridianAgentOutput
 from ...shared.properties import property_loader
 from .contracts import AgentExecution
 
@@ -31,17 +30,14 @@ class N8NAgentEngine:
         message: Optional[str],
     ) -> AgentExecution:
         release = load_prompt_release(agent)
-        payload = {
-            "prompt": release.content,
-            "trip_state": trip_state,
-            "message": message,
-        }
-        if agent == "meridian":
-            payload["output_schema"] = MeridianAgentOutput.model_json_schema()
         response = self._forward(
             agent,
             property_key,
-            payload,
+            {
+                "prompt": release.content,
+                "trip_state": trip_state,
+                "message": message,
+            },
         )
         return AgentExecution(response=response, prompt_release=release)
 

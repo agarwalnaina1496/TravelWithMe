@@ -14,7 +14,6 @@ from twm.prompts import (
     validate_prompt_release_files,
 )
 from twm.routers import trip_matcher
-from twm.schemas import MeridianAgentOutput
 from twm.services import (
     AgentExecution,
     LangGraphAgentEngine,
@@ -268,7 +267,6 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
             "prompt": release.content,
             "trip_state": payload["trip_state"],
             "message": "Keep it mid-range.",
-            "output_schema": MeridianAgentOutput.model_json_schema(),
         },
     )
 
