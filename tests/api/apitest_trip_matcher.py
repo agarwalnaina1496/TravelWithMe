@@ -42,7 +42,7 @@ def test_active_phase_prompt_releases_are_complete() -> None:
     validate_prompt_release_files()
 
     assert load_prompt_versions() == {
-        "scout": "1.4.0",
+        "scout": "1.5.0",
         "meridian": "1.2.0",
     }
     meridian_prompt = load_prompt_release("meridian").content
@@ -337,7 +337,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         "message": "A mountain trip can work well.",
         "state_delta": {"trip_context": {"destination_scope": "mountains"}},
         "intent": "advise",
-        "agent_meta": {"agent": "scout", "prompt_version": "1.4.0"},
+        "agent_meta": {"agent": "scout", "prompt_version": "1.5.0"},
     }
     assert meridian_response.status_code == 200
     assert meridian_response.json() == {
