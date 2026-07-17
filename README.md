@@ -38,7 +38,7 @@ TODO: Define in-trip assistance, notifications, itinerary changes, and support b
 
 ## Backend Technical Documentation
 
-- [Agent engine foundation](docs/AGENT_ENGINE.md)
+- [Agent engine selection](docs/AGENT_ENGINE.md)
 - [Prompt versioning](docs/PROMPT_VERSIONING.md)
 - [Render FastAPI deployment](docs/RENDER_FASTAPI.md)
 - [Self-hosted n8n](docs/SELF_HOSTED_N8N.md)

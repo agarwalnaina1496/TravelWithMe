@@ -1,30 +1,12 @@
-"""Agent-engine abstraction and n8n transport implementation."""
+"""n8n webhook implementation of the agent-engine contract."""
 
-from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Any, Optional
 
 import httpx
 
-from ..prompts import PromptRelease, load_prompt_release
-from ..shared.properties import property_loader
-
-
-@dataclass(frozen=True)
-class AgentExecution:
-    response: dict[str, Any]
-    prompt_release: PromptRelease
-
-
-class AgentEngine(Protocol):
-    def scout(
-        self, trip_state: dict[str, Any], message: Optional[str]
-    ) -> AgentExecution:
-        ...
-
-    def meridian(
-        self, trip_state: dict[str, Any], message: Optional[str]
-    ) -> AgentExecution:
-        ...
+from ...prompts import load_prompt_release
+from ...shared.properties import property_loader
+from .contracts import AgentExecution
 
 
 class N8NAgentEngine:
@@ -73,23 +55,3 @@ class N8NAgentEngine:
             response = client.post(url, json=payload)
             response.raise_for_status()
             return response.json()
-
-
-def get_agent_engine() -> AgentEngine:
-    engine_name = property_loader.get_string_property_with_default(
-        "agent_engine", "n8n"
-    ).strip().lower()
-
-    if engine_name == "n8n":
-        return N8NAgentEngine()
-
-    if engine_name == "langgraph":
-        raise ValueError(
-            "AGENT_ENGINE=langgraph is not available in the "
-            "runtime-foundation release"
-        )
-
-    raise ValueError(
-        f"Unsupported AGENT_ENGINE: {engine_name or '<empty>'}. "
-        "Expected n8n or langgraph."
-    )

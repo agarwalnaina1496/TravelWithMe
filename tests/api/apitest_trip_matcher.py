@@ -13,8 +13,29 @@ from twm.prompts import (
     validate_prompt_release_files,
 )
 from twm.routers import trip_matcher
-from twm.services import AgentExecution, N8NAgentEngine
+from twm.services import (
+    AgentExecution,
+    LangGraphAgentEngine,
+    LangGraphRuntime,
+    N8NAgentEngine,
+)
 from twm.schemas.scout import ScoutResponse
+
+
+def fake_langgraph_model(outputs: dict[str, dict]) -> Mock:
+    model = Mock()
+
+    def with_structured_output(schema: type, **kwargs):
+        runnable = Mock()
+        runnable.invoke.return_value = {
+            "raw": None,
+            "parsed": schema.model_validate(outputs[schema.__name__]),
+            "parsing_error": None,
+        }
+        return runnable
+
+    model.with_structured_output.side_effect = with_structured_output
+    return model
 
 
 def test_active_phase_prompt_releases_are_complete() -> None:
@@ -255,3 +276,82 @@ def test_meridian_api_returns_canonical_failure_suggestions(
     ]
     assert "relaxation_suggestions" not in body
     assert "version" not in body
+
+
+def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
+    api_client: TestClient, monkeypatch
+) -> None:
+    model = fake_langgraph_model(
+        {
+            "ScoutModelOutput": {
+                "message": "A mountain trip can work well.",
+                "state_delta": {"trip_context": {"destination_scope": "mountains"}},
+                "intent": "advise",
+            },
+            "MeridianModelOutput": {
+                "status": "NEEDS_CLARIFICATION",
+                "message": "What budget should I use?",
+                "state_delta": {
+                    "matcher_state": {
+                        "conversation_context": {
+                            "last_meridian_message": "What budget should I use?",
+                            "awaiting": "budget",
+                        }
+                    }
+                },
+                "options": [],
+            },
+        }
+    )
+    monkeypatch.setattr(
+        trip_matcher,
+        "engine",
+        LangGraphAgentEngine(runtime=LangGraphRuntime(model=model)),
+    )
+
+    scout_response = api_client.post(
+        "/scout",
+        json={
+            "trip_state": {
+                "stage": "new",
+                "trip_context": {},
+                "advisor_state": {},
+            },
+            "message": "Tell me about mountain trips.",
+        },
+    )
+    meridian_response = api_client.post(
+        "/meridian",
+        json={
+            "trip_state": {
+                "trip_context": {"destination_scope": "mountains"},
+                "advisor_state": {"conversation_context": {}},
+                "matcher_state": {},
+            },
+            "message": "Find mountain options.",
+        },
+    )
+
+    assert scout_response.status_code == 200
+    assert scout_response.json() == {
+        "message": "A mountain trip can work well.",
+        "state_delta": {"trip_context": {"destination_scope": "mountains"}},
+        "intent": "advise",
+        "agent_meta": {"agent": "scout", "prompt_version": "1.4.0"},
+    }
+    assert meridian_response.status_code == 200
+    assert meridian_response.json() == {
+        "status": "NEEDS_CLARIFICATION",
+        "state_delta": {
+            "trip_context": {},
+            "matcher_state": {
+                "conversation_context": {
+                    "last_meridian_message": "What budget should I use?",
+                    "awaiting": "budget",
+                }
+            },
+        },
+        "message": "What budget should I use?",
+        "options": [],
+        "agent_meta": {"agent": "meridian", "prompt_version": "1.2.0"},
+    }

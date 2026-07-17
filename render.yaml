@@ -12,3 +12,5 @@ services:
         value: n8n
       - key: LANGGRAPH_MODEL
         value: openai/gpt-oss-120b
+      - key: GROQ_API_KEY
+        sync: false
