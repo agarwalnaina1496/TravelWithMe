@@ -50,6 +50,7 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 ## Verification
 
 - Require unit tests for backend code changes. Prompt-only Markdown changes do not require unit tests that assert prompt text.
+- Do not add unit tests that instantiate request or response schema models directly. Verify schema and contract behavior through normalized FastAPI API tests or the relevant integration boundary instead.
 - Validate prompt-only changes through representative behavioral cases, prompt release/version checks, structured-output checks, and relevant manual or workflow verification.
 - When a change includes both prompt and backend code, run the relevant backend unit tests in addition to prompt-behavior verification.
 - Validate both Scout and Meridian handoff behavior when routing or shared context changes.
