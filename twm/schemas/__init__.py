@@ -11,7 +11,7 @@ from .meridian import (
     MeridianStatus,
     MeridianTripState,
 )
-from .scout import ScoutRequest, ScoutResponse
+from .scout import ScoutAgentOutput, ScoutRequest, ScoutResponse
 from .recommendations import (
     BulletDetail,
     CostBreakdownDetail,
@@ -45,6 +45,7 @@ __all__ = [
     "RecommendationDetail",
     "RecommendationOption",
     "TravelerCriterion",
+    "ScoutAgentOutput",
     "ScoutRequest",
     "ScoutResponse",
 ]

@@ -24,10 +24,17 @@ class ScoutStateDelta(BaseModel):
         return self
 
 
-class ScoutResponse(BaseModel):
+class ScoutAgentOutput(BaseModel):
+    """Structured Scout output before Backend-owned provenance is attached."""
+
     model_config = ConfigDict(extra="forbid")
 
     message: Optional[str] = None
     state_delta: ScoutStateDelta = Field(default_factory=ScoutStateDelta)
     intent: Optional[Literal["advise", "matcher", "planner"]] = None
+
+
+class ScoutResponse(ScoutAgentOutput):
+    """Public Scout response with deterministic Backend provenance."""
+
     agent_meta: AgentMeta

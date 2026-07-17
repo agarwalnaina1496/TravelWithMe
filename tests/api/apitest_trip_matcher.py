@@ -14,7 +14,7 @@ from twm.prompts import (
     validate_prompt_release_files,
 )
 from twm.routers import trip_matcher
-from twm.schemas import MeridianAgentOutput
+from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
 from twm.services import (
     AgentExecution,
     LangGraphAgentEngine,
@@ -130,6 +130,40 @@ def test_scout_api_preserves_entry_contract(
     }
     engine.scout.assert_called_once_with(
         payload["trip_state"], "Tell me about Uttarakhand."
+    )
+
+
+def test_scout_api_forwards_backend_output_schema(
+    api_client: TestClient, monkeypatch
+) -> None:
+    engine = N8NAgentEngine()
+    forward = Mock(
+        return_value={
+            "message": "A mountain trip can work well.",
+            "state_delta": {"trip_context": {"region": "Uttarakhand"}},
+            "intent": "advise",
+        }
+    )
+    monkeypatch.setattr(engine, "_forward", forward)
+    monkeypatch.setattr(trip_matcher, "engine", engine)
+    payload = {
+        "trip_state": {"stage": "new", "trip_context": {}},
+        "message": "Tell me about Uttarakhand.",
+    }
+
+    response = api_client.post("/scout", json=payload)
+
+    assert response.status_code == 200
+    release = load_prompt_release("scout")
+    forward.assert_called_once_with(
+        "scout",
+        "n8n_scout_webhook_url",
+        {
+            "prompt": release.content,
+            "trip_state": payload["trip_state"],
+            "message": "Tell me about Uttarakhand.",
+            "output_schema": ScoutAgentOutput.model_json_schema(),
+        },
     )
 
 

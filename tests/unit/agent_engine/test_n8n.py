@@ -35,24 +35,40 @@ def test_configuration_failures_preserve_each_agent_contract(monkeypatch) -> Non
     }
 
 
-def test_meridian_workflow_uses_backend_output_schema() -> None:
-    workflow_path = Path(__file__).parents[3] / "n8n" / "meridian.json"
+def _assert_workflow_uses_backend_output_schema(
+    workflow_name: str, agent_name: str
+) -> None:
+    workflow_path = Path(__file__).parents[3] / "n8n" / workflow_name
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
     nodes = {node["name"]: node for node in workflow["nodes"]}
+    schema_node = f"{agent_name} output schema"
 
-    assert nodes["Meridian"]["parameters"]["hasOutputParser"] is True
-    assert "hasOutputParser" not in nodes["Meridian"]["parameters"]["options"]
+    assert nodes[agent_name]["parameters"]["hasOutputParser"] is True
+    assert "hasOutputParser" not in nodes[agent_name]["parameters"]["options"]
     assert (
         "body.output_schema"
-        in nodes["Meridian output schema"]["parameters"]["inputSchema"]
+        in nodes[schema_node]["parameters"]["inputSchema"]
     )
-    assert workflow["connections"]["Meridian output schema"] == {
+    assert workflow["connections"][schema_node] == {
         "ai_outputParser": [
-            [{"node": "Meridian", "type": "ai_outputParser", "index": 0}]
+            [{"node": agent_name, "type": "ai_outputParser", "index": 0}]
         ]
     }
-    parser_code = nodes["Output parser"]["parameters"]["jsCode"]
-    assert "status: 'HARD_FAIL'" in parser_code
-    assert "conversation_context: { awaiting: null }" in parser_code
-    assert "intent: null" not in parser_code
-    assert "parser_error" not in parser_code
+    assert "Output parser" not in nodes
+    assert workflow["connections"][agent_name] == {
+        "main": [
+            [{"node": "Respond to Webhook", "type": "main", "index": 0}]
+        ]
+    }
+    assert (
+        nodes["Respond to Webhook"]["parameters"]["responseBody"]
+        == "={{ $json.output }}"
+    )
+
+
+def test_meridian_workflow_uses_backend_output_schema() -> None:
+    _assert_workflow_uses_backend_output_schema("meridian.json", "Meridian")
+
+
+def test_scout_workflow_uses_backend_output_schema() -> None:
+    _assert_workflow_uses_backend_output_schema("scout.json", "Scout")
