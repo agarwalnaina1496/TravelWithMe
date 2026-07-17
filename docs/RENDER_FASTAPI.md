@@ -11,7 +11,7 @@ UI on Vercel
           -> n8n Postgres on EC2
 ```
 
-n8n remains self-hosted on EC2. The current release adds LangGraph runtime prerequisites but keeps n8n selected; see [Agent engine foundation](AGENT_ENGINE.md).
+n8n remains the default engine and stays self-hosted on EC2. LangGraph runs inside FastAPI only when it is selected manually; see [Agent engine selection](AGENT_ENGINE.md).
 
 ## Files Changed For Render
 
@@ -21,8 +21,8 @@ Dockerfile
 
 render.yaml
   -> defines the Render web service
-  -> keeps AGENT_ENGINE=n8n during foundation and parity work
-  -> records the planned LangGraph model without storing credentials
+  -> selects AGENT_ENGINE=n8n by default
+  -> declares the LangGraph model and secret configuration
 
 twm/shared/properties/properties.ini
   -> stores common FastAPI config in the [APP] section
@@ -58,6 +58,8 @@ Required Render environment variable:
 ```properties
 ENVIRONMENT=prod
 AGENT_ENGINE=n8n
+LANGGRAPH_MODEL=openai/gpt-oss-120b
+GROQ_API_KEY=<secret>
 ```
 
 FastAPI config is loaded from:
@@ -102,9 +104,11 @@ POST https://<render-service-host>/meridian
 
 The UI should not call n8n directly.
 
-## n8n Requirement
+## Selected Engine Requirements
 
-FastAPI on Render calls n8n on EC2 through:
+With `AGENT_ENGINE=langgraph`, execution stays inside FastAPI and requires `GROQ_API_KEY`.
+
+With `AGENT_ENGINE=n8n`, FastAPI calls n8n on EC2 through:
 
 ```text
 http://13.201.32.120:5678/webhook/scout
@@ -113,4 +117,4 @@ http://13.201.32.120:5678/webhook/meridian
 
 EC2 access to the n8n webhook port must remain available to Render unless n8n is placed behind a domain, reverse proxy, or allowlist.
 
-Do not select `AGENT_ENGINE=langgraph` until the concrete Scout and Meridian graphs are delivered and verified.
+Changing `AGENT_ENGINE` requires a Render restart/redeploy. Follow [Agent engine selection](AGENT_ENGINE.md) to switch, verify, or roll back.

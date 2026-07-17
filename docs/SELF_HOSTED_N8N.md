@@ -8,7 +8,7 @@ FastAPI now runs on Render. See [Render FastAPI deployment](RENDER_FASTAPI.md).
 
 ## What n8n Does
 
-n8n remains the current orchestration layer for Trip Matcher while the LangGraph runtime foundation is prepared. See [Agent engine foundation](AGENT_ENGINE.md).
+n8n is the default orchestration layer for Trip Matcher. LangGraph remains available through an explicit manual configuration switch; see [Agent engine selection](AGENT_ENGINE.md).
 
 Current workflows:
 

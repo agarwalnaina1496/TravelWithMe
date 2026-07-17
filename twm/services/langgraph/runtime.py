@@ -1,19 +1,18 @@
-"""Reusable configuration and stateless graph wiring for LangGraph agents."""
+"""Provider configuration and graph compilation for LangGraph agents."""
 
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from langchain_groq import ChatGroq
-from langgraph.graph import END, START, StateGraph
 
-from ..shared.properties import property_loader
+from ...shared.properties import property_loader
 
 
 logger = logging.getLogger("uvicorn.error")
 
 
 class LangGraphRuntime:
-    """Construct the shared model and compile stateless single-node graphs."""
+    """Own provider construction and compile injected graph builders."""
 
     def __init__(self, model: Any | None = None) -> None:
         self.model = model or self._create_model()
@@ -27,24 +26,9 @@ class LangGraphRuntime:
         )
 
     @staticmethod
-    def compile_single_node_graph(
-        state_schema: type,
-        node_name: str,
-        node: Callable[[Any], dict[str, Any]],
-        *,
-        input_schema: type | None = None,
-        output_schema: type | None = None,
-    ) -> Any:
-        builder = StateGraph(
-            state_schema,
-            input_schema=input_schema,
-            output_schema=output_schema,
-        )
-        builder.add_node(node_name, node)
-        builder.add_edge(START, node_name)
-        builder.add_edge(node_name, END)
+    def compile_graph(graph_name: str, builder: Any) -> Any:
         graph = builder.compile()
-        logger.info("Compiled stateless LangGraph runtime node: %s", node_name)
+        logger.info("Compiled stateless LangGraph agent: %s", graph_name)
         return graph
 
     @staticmethod
