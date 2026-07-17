@@ -1,7 +1,7 @@
 """Focused test data factories for public API contracts."""
 
 
-def recommendation_criteria_catalog() -> list[dict]:
+def traveler_criteria() -> list[dict]:
     return [
         {
             "id": "pace",

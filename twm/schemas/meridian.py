@@ -70,7 +70,7 @@ class MeridianResponse(BaseModel):
     message: NonEmptyString
     generated_at: Optional[str] = None
     trip_type: Optional[Literal["single", "circuit", "mixed"]] = None
-    criteria_catalog: Optional[list[TravelerCriterion]] = None
+    traveler_criteria: Optional[list[TravelerCriterion]] = None
     options: list[RecommendationOption] = Field(default_factory=list, max_length=3)
     constraint_adjustment_suggestions: Optional[list[NonEmptyString]] = None
     agent_meta: AgentMeta
@@ -87,13 +87,13 @@ class MeridianResponse(BaseModel):
 
     def _validate_status_options(self) -> None:
         if self.status in {"SUCCESS", "SOFT_FAIL"}:
-            if not self.criteria_catalog:
-                raise ValueError(f"{self.status} requires a criteria catalog")
+            if not self.traveler_criteria:
+                raise ValueError(f"{self.status} requires traveler criteria")
             if not self.options:
                 raise ValueError(f"{self.status} requires at least one valid option")
             return
-        if self.criteria_catalog is not None:
-            raise ValueError(f"{self.status} does not allow a criteria catalog")
+        if self.traveler_criteria is not None:
+            raise ValueError(f"{self.status} does not allow traveler criteria")
         if self.options:
             raise ValueError(f"{self.status} does not allow recommendation options")
 
@@ -106,16 +106,16 @@ class MeridianResponse(BaseModel):
         if not self.options:
             return
 
-        catalog = self.criteria_catalog or []
+        catalog = self.traveler_criteria or []
         catalog_ids = [criterion.id.casefold() for criterion in catalog]
         if len(set(catalog_ids)) != len(catalog_ids):
-            raise ValueError("criteria catalog ids must be unique")
+            raise ValueError("traveler criterion ids must be unique")
 
         catalog_labels = [
             criterion.label.casefold() for criterion in catalog
         ]
         if len(set(catalog_labels)) != len(catalog_labels):
-            raise ValueError("criteria catalog labels must be unique")
+            raise ValueError("traveler criterion labels must be unique")
 
         source_paths = [
             path.casefold()
@@ -146,7 +146,7 @@ class MeridianResponse(BaseModel):
             }
             if option_criteria != expected_criteria:
                 raise ValueError(
-                    "every option must evaluate every catalog criterion exactly once"
+                    "every option must evaluate every traveler criterion exactly once"
                 )
             for evaluation in option.evaluations:
                 criterion = criteria_by_id[evaluation.criterion_id.casefold()]
