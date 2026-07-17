@@ -21,7 +21,7 @@ from twm.services import (
 )
 from twm.services.response_normalization import _normalize_meridian_response
 from twm.schemas.scout import ScoutResponse
-from tests.factories import recommendation_option
+from tests.factories import recommendation_criteria_catalog, recommendation_option
 
 
 def fake_langgraph_model(outputs: dict[str, dict]) -> Mock:
@@ -186,6 +186,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
                 },
             },
             "trip_type": "single",
+            "criteria_catalog": recommendation_criteria_catalog(),
             "options": [recommendation_option()],
         }
     )
@@ -290,7 +291,7 @@ def test_meridian_api_returns_typed_dynamic_recommendations(
 ) -> None:
     engine = Mock()
     option = recommendation_option()
-    option["criteria"][0]["details"] = [
+    option["evaluations"][0]["details"] = [
         {
             "type": "cost_breakdown",
             "currency": "INR",
@@ -312,6 +313,7 @@ def test_meridian_api_returns_typed_dynamic_recommendations(
                 }
             },
             "trip_type": "single",
+            "criteria_catalog": recommendation_criteria_catalog(),
             "options": [option],
             "agent_meta": {"agent": "meridian", "prompt_version": "spoofed"},
         },
@@ -336,7 +338,8 @@ def test_meridian_api_returns_typed_dynamic_recommendations(
         "agent": "meridian",
         "prompt_version": "2.0.0",
     }
-    cost = body["options"][0]["criteria"][0]["details"][0]
+    assert body["criteria_catalog"] == recommendation_criteria_catalog()
+    cost = body["options"][0]["evaluations"][0]["details"][0]
     assert cost["currency"] == "INR"
     assert "per_person_total" not in cost
     assert "group_total" not in cost

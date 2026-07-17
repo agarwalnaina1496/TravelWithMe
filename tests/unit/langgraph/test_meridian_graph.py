@@ -9,7 +9,7 @@ from twm.services import N8NAgentEngine
 from twm.services.agent_engine import langgraph as langgraph_module
 from twm.services.agent_engine import n8n as n8n_module
 from twm.services.response_normalization import _normalize_meridian_response
-from tests.factories import recommendation_option
+from tests.factories import recommendation_criteria_catalog, recommendation_option
 
 from .fakes import make_langgraph_engine, prompt_release
 
@@ -39,6 +39,7 @@ from .fakes import make_langgraph_engine, prompt_release
                 }
             },
             "trip_type": "single",
+            "criteria_catalog": recommendation_criteria_catalog(),
             "options": [recommendation_option(1), recommendation_option(2)],
         },
         {

@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import AgentMeta
-from .recommendations import NonEmptyString, RecommendationOption
+from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
 
 
 class MeridianAdvisorConversationContext(BaseModel):
@@ -70,6 +70,7 @@ class MeridianResponse(BaseModel):
     message: NonEmptyString
     generated_at: Optional[str] = None
     trip_type: Optional[Literal["single", "circuit", "mixed"]] = None
+    criteria_catalog: Optional[list[TravelerCriterion]] = None
     options: list[RecommendationOption] = Field(default_factory=list, max_length=3)
     constraint_adjustment_suggestions: Optional[list[NonEmptyString]] = None
     agent_meta: AgentMeta
@@ -86,9 +87,13 @@ class MeridianResponse(BaseModel):
 
     def _validate_status_options(self) -> None:
         if self.status in {"SUCCESS", "SOFT_FAIL"}:
+            if not self.criteria_catalog:
+                raise ValueError(f"{self.status} requires a criteria catalog")
             if not self.options:
                 raise ValueError(f"{self.status} requires at least one valid option")
             return
+        if self.criteria_catalog is not None:
+            raise ValueError(f"{self.status} does not allow a criteria catalog")
         if self.options:
             raise ValueError(f"{self.status} does not allow recommendation options")
 
@@ -101,6 +106,31 @@ class MeridianResponse(BaseModel):
         if not self.options:
             return
 
+        catalog = self.criteria_catalog or []
+        catalog_ids = [criterion.id.casefold() for criterion in catalog]
+        if len(set(catalog_ids)) != len(catalog_ids):
+            raise ValueError("criteria catalog ids must be unique")
+
+        catalog_labels = [
+            criterion.label.casefold() for criterion in catalog
+        ]
+        if len(set(catalog_labels)) != len(catalog_labels):
+            raise ValueError("criteria catalog labels must be unique")
+
+        source_paths = [
+            path.casefold()
+            for criterion in catalog
+            for path in criterion.source_context_paths
+        ]
+        if len(set(source_paths)) != len(source_paths):
+            raise ValueError(
+                "a source context path cannot belong to multiple criteria"
+            )
+
+        criteria_by_id = {
+            criterion.id.casefold(): criterion for criterion in catalog
+        }
+
         identities = [
             (option.type, option.destination_id or option.circuit_id)
             for option in self.options
@@ -108,25 +138,25 @@ class MeridianResponse(BaseModel):
         if len(set(identities)) != len(identities):
             raise ValueError("recommendation option identities must be unique")
 
-        expected_criteria = {
-            criterion.id.casefold(): (
-                criterion.label.casefold(),
-                criterion.requirement_type,
-            )
-            for criterion in self.options[0].criteria
-        }
-        for option in self.options[1:]:
+        expected_criteria = set(criteria_by_id)
+        for option in self.options:
             option_criteria = {
-                criterion.id.casefold(): (
-                    criterion.label.casefold(),
-                    criterion.requirement_type,
-                )
-                for criterion in option.criteria
+                evaluation.criterion_id.casefold()
+                for evaluation in option.evaluations
             }
             if option_criteria != expected_criteria:
                 raise ValueError(
-                    "every option must evaluate the same traveler criteria"
+                    "every option must evaluate every catalog criterion exactly once"
                 )
+            for evaluation in option.evaluations:
+                criterion = criteria_by_id[evaluation.criterion_id.casefold()]
+                if (
+                    criterion.requirement_type == "HARD"
+                    and evaluation.outcome == "MISMATCH"
+                ):
+                    raise ValueError(
+                        "a hard requirement cannot have a mismatch outcome"
+                    )
 
         option_types = {option.type for option in self.options}
         if self.trip_type in {"single", "circuit"} and option_types != {
@@ -161,10 +191,10 @@ class MeridianResponse(BaseModel):
             return
         for option in self.options:
             has_criterion_tradeoff = any(
-                criterion.outcome in {"TRADEOFF", "MISMATCH"}
-                for criterion in option.criteria
+                evaluation.outcome in {"TRADEOFF", "MISMATCH"}
+                for evaluation in option.evaluations
             )
-            if not option.tradeoffs and not has_criterion_tradeoff:
+            if not option.other_considerations and not has_criterion_tradeoff:
                 raise ValueError("every SOFT_FAIL option requires a visible trade-off")
 
     def _validate_constraint_adjustments(self) -> None:

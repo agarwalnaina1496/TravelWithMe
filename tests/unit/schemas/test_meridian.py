@@ -8,21 +8,35 @@ from pydantic import ValidationError
 from twm.schemas import MeridianResponse, RecommendationOption
 
 
+def valid_catalog() -> list[dict]:
+    return [
+        {
+            "id": "pace",
+            "label": "Relaxed pace",
+            "requirement_type": "PREFERENCE",
+            "source_context_paths": ["travel_style.pace"],
+        },
+        {
+            "id": "budget",
+            "label": "Budget excluding tickets",
+            "requirement_type": "HARD",
+            "source_context_paths": ["budget", "budget_inclusions"],
+        },
+    ]
+
+
 def valid_option(rank: int = 1) -> dict:
     return {
         "rank": rank,
         "type": "single",
-        "name": "Mountain Haven",
+        "name": f"Mountain Haven {rank}",
         "destination_id": f"destination-{rank}",
-        "verdict": "Best overall fit",
         "summary": "Balances the traveler's pace and budget.",
-        "criteria": [
+        "evaluations": [
             {
-                "id": "pace",
-                "label": "Relaxed pace",
-                "requirement_type": "PREFERENCE",
+                "criterion_id": "pace",
                 "outcome": "MATCH",
-                "summary": "The stay can be kept unhurried.",
+                "conclusion": "The stay can be kept unhurried.",
                 "details": [
                     {
                         "type": "bullets",
@@ -32,18 +46,12 @@ def valid_option(rank: int = 1) -> dict:
                         "type": "facts",
                         "facts": [{"label": "Base changes", "value": "One"}],
                     },
-                    {
-                        "type": "note",
-                        "text": "Current road conditions need verification near departure.",
-                    },
                 ],
             },
             {
-                "id": "budget",
-                "label": "Budget fit",
-                "requirement_type": "HARD",
+                "criterion_id": "budget",
                 "outcome": "TRADEOFF",
-                "summary": "The upper estimate reaches the stated limit.",
+                "conclusion": "The upper estimate reaches the stated limit.",
                 "details": [
                     {
                         "type": "cost_breakdown",
@@ -85,6 +93,7 @@ def success_response(**overrides) -> dict:
         "message": "I found one suitable option.",
         "state_delta": terminal_state(),
         "trip_type": "single",
+        "criteria_catalog": valid_catalog(),
         "options": [valid_option()],
         "agent_meta": {"agent": "meridian", "prompt_version": "test"},
     }
@@ -92,25 +101,31 @@ def success_response(**overrides) -> dict:
     return payload
 
 
-def test_dynamic_option_accepts_all_canonical_detail_blocks() -> None:
+def test_dynamic_response_accepts_all_canonical_detail_blocks() -> None:
     response = MeridianResponse(**success_response())
 
     body = response.model_dump(mode="json", exclude_none=True)
 
-    cost = body["options"][0]["criteria"][1]["details"][0]
+    cost = body["options"][0]["evaluations"][1]["details"][0]
     assert cost["currency"] == "INR"
     assert cost["per_person_total"] == {"minimum": 10000.0, "maximum": 12500.0}
     assert "circuit_id" not in body["options"][0]
+    assert body["criteria_catalog"][0]["source_context_paths"] == [
+        "travel_style.pace"
+    ]
 
 
 @pytest.mark.parametrize(
     "mutate",
     [
         lambda option: option.update({"best_for": "legacy"}),
+        lambda option: option.update({"verdict": "legacy"}),
         lambda option: option.update({"itinerary": [{"day": 1}]}),
         lambda option: option.update({"rank": 0}),
         lambda option: option.update({"circuit_id": "wrong-kind"}),
-        lambda option: option["criteria"].append(deepcopy(option["criteria"][0])),
+        lambda option: option["evaluations"].append(
+            deepcopy(option["evaluations"][0])
+        ),
     ],
 )
 def test_option_rejects_legacy_malformed_or_duplicate_content(mutate) -> None:
@@ -121,11 +136,20 @@ def test_option_rejects_legacy_malformed_or_duplicate_content(mutate) -> None:
         RecommendationOption(**option)
 
 
+def test_note_detail_block_is_not_part_of_the_contract() -> None:
+    option = valid_option()
+    option["evaluations"][0]["details"] = [
+        {"type": "note", "text": "Free-form note"}
+    ]
+
+    with pytest.raises(ValidationError):
+        RecommendationOption(**option)
+
+
 def test_costs_reject_invalid_ranges_and_missing_numeric_values() -> None:
     option = valid_option()
-    cost = option["criteria"][1]["details"][0]
+    cost = option["evaluations"][1]["details"][0]
     cost["per_person_total"] = {"minimum": 10000, "maximum": 9000}
-
     with pytest.raises(ValidationError):
         RecommendationOption(**option)
 
@@ -135,7 +159,7 @@ def test_costs_reject_invalid_ranges_and_missing_numeric_values() -> None:
         RecommendationOption(**option)
 
     option = valid_option()
-    cost = option["criteria"][1]["details"][0]
+    cost = option["evaluations"][1]["details"][0]
     cost["currency"] = "inr"
     with pytest.raises(ValidationError):
         RecommendationOption(**option)
@@ -148,44 +172,46 @@ def test_costs_reject_invalid_ranges_and_missing_numeric_values() -> None:
 
 def test_hard_mismatch_and_undisclosed_tradeoff_are_rejected() -> None:
     option = valid_option()
-    budget = option["criteria"][1]
+    budget = option["evaluations"][1]
     budget["outcome"] = "MISMATCH"
-
     with pytest.raises(ValidationError):
-        RecommendationOption(**option)
+        MeridianResponse(**success_response(options=[option]))
 
-    budget["requirement_type"] = "PREFERENCE"
+    catalog = valid_catalog()
+    catalog[1]["requirement_type"] = "PREFERENCE"
     budget["tradeoffs"] = []
     with pytest.raises(ValidationError):
-        RecommendationOption(**option)
+        MeridianResponse(
+            **success_response(criteria_catalog=catalog, options=[option])
+        )
 
 
 def test_preference_mismatch_is_allowed_when_disclosed() -> None:
     option = valid_option()
-    pace = option["criteria"][0]
+    pace = option["evaluations"][0]
     pace["outcome"] = "MISMATCH"
     pace["tradeoffs"] = ["Daily transfers make the requested pace difficult."]
 
-    RecommendationOption(**option)
+    MeridianResponse(**success_response(options=[option]))
 
 
 def test_absent_cost_totals_remain_absent() -> None:
     option = valid_option()
-    cost = option["criteria"][1]["details"][0]
+    cost = option["evaluations"][1]["details"][0]
     cost.pop("per_person_total")
     cost.pop("group_total")
 
     body = RecommendationOption(**option).model_dump(mode="json", exclude_none=True)
-
-    cost_body = body["criteria"][1]["details"][0]
+    cost_body = body["evaluations"][1]["details"][0]
     assert "per_person_total" not in cost_body
     assert "group_total" not in cost_body
 
 
-def test_success_requires_valid_sequential_options_and_terminal_state() -> None:
+def test_success_requires_catalog_options_ranks_and_terminal_state() -> None:
+    with pytest.raises(ValidationError):
+        MeridianResponse(**success_response(criteria_catalog=[]))
     with pytest.raises(ValidationError):
         MeridianResponse(**success_response(options=[]))
-
     with pytest.raises(ValidationError):
         MeridianResponse(
             **success_response(options=[valid_option(1), valid_option(3)])
@@ -197,25 +223,50 @@ def test_success_requires_valid_sequential_options_and_terminal_state() -> None:
         MeridianResponse(**success_response(state_delta=invalid_state))
 
 
-def test_ranked_options_require_unique_identity_and_aligned_criteria() -> None:
+def test_catalog_requires_unique_ids_labels_and_source_paths() -> None:
+    catalog = valid_catalog()
+    duplicate = deepcopy(catalog[0])
+    duplicate["source_context_paths"] = ["another.path"]
+    catalog.append(duplicate)
+    with pytest.raises(ValidationError):
+        MeridianResponse(**success_response(criteria_catalog=catalog))
+
+    catalog = valid_catalog()
+    catalog[1]["label"] = catalog[0]["label"]
+    with pytest.raises(ValidationError):
+        MeridianResponse(**success_response(criteria_catalog=catalog))
+
+    catalog = valid_catalog()
+    catalog[1]["source_context_paths"] = ["travel_style.pace"]
+    with pytest.raises(ValidationError):
+        MeridianResponse(**success_response(criteria_catalog=catalog))
+
+    catalog = valid_catalog()
+    catalog[1]["source_context_paths"] = ["not a valid path"]
+    with pytest.raises(ValidationError):
+        MeridianResponse(**success_response(criteria_catalog=catalog))
+
+
+def test_options_require_unique_identity_and_exact_catalog_coverage() -> None:
     duplicate = valid_option(2)
     duplicate["destination_id"] = "destination-1"
     with pytest.raises(ValidationError):
-        MeridianResponse(
-            **success_response(options=[valid_option(1), duplicate])
-        )
+        MeridianResponse(**success_response(options=[valid_option(1), duplicate]))
 
-    different_criteria = valid_option(2)
-    different_criteria["criteria"].pop()
+    missing = valid_option(2)
+    missing["evaluations"].pop()
     with pytest.raises(ValidationError):
-        MeridianResponse(
-            **success_response(options=[valid_option(1), different_criteria])
-        )
+        MeridianResponse(**success_response(options=[valid_option(1), missing]))
+
+    unknown = valid_option()
+    unknown["evaluations"][0]["criterion_id"] = "unknown"
+    with pytest.raises(ValidationError):
+        MeridianResponse(**success_response(options=[unknown]))
 
 
 def test_option_rejects_mixed_cost_currencies() -> None:
     option = valid_option()
-    option["criteria"][0]["details"].append(
+    option["evaluations"][0]["details"].append(
         {
             "type": "cost_breakdown",
             "currency": "USD",
@@ -227,7 +278,7 @@ def test_option_rejects_mixed_cost_currencies() -> None:
         RecommendationOption(**option)
 
 
-def test_clarification_requires_one_awaiting_value_and_matching_message() -> None:
+def test_clarification_requires_awaiting_message_and_forbids_catalog() -> None:
     payload = {
         "status": "NEEDS_CLARIFICATION",
         "message": "What budget should I use?",
@@ -244,6 +295,11 @@ def test_clarification_requires_one_awaiting_value_and_matching_message() -> Non
     }
     MeridianResponse(**payload)
 
+    payload["criteria_catalog"] = valid_catalog()
+    with pytest.raises(ValidationError):
+        MeridianResponse(**payload)
+    payload.pop("criteria_catalog")
+
     payload["state_delta"]["matcher_state"]["conversation_context"][
         "last_meridian_message"
     ] = "Different message"
@@ -251,12 +307,25 @@ def test_clarification_requires_one_awaiting_value_and_matching_message() -> Non
         MeridianResponse(**payload)
 
 
-def test_soft_fail_requires_visible_option_tradeoff() -> None:
+def test_soft_fail_requires_visible_tradeoff() -> None:
     option = valid_option()
-    option["criteria"] = [option["criteria"][0]]
+    option["evaluations"] = [option["evaluations"][0]]
+    catalog = [valid_catalog()[0]]
 
     with pytest.raises(ValidationError):
-        MeridianResponse(**success_response(status="SOFT_FAIL", options=[option]))
+        MeridianResponse(
+            **success_response(
+                status="SOFT_FAIL",
+                criteria_catalog=catalog,
+                options=[option],
+            )
+        )
 
-    option["tradeoffs"] = ["The longer transfer reduces time at the destination."]
-    MeridianResponse(**success_response(status="SOFT_FAIL", options=[option]))
+    option["other_considerations"] = [
+        "The longer transfer reduces time at the destination."
+    ]
+    MeridianResponse(
+        **success_response(
+            status="SOFT_FAIL", criteria_catalog=catalog, options=[option]
+        )
+    )

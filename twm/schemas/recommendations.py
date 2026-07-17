@@ -17,6 +17,14 @@ CurrencyCode = Annotated[
         pattern=r"^[A-Z]{3}$",
     ),
 ]
+ContextPath = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$",
+    ),
+]
 Amount = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 
 
@@ -54,13 +62,6 @@ class FactsDetail(BaseModel):
 
     type: Literal["facts"]
     facts: list[Fact] = Field(min_length=1)
-
-
-class NoteDetail(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    type: Literal["note"]
-    text: NonEmptyString
 
 
 class CostLineItem(BaseModel):
@@ -116,7 +117,7 @@ def _validate_group_not_below_per_person(
 
 
 RecommendationDetail = Annotated[
-    Union[BulletDetail, FactsDetail, NoteDetail, CostBreakdownDetail],
+    Union[BulletDetail, FactsDetail, CostBreakdownDetail],
     Field(discriminator="type"),
 ]
 CriterionOutcome = Literal["MATCH", "TRADEOFF", "MISMATCH"]
@@ -129,15 +130,27 @@ class TravelerCriterion(BaseModel):
     id: NonEmptyString
     label: NonEmptyString
     requirement_type: RequirementType
+    source_context_paths: list[ContextPath] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_source_paths(self) -> "TravelerCriterion":
+        normalized_paths = [path.casefold() for path in self.source_context_paths]
+        if len(set(normalized_paths)) != len(normalized_paths):
+            raise ValueError("source context paths must be unique within a criterion")
+        return self
+
+
+class CriterionEvaluation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    criterion_id: NonEmptyString
     outcome: CriterionOutcome
-    summary: NonEmptyString
+    conclusion: NonEmptyString
     details: list[RecommendationDetail] = Field(min_length=1)
     tradeoffs: list[NonEmptyString] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_semantics(self) -> "TravelerCriterion":
-        if self.requirement_type == "HARD" and self.outcome == "MISMATCH":
-            raise ValueError("a hard requirement cannot have a mismatch outcome")
+    def validate_semantics(self) -> "CriterionEvaluation":
         if self.outcome == "MATCH" and self.tradeoffs:
             raise ValueError("a match criterion cannot contain trade-offs")
         if self.outcome in {"TRADEOFF", "MISMATCH"} and not self.tradeoffs:
@@ -153,13 +166,12 @@ class RecommendationOption(BaseModel):
     name: NonEmptyString
     destination_id: Optional[NonEmptyString] = None
     circuit_id: Optional[NonEmptyString] = None
-    verdict: NonEmptyString
     summary: NonEmptyString
-    criteria: list[TravelerCriterion] = Field(min_length=1)
-    tradeoffs: list[NonEmptyString] = Field(default_factory=list)
+    evaluations: list[CriterionEvaluation] = Field(min_length=1)
+    other_considerations: list[NonEmptyString] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_identity_and_criteria(self) -> "RecommendationOption":
+    def validate_identity_and_evaluations(self) -> "RecommendationOption":
         if self.type == "single":
             if self.destination_id is None or self.circuit_id is not None:
                 raise ValueError(
@@ -170,17 +182,16 @@ class RecommendationOption(BaseModel):
                 "a circuit option requires circuit_id and forbids destination_id"
             )
 
-        criterion_ids = [criterion.id.casefold() for criterion in self.criteria]
-        criterion_labels = [criterion.label.casefold() for criterion in self.criteria]
+        criterion_ids = [
+            evaluation.criterion_id.casefold() for evaluation in self.evaluations
+        ]
         if len(set(criterion_ids)) != len(criterion_ids):
-            raise ValueError("criterion ids must be unique within an option")
-        if len(set(criterion_labels)) != len(criterion_labels):
-            raise ValueError("traveler asks must appear only once within an option")
+            raise ValueError("criterion evaluations must be unique within an option")
 
         currencies = {
             detail.currency
-            for criterion in self.criteria
-            for detail in criterion.details
+            for evaluation in self.evaluations
+            for detail in evaluation.details
             if isinstance(detail, CostBreakdownDetail)
         }
         if len(currencies) > 1:
