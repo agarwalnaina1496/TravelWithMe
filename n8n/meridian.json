@@ -38,7 +38,8 @@
         "promptType": "define",
         "text": "={{ JSON.stringify({\n  trip_state: $('Webhook').item.json.body.trip_state || {},\n  message: $('Webhook').item.json.body.message || null\n}) }}",
         "options": {
-          "systemMessage": "={{ $('Webhook').item.json.body.prompt }}"
+          "systemMessage": "={{ $('Webhook').item.json.body.prompt }}",
+          "hasOutputParser": true
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -72,7 +73,21 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  return {\n    json: JSON.parse(item.json.output)\n  };\n});"
+        "schemaType": "manual",
+        "inputSchema": "={{ JSON.stringify($('Webhook').item.json.body.output_schema) }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        420,
+        220
+      ],
+      "id": "f44d9102-4dd3-4f89-bd6f-59ebc12369c7",
+      "name": "Meridian output schema"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const output = item.json.output;\n  return {\n    json: typeof output === 'string' ? JSON.parse(output) : output\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -114,6 +129,17 @@
           {
             "node": "Meridian",
             "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meridian output schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Meridian",
+            "type": "ai_outputParser",
             "index": 0
           }
         ]

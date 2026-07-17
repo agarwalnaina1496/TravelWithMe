@@ -2,6 +2,12 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Meridian 1.3.0 — 2026-07-17
+
+- Replaced fixed recommendation sections with traveler ask mapped criteria shared by every option.
+- Required one criterion evaluation per option with concise conclusions, supporting details, and criterion specific trade-offs.
+- Preserved hard requirements, traveler qualifiers, route feasibility, cost boundaries, and time-sensitive uncertainty while keeping Planner-owned itinerary content out of recommendations.
+
 ## Scout 1.5.0 — 2026-07-17
 
 - Made complete advice end naturally after the useful guidance and limited follow-up questions to missing details that materially change Scout-owned advice.
