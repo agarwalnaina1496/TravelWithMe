@@ -3,19 +3,6 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  return {\n    json: JSON.parse(item.json.output)\n  };\n});"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        560,
-        0
-      ],
-      "id": "892ae446-3a07-4acf-beec-de666ff0dc58",
-      "name": "Output parser"
-    },
-    {
-      "parameters": {
         "httpMethod": "POST",
         "path": "scout",
         "responseMode": "responseNode",
@@ -34,7 +21,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ $json }}",
+        "responseBody": "={{ $json.output }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
@@ -50,6 +37,7 @@
       "parameters": {
         "promptType": "define",
         "text": "={{ JSON.stringify({ trip_state: $('Webhook').item.json.body.trip_state, message: $('Webhook').item.json.body.message }) }}",
+        "hasOutputParser": true,
         "options": {
           "systemMessage": "={{ $('Webhook').item.json.body.prompt }}"
         }
@@ -62,6 +50,20 @@
       ],
       "id": "961558c7-4f17-4a63-a375-0abf46f5d369",
       "name": "Scout"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "={{ JSON.stringify($('Webhook').item.json.body.output_schema) }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        420,
+        220
+      ],
+      "id": "35f26c32-8cca-443d-8a7c-5784048b49ab",
+      "name": "Scout output schema"
     },
     {
       "parameters": {
@@ -97,7 +99,7 @@
         ]
       ]
     },
-    "Output parser": {
+    "Scout": {
       "main": [
         [
           {
@@ -108,12 +110,12 @@
         ]
       ]
     },
-    "Scout": {
-      "main": [
+    "Scout output schema": {
+      "ai_outputParser": [
         [
           {
-            "node": "Output parser",
-            "type": "main",
+            "node": "Scout",
+            "type": "ai_outputParser",
             "index": 0
           }
         ]
