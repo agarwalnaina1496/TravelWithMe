@@ -19,6 +19,10 @@ class ParseMeridianOutputNode(ParseStructuredOutputNode):
         return {
             "status": "HARD_FAIL",
             "message": "I had trouble formatting that response. Please try again.",
-            "state_delta": {},
+            "state_delta": {
+                "matcher_state": {
+                    "conversation_context": {"awaiting": None}
+                }
+            },
             "options": [],
         }

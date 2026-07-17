@@ -11,6 +11,18 @@ from .meridian import (
     MeridianTripState,
 )
 from .scout import ScoutRequest, ScoutResponse
+from .recommendations import (
+    BulletDetail,
+    CostBreakdownDetail,
+    CostLineItem,
+    CriterionEvaluation,
+    EstimateRange,
+    Fact,
+    FactsDetail,
+    RecommendationDetail,
+    RecommendationOption,
+    TravelerCriterion,
+)
 
 __all__ = [
     "AgentMeta",
@@ -21,6 +33,16 @@ __all__ = [
     "MeridianStateDelta",
     "MeridianStatus",
     "MeridianTripState",
+    "BulletDetail",
+    "CostBreakdownDetail",
+    "CostLineItem",
+    "CriterionEvaluation",
+    "EstimateRange",
+    "Fact",
+    "FactsDetail",
+    "RecommendationDetail",
+    "RecommendationOption",
+    "TravelerCriterion",
     "ScoutRequest",
     "ScoutResponse",
 ]

@@ -31,6 +31,7 @@ class N8NAgentEngine:
     ) -> AgentExecution:
         release = load_prompt_release(agent)
         response = self._forward(
+            agent,
             property_key,
             {
                 "prompt": release.content,
@@ -40,14 +41,23 @@ class N8NAgentEngine:
         )
         return AgentExecution(response=response, prompt_release=release)
 
-    def _forward(self, property_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _forward(
+        self, agent: str, property_key: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         try:
             url = property_loader.get_string_property(property_key)
         except Exception:
+            state_delta = {}
+            if agent == "meridian":
+                state_delta = {
+                    "matcher_state": {
+                        "conversation_context": {"awaiting": None}
+                    }
+                }
             return {
                 "status": "HARD_FAIL",
                 "message": f"{property_key} is not configured.",
-                "state_delta": {},
+                "state_delta": state_delta,
                 "options": [],
             }
 

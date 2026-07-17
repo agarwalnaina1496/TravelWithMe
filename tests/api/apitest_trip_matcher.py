@@ -1,5 +1,6 @@
 """API tests for the Scout and Meridian router."""
 
+from copy import deepcopy
 from unittest.mock import Mock
 
 import pytest
@@ -19,7 +20,9 @@ from twm.services import (
     LangGraphRuntime,
     N8NAgentEngine,
 )
+from twm.services.response_normalization import _normalize_meridian_response
 from twm.schemas.scout import ScoutResponse
+from tests.factories import recommendation_option, traveler_criteria
 
 
 def fake_langgraph_model(outputs: dict[str, dict]) -> Mock:
@@ -36,6 +39,44 @@ def fake_langgraph_model(outputs: dict[str, dict]) -> Mock:
 
     model.with_structured_output.side_effect = with_structured_output
     return model
+
+
+def meridian_success_output() -> dict:
+    return {
+        "status": "SUCCESS",
+        "message": "The first option is the strongest overall fit.",
+        "state_delta": {
+            "matcher_state": {
+                "conversation_context": {"awaiting": None}
+            }
+        },
+        "trip_type": "single",
+        "traveler_criteria": traveler_criteria(),
+        "options": [recommendation_option()],
+    }
+
+
+def assert_meridian_api_rejects(
+    api_client: TestClient, monkeypatch, output: dict
+) -> None:
+    engine = Mock()
+    engine.meridian.return_value = AgentExecution(
+        response=output,
+        prompt_release=PromptRelease("meridian", "2.0.0", "prompt"),
+    )
+    monkeypatch.setattr(trip_matcher, "engine", engine)
+
+    with pytest.raises(ValidationError):
+        api_client.post(
+            "/meridian",
+            json={
+                "trip_state": {
+                    "trip_context": {},
+                    "advisor_state": {"conversation_context": {}},
+                    "matcher_state": {},
+                }
+            },
+        )
 
 
 def test_active_phase_prompt_releases_are_complete() -> None:
@@ -184,7 +225,8 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
                 },
             },
             "trip_type": "single",
-            "options": [],
+            "traveler_criteria": traveler_criteria(),
+            "options": [recommendation_option()],
         }
     )
     monkeypatch.setattr(engine, "_forward", forward)
@@ -216,6 +258,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     }
     release = load_prompt_release("meridian")
     forward.assert_called_once_with(
+        "meridian",
         "n8n_meridian_webhook_url",
         {
             "prompt": release.content,
@@ -249,7 +292,11 @@ def test_meridian_api_returns_canonical_failure_suggestions(
         response={
             "status": "BUDGET_FAIL",
             "message": "The budget does not support the current constraints.",
-            "state_delta": {},
+            "state_delta": {
+                "matcher_state": {
+                    "conversation_context": {"awaiting": None}
+                }
+            },
             "options": [],
             "constraint_adjustment_suggestions": ["Increase the stay budget."],
             "relaxation_suggestions": ["Legacy field must not leak."],
@@ -276,6 +323,174 @@ def test_meridian_api_returns_canonical_failure_suggestions(
     ]
     assert "relaxation_suggestions" not in body
     assert "version" not in body
+
+
+def test_meridian_api_returns_typed_dynamic_recommendations(
+    api_client: TestClient, monkeypatch
+) -> None:
+    engine = Mock()
+    option = recommendation_option()
+    option["evaluations"][0]["details"] = [
+        {
+            "type": "cost_breakdown",
+            "currency": "INR",
+            "items": [
+                {
+                    "label": "Stay",
+                    "per_person": {"minimum": 6000, "maximum": 7500},
+                }
+            ],
+        }
+    ]
+    engine.meridian.return_value = AgentExecution(
+        response={
+            "status": "SUCCESS",
+            "message": "The first option is the strongest overall fit.",
+            "state_delta": {
+                "matcher_state": {
+                    "conversation_context": {"awaiting": None}
+                }
+            },
+            "trip_type": "single",
+            "traveler_criteria": traveler_criteria(),
+            "options": [option],
+            "agent_meta": {"agent": "meridian", "prompt_version": "spoofed"},
+        },
+        prompt_release=PromptRelease("meridian", "2.0.0", "prompt"),
+    )
+    monkeypatch.setattr(trip_matcher, "engine", engine)
+
+    response = api_client.post(
+        "/meridian",
+        json={
+            "trip_state": {
+                "trip_context": {},
+                "advisor_state": {"conversation_context": {}},
+                "matcher_state": {},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["agent_meta"] == {
+        "agent": "meridian",
+        "prompt_version": "2.0.0",
+    }
+    assert body["traveler_criteria"] == traveler_criteria()
+    cost = body["options"][0]["evaluations"][0]["details"][0]
+    assert cost["currency"] == "INR"
+    assert "per_person_total" not in cost
+    assert "group_total" not in cost
+
+
+def test_meridian_normalizer_rejects_legacy_recommendation_option() -> None:
+    execution = AgentExecution(
+        response={
+            "status": "SUCCESS",
+            "message": "Legacy output",
+            "state_delta": {
+                "matcher_state": {
+                    "conversation_context": {"awaiting": None}
+                }
+            },
+            "options": [{"rank": 1, "name": "Legacy", "best_for": "Everything"}],
+        },
+        prompt_release=PromptRelease("meridian", "2.0.0", "prompt"),
+    )
+
+    with pytest.raises(ValidationError):
+        _normalize_meridian_response(execution)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda output: output.pop("traveler_criteria"),
+        lambda output: output["options"][0]["evaluations"].clear(),
+        lambda output: output["options"][0]["evaluations"][0].update(
+            {"criterion_id": "unknown"}
+        ),
+        lambda output: output["options"][0]["evaluations"].append(
+            deepcopy(output["options"][0]["evaluations"][0])
+        ),
+    ],
+)
+def test_meridian_api_rejects_invalid_traveler_criteria_coverage(
+    api_client: TestClient, monkeypatch, mutate
+) -> None:
+    output = meridian_success_output()
+    mutate(output)
+
+    assert_meridian_api_rejects(api_client, monkeypatch, output)
+
+
+def test_meridian_api_rejects_duplicate_source_paths(
+    api_client: TestClient, monkeypatch
+) -> None:
+    output = meridian_success_output()
+    output["traveler_criteria"].append(
+        {
+            "id": "budget",
+            "label": "Budget fit",
+            "requirement_type": "PREFERENCE",
+            "source_context_paths": ["travel_style.pace"],
+        }
+    )
+    output["options"][0]["evaluations"].append(
+        {
+            "criterion_id": "budget",
+            "outcome": "MATCH",
+            "conclusion": "The estimate fits the stated budget.",
+            "details": [{"type": "bullets", "items": ["Within range."]}],
+        }
+    )
+
+    assert_meridian_api_rejects(api_client, monkeypatch, output)
+
+
+def test_meridian_api_rejects_hard_requirement_mismatch(
+    api_client: TestClient, monkeypatch
+) -> None:
+    output = meridian_success_output()
+    output["traveler_criteria"][0]["requirement_type"] = "HARD"
+    output["options"][0]["evaluations"][0].update(
+        {
+            "outcome": "MISMATCH",
+            "tradeoffs": ["The option does not satisfy the hard requirement."],
+        }
+    )
+
+    assert_meridian_api_rejects(api_client, monkeypatch, output)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda option: option.update({"verdict": "Legacy verdict"}),
+        lambda option: option["evaluations"][0].update(
+            {"details": [{"type": "note", "text": "Free-form note"}]}
+        ),
+        lambda option: option["evaluations"][0].update(
+            {
+                "details": [
+                    {
+                        "type": "cost_breakdown",
+                        "currency": "INR",
+                        "per_person_total": {"minimum": 5000, "maximum": 4000},
+                    }
+                ]
+            }
+        ),
+    ],
+)
+def test_meridian_api_rejects_superseded_or_malformed_option_content(
+    api_client: TestClient, monkeypatch, mutate
+) -> None:
+    output = meridian_success_output()
+    mutate(output["options"][0])
+
+    assert_meridian_api_rejects(api_client, monkeypatch, output)
 
 
 def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(

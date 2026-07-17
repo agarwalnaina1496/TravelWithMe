@@ -9,6 +9,7 @@ from twm.services import N8NAgentEngine
 from twm.services.agent_engine import langgraph as langgraph_module
 from twm.services.agent_engine import n8n as n8n_module
 from twm.services.response_normalization import _normalize_meridian_response
+from tests.factories import recommendation_option, traveler_criteria
 
 from .fakes import make_langgraph_engine, prompt_release
 
@@ -20,21 +21,35 @@ from .fakes import make_langgraph_engine, prompt_release
             "status": "NEEDS_CLARIFICATION",
             "message": "What budget should I use?",
             "state_delta": {
-                "matcher_state": {"conversation_context": {"awaiting": "budget"}}
+                "matcher_state": {
+                    "conversation_context": {
+                        "last_meridian_message": "What budget should I use?",
+                        "awaiting": "budget",
+                    }
+                }
             },
             "options": [],
         },
         {
             "status": "SUCCESS",
             "message": "I found two suitable options.",
-            "state_delta": {"matcher_state": {"conversation_context": {}}},
+            "state_delta": {
+                "matcher_state": {
+                    "conversation_context": {"awaiting": None}
+                }
+            },
             "trip_type": "single",
-            "options": [{"id": "option-1"}, {"id": "option-2"}],
+            "traveler_criteria": traveler_criteria(),
+            "options": [recommendation_option(1), recommendation_option(2)],
         },
         {
             "status": "BUDGET_FAIL",
             "message": "The current budget is too low.",
-            "state_delta": {},
+            "state_delta": {
+                "matcher_state": {
+                    "conversation_context": {"awaiting": None}
+                }
+            },
             "options": [],
             "constraint_adjustment_suggestions": ["Increase the stay budget."],
         },
@@ -70,7 +85,9 @@ def test_meridian_malformed_output_uses_failure_shape(
     response = engine.meridian({}, "hello").response
 
     assert response["status"] == "HARD_FAIL"
-    assert response["state_delta"] == {}
+    assert response["state_delta"] == {
+        "matcher_state": {"conversation_context": {"awaiting": None}}
+    }
     assert response["options"] == []
 
 
@@ -93,5 +110,7 @@ def test_meridian_rejects_ui_owned_state(monkeypatch: pytest.MonkeyPatch) -> Non
 
     response = engine.meridian({}, "select this").response
     assert response["status"] == "HARD_FAIL"
-    assert response["state_delta"] == {}
+    assert response["state_delta"] == {
+        "matcher_state": {"conversation_context": {"awaiting": None}}
+    }
     assert response["options"] == []

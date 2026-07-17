@@ -47,6 +47,8 @@ def _normalize_meridian_response(execution: AgentExecution) -> MeridianResponse:
         # Backend release metadata always wins over model/n8n output.
         "agent_meta": _agent_meta(execution),
     }
+    if "traveler_criteria" in response:
+        normalized["traveler_criteria"] = response["traveler_criteria"]
     if "constraint_adjustment_suggestions" in response:
         normalized["constraint_adjustment_suggestions"] = response[
             "constraint_adjustment_suggestions"
