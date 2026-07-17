@@ -37,9 +37,9 @@
       "parameters": {
         "promptType": "define",
         "text": "={{ JSON.stringify({\n  trip_state: $('Webhook').item.json.body.trip_state || {},\n  message: $('Webhook').item.json.body.message || null\n}) }}",
+        "hasOutputParser": true,
         "options": {
-          "systemMessage": "={{ $('Webhook').item.json.body.prompt }}",
-          "hasOutputParser": true
+          "systemMessage": "={{ $('Webhook').item.json.body.prompt }}"
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",

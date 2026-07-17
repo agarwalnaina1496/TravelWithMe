@@ -3,12 +3,12 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nfunction extractJsonText(value) {\n  if (value == null) return '{}';\n\n  if (typeof value === 'object') {\n    if (typeof value.output === 'string') return value.output;\n    return JSON.stringify(value);\n  }\n\n  let text = String(value).trim();\n\n  // Strip markdown fences if model adds them.\n  text = text.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '').trim();\n\n  // If the agent returned an array wrapper, parse wrapper first.\n  if (text.startsWith('[')) {\n    const parsed = JSON.parse(text);\n    const first = parsed[0] || {};\n    if (typeof first.output === 'string') return first.output;\n    return JSON.stringify(first);\n  }\n\n  return text;\n}\n\nfunction parseAgentOutput(raw) {\n  const text = extractJsonText(raw);\n\n  try {\n    return JSON.parse(text);\n  } catch (err) {\n    return {\n      message: 'I had trouble formatting that response. Please try again.',\n      state_delta: {},\n      intent: null,\n      parser_error: err.message\n    };\n  }\n}\n\nreturn items.map(item => ({\n  json: parseAgentOutput(item.json.output ?? item.json)\n}));"
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  return {\n    json: JSON.parse(item.json.output)\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        580,
+        560,
         0
       ],
       "id": "892ae446-3a07-4acf-beec-de666ff0dc58",
@@ -40,7 +40,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        800,
+        760,
         0
       ],
       "id": "80207876-8331-40e3-a602-e8053ad96225",
@@ -50,7 +50,6 @@
       "parameters": {
         "promptType": "define",
         "text": "={{ JSON.stringify({ trip_state: $('Webhook').item.json.body.trip_state, message: $('Webhook').item.json.body.message }) }}",
-        "hasOutputParser": true,
         "options": {
           "systemMessage": "={{ $('Webhook').item.json.body.prompt }}"
         }
@@ -136,7 +135,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "a2f43a6b-c504-4968-bf1f-fd10333f9f1a",
+  "versionId": "f07d70bd-8300-462c-bcb5-bd5c6c3c4aa2",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "111d80fe232db9ee76f854ab72cbe1edcebe23e73237176ddf890a8073d51fa7"

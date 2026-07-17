@@ -40,7 +40,8 @@ def test_meridian_workflow_uses_backend_output_schema() -> None:
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
     nodes = {node["name"]: node for node in workflow["nodes"]}
 
-    assert nodes["Meridian"]["parameters"]["options"]["hasOutputParser"] is True
+    assert nodes["Meridian"]["parameters"]["hasOutputParser"] is True
+    assert "hasOutputParser" not in nodes["Meridian"]["parameters"]["options"]
     assert (
         "body.output_schema"
         in nodes["Meridian output schema"]["parameters"]["inputSchema"]
