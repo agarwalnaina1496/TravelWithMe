@@ -2,6 +2,17 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Scout 1.7.0 — 2026-07-18
+
+- Treats brief conversational turns as valid conversation rather than adversarial or clearly off topic.
+- Keeps conversational glue out of traveler context unless it carries a material travel input or decision.
+
+## Meridian 1.5.0 — 2026-07-18
+
+- Resolves short conversational replies against active matching context and the awaited clarification.
+- Preserves matching continuity without inventing traveler facts or storing conversational glue.
+- Acknowledges farewells naturally while retaining an unfinished clarification for a later return.
+
 ## Scout 1.6.0 — 2026-07-18
 
 - Added instruction hierarchy, prompt secrecy, untrusted-data handling, and a concise travel-only response for clearly off-topic turns.
