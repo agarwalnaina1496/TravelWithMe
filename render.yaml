@@ -14,12 +14,6 @@ services:
         value: openai/gpt-oss-120b
       - key: GROQ_API_KEY
         sync: false
-      - key: N8N_SCOUT_WEBHOOK_URL
-        sync: false
-      - key: N8N_MERIDIAN_WEBHOOK_URL
-        sync: false
-      - key: N8N_WEBHOOK_TOKEN
-        sync: false
       - key: TRUSTED_HOSTS
         value: '["travelwithme-zf9f.onrender.com"]'
       - key: CORS_ALLOWED_ORIGINS

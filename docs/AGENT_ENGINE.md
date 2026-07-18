@@ -82,16 +82,16 @@ Store `GROQ_API_KEY` only in the deployment platform or local secret environment
 
 ## n8n Requirements
 
-The selected Backend environment must provide both webhook URLs:
+While n8n remains the selected transitional engine, the production property overlay provides both webhook URLs:
 
 ```properties
-N8N_SCOUT_WEBHOOK_URL=https://<n8n-host>/webhook/scout
-N8N_MERIDIAN_WEBHOOK_URL=https://<n8n-host>/webhook/meridian
+n8n_scout_webhook_url=http://13.201.32.120:5678/webhook/scout
+n8n_meridian_webhook_url=http://13.201.32.120:5678/webhook/meridian
 ```
 
 Both live workflows must be active. The versioned `n8n/*.json` files are backups; editing them does not update the live workflows. See [Self-hosted n8n](SELF_HOSTED_N8N.md).
 
-Production webhook URLs must be HTTPS and each live Webhook node must require the server-only `X-TWM-Webhook-Token` Header Auth credential. Configure the matching `N8N_WEBHOOK_TOKEN` secret on FastAPI. See [Backend security boundaries](SECURITY_BOUNDARIES.md).
+This temporary direct handoff is unauthenticated and uses HTTP by explicit pre-MVP product decision pending the LangGraph switch. It does not require Render n8n URL or token secrets. Do not treat it as the target production security posture; see [Backend security boundaries](SECURITY_BOUNDARIES.md).
 
 ## Switch On Render
 
@@ -108,7 +108,7 @@ Production webhook URLs must be HTTPS and each live Webhook node must require th
 ### Select n8n
 
 1. Confirm the n8n service is healthy and both live workflows are active.
-2. Confirm both webhook URL settings are present in the FastAPI environment.
+2. Confirm both webhook URL settings are present in `properties-prod.ini`.
 3. Set `AGENT_ENGINE=n8n` in Render.
 4. Save the environment change and redeploy/restart.
 5. Confirm startup logs contain `Selected agent engine: n8n`.

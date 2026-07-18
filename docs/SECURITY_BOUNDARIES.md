@@ -18,15 +18,15 @@ Production disables interactive API documentation, uses exact CORS origins, vali
 
 ## n8n boundary
 
-Production webhook URLs must use HTTPS. FastAPI sends `X-TWM-Webhook-Token` from the server-only `N8N_WEBHOOK_TOKEN` setting. Both live webhook nodes must use an n8n Header Auth credential with the same header name and token. The credential is configured in n8n and never exported with its secret.
+The current pre-MVP n8n handoff is an explicitly approved transitional exception: FastAPI uses the committed direct HTTP webhook URLs without a shared token while the planned LangGraph switch is pending. This supersedes the authenticated HTTPS transport requirement only; traveler payloads remain untrusted data and all API, prompt, state, logging, and runtime controls remain required.
 
-Bind the n8n container to loopback and publish it through an HTTPS reverse proxy. Restrict editor access by network allowlist or authenticated private access. Webhook access and editor access are separate; exposing a webhook does not require a public editor.
+The transitional direct handoff binds port 5678 publicly so Render can reach it. Restrict editor access separately wherever operationally possible. After the LangGraph switch, remove the public n8n ingress; if n8n is retained later, restore loopback binding, an HTTPS reverse proxy, and authenticated webhooks before selecting it again.
 
-The committed workflow JSON files are backups. After import, attach the `TWM webhook auth` credential to each Webhook node before activation. Never commit credential values or a live credential export.
+The committed workflow JSON files are backups and currently mirror the transitional unauthenticated Webhook nodes. Editing them does not update the live workflows.
 
 ## Secrets and logging
 
-Keep model keys, webhook tokens, database passwords, encryption keys, credential IDs containing sensitive context, and private endpoints in deployment secrets. `kb/ingest.py` reads its complete connection string from `SUPABASE_DB_URL`; never commit it to source control. Do not log request bodies, prompt content, TripState, retrieved records, authorization headers, or provider responses. Logs may identify the selected engine, graph name, safe status, and formatting failure without traveler content.
+Keep model keys, database passwords, encryption keys, credential IDs containing sensitive context, and private endpoints in deployment secrets. `kb/ingest.py` reads its complete connection string from `SUPABASE_DB_URL`; never commit it to source control. Do not log request bodies, prompt content, TripState, retrieved records, authorization headers, or provider responses. Logs may identify the selected engine, graph name, safe status, and formatting failure without traveler content.
 
 Rotate any credential that was previously committed. Removing it from the current source does not invalidate copies in Git history.
 

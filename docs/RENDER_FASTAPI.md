@@ -108,13 +108,13 @@ The UI should not call n8n directly.
 
 With `AGENT_ENGINE=langgraph`, execution stays inside FastAPI and requires `GROQ_API_KEY`.
 
-With `AGENT_ENGINE=n8n`, FastAPI calls authenticated n8n webhooks through HTTPS:
+With `AGENT_ENGINE=n8n`, FastAPI temporarily reads the committed production webhook URLs from `properties-prod.ini` and calls them without an auth header:
 
 ```text
-https://n8n.example.com/webhook/scout
-https://n8n.example.com/webhook/meridian
+http://13.201.32.120:5678/webhook/scout
+http://13.201.32.120:5678/webhook/meridian
 ```
 
-Configure `N8N_WEBHOOK_TOKEN` on Render and the matching Header Auth credential in n8n. Port 5678 remains bound to loopback; the reverse proxy exposes only HTTPS. Restrict editor access independently from webhook access.
+No Render n8n URL or token variables are required for this explicitly approved pre-MVP transition. The direct HTTP handoff is temporary pending the LangGraph switch. Restrict editor access independently from webhook access and do not treat this as the target n8n security posture.
 
 Changing `AGENT_ENGINE` requires a Render restart/redeploy. Follow [Agent engine selection](AGENT_ENGINE.md) to switch, verify, or roll back.

@@ -66,7 +66,6 @@ def n8n_engine() -> N8NAgentEngine:
         environment="test",
         n8n_scout_webhook_url="https://agents.test/webhook/scout",
         n8n_meridian_webhook_url="https://agents.test/webhook/meridian",
-        n8n_webhook_token="test-token",
     )
     return N8NAgentEngine(settings, Mock())
 

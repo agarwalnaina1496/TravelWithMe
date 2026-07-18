@@ -12,7 +12,7 @@ from twm.services import AgentEngineSettings, N8NAgentEngine
 from twm.services.agent_engine import n8n as n8n_module
 
 
-def test_n8n_transport_authenticates_and_canonicalizes_wrappers(monkeypatch) -> None:
+def test_n8n_transport_uses_configured_url_and_canonicalizes_wrappers(monkeypatch) -> None:
     captured: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -22,9 +22,8 @@ def test_n8n_transport_authenticates_and_canonicalizes_wrappers(monkeypatch) -> 
     settings = AgentEngineSettings(
         engine="n8n",
         environment="prod",
-        n8n_scout_webhook_url="https://agents.example/webhook/scout",
-        n8n_meridian_webhook_url="https://agents.example/webhook/meridian",
-        n8n_webhook_token="server-secret",
+        n8n_scout_webhook_url="http://agents.example/webhook/scout",
+        n8n_meridian_webhook_url="http://agents.example/webhook/meridian",
     )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     engine = N8NAgentEngine(settings, client)
@@ -38,8 +37,8 @@ def test_n8n_transport_authenticates_and_canonicalizes_wrappers(monkeypatch) -> 
     asyncio.run(client.aclose())
 
     assert execution.response == {"message": "ok"}
-    assert captured[0].headers["X-TWM-Webhook-Token"] == "server-secret"
-    assert captured[0].url == "https://agents.example/webhook/scout"
+    assert "X-TWM-Webhook-Token" not in captured[0].headers
+    assert captured[0].url == "http://agents.example/webhook/scout"
 
 
 def test_n8n_transport_propagates_upstream_errors(monkeypatch) -> None:
@@ -50,7 +49,6 @@ def test_n8n_transport_propagates_upstream_errors(monkeypatch) -> None:
         engine="n8n",
         environment="test",
         n8n_scout_webhook_url="https://agents.test/scout",
-        n8n_webhook_token="token",
     )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     engine = N8NAgentEngine(settings, client)
@@ -76,8 +74,8 @@ def _assert_workflow_uses_backend_output_schema(
     schema_node = f"{agent_name} output schema"
 
     assert nodes[agent_name]["parameters"]["hasOutputParser"] is True
-    assert nodes["Webhook"]["parameters"]["authentication"] == "headerAuth"
-    assert nodes["Webhook"]["credentials"]["httpHeaderAuth"]["name"] == "TWM webhook auth"
+    assert "authentication" not in nodes["Webhook"]["parameters"]
+    assert "credentials" not in nodes["Webhook"]
     assert "UNTRUSTED_TRAVELER_DATA" in nodes[agent_name]["parameters"]["text"]
     assert "hasOutputParser" not in nodes[agent_name]["parameters"]["options"]
     assert (

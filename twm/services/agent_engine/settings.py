@@ -1,8 +1,6 @@
 """Immutable configuration boundary for selectable agent engines."""
 
 from dataclasses import dataclass
-from urllib.parse import urlparse
-
 from ...shared.properties import property_loader
 
 
@@ -12,7 +10,6 @@ class AgentEngineSettings:
     environment: str
     n8n_scout_webhook_url: str | None = None
     n8n_meridian_webhook_url: str | None = None
-    n8n_webhook_token: str | None = None
     groq_api_key: str | None = None
     langgraph_model: str = "openai/gpt-oss-120b"
     langgraph_temperature: float = 0.7
@@ -26,15 +23,12 @@ class AgentEngineSettings:
         environment = property_loader.get_environment()
 
         if engine == "n8n":
-            settings = cls(
+            return cls(
                 engine=engine,
                 environment=environment,
                 n8n_scout_webhook_url=_required("n8n_scout_webhook_url"),
                 n8n_meridian_webhook_url=_required("n8n_meridian_webhook_url"),
-                n8n_webhook_token=_required("n8n_webhook_token"),
             )
-            settings._validate_n8n()
-            return settings
 
         if engine == "langgraph":
             timeout = _positive_int("langgraph_timeout_seconds", 60)
@@ -53,17 +47,6 @@ class AgentEngineSettings:
         raise ValueError(
             f"Unsupported AGENT_ENGINE: {engine or '<empty>'}. Expected n8n or langgraph."
         )
-
-    def _validate_n8n(self) -> None:
-        if self.environment != "prod":
-            return
-        for url in (
-            self.n8n_scout_webhook_url,
-            self.n8n_meridian_webhook_url,
-        ):
-            if urlparse(url or "").scheme != "https":
-                raise ValueError("Production n8n webhooks require HTTPS")
-
 
 def _required(key: str) -> str:
     try:

@@ -57,7 +57,6 @@ class N8NAgentEngine:
         response = await self._http_client.post(
             url or "",
             json=payload,
-            headers={"X-TWM-Webhook-Token": self._settings.n8n_webhook_token or ""},
         )
         response.raise_for_status()
         return _canonical_webhook_response(response.json())
