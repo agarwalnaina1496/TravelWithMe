@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 from twm.prompts import PromptRelease
 from twm.services import N8NAgentEngine
@@ -35,6 +36,36 @@ def test_configuration_failures_preserve_each_agent_contract(monkeypatch) -> Non
     }
 
 
+def test_production_webhook_requires_https_and_server_auth(monkeypatch) -> None:
+    values = {
+        "n8n_scout_webhook_url": "https://agents.example/webhook/scout",
+        "n8n_webhook_token": "server-secret",
+    }
+    monkeypatch.setattr(
+        n8n_module.property_loader, "get_string_property", values.__getitem__
+    )
+    monkeypatch.setattr(
+        n8n_module.property_loader, "get_environment", lambda: "prod"
+    )
+    response = Mock()
+    response.json.return_value = {"output": {}}
+    client = Mock()
+    client.__enter__ = Mock(return_value=client)
+    client.__exit__ = Mock(return_value=False)
+    client.post.return_value = response
+    monkeypatch.setattr(n8n_module.httpx, "Client", Mock(return_value=client))
+
+    N8NAgentEngine()._forward(
+        "scout", "n8n_scout_webhook_url", {"message": "travel"}
+    )
+
+    client.post.assert_called_once_with(
+        "https://agents.example/webhook/scout",
+        json={"message": "travel"},
+        headers={"X-TWM-Webhook-Token": "server-secret"},
+    )
+
+
 def _assert_workflow_uses_backend_output_schema(
     workflow_name: str, agent_name: str
 ) -> None:
@@ -44,6 +75,9 @@ def _assert_workflow_uses_backend_output_schema(
     schema_node = f"{agent_name} output schema"
 
     assert nodes[agent_name]["parameters"]["hasOutputParser"] is True
+    assert nodes["Webhook"]["parameters"]["authentication"] == "headerAuth"
+    assert nodes["Webhook"]["credentials"]["httpHeaderAuth"]["name"] == "TWM webhook auth"
+    assert "UNTRUSTED_TRAVELER_DATA" in nodes[agent_name]["parameters"]["text"]
     assert "hasOutputParser" not in nodes[agent_name]["parameters"]["options"]
     assert (
         "body.output_schema"

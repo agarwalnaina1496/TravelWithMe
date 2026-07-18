@@ -1,6 +1,7 @@
 """n8n webhook implementation of the agent-engine contract."""
 
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -53,6 +54,14 @@ class N8NAgentEngine:
     ) -> dict[str, Any]:
         try:
             url = property_loader.get_string_property(property_key)
+            token = property_loader.get_string_property("n8n_webhook_token")
+            if (
+                property_loader.get_environment() == "prod"
+                and urlparse(url).scheme != "https"
+            ):
+                raise ValueError("Production n8n webhooks require HTTPS")
+            if not token.strip():
+                raise ValueError("n8n webhook authentication is required")
         except Exception:
             state_delta = {}
             if agent == "meridian":
@@ -63,12 +72,16 @@ class N8NAgentEngine:
                 }
             return {
                 "status": "HARD_FAIL",
-                "message": f"{property_key} is not configured.",
+                "message": "The agent service is unavailable.",
                 "state_delta": state_delta,
                 "options": [],
             }
 
         with httpx.Client(timeout=60.0) as client:
-            response = client.post(url, json=payload)
+            response = client.post(
+                url,
+                json=payload,
+                headers={"X-TWM-Webhook-Token": token},
+            )
             response.raise_for_status()
             return response.json()

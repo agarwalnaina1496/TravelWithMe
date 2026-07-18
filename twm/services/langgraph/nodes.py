@@ -1,6 +1,5 @@
 """Reusable nodes shared by Scout and Meridian graphs."""
 
-import json
 import logging
 from abc import ABC, abstractmethod
 from typing import Any
@@ -9,6 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from .state import AgentGraphState
+from ...security import frame_untrusted_payload
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -25,7 +25,11 @@ class PrepareAgentInputNode:
         return {
             "messages": [
                 SystemMessage(content=state["prompt"]),
-                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+                HumanMessage(
+                    content=frame_untrusted_payload(
+                        payload["trip_state"], payload["message"]
+                    )
+                ),
             ]
         }
 

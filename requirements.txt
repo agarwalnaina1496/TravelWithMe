@@ -1,7 +1,8 @@
-fastapi
-httpx
+fastapi==0.139.2
+httpx==0.28.1
 langchain-groq==1.1.3
 langgraph==1.2.9
-pydantic
-pytest
-uvicorn
+pydantic==2.13.4
+pytest==9.1.1
+starlette==1.3.1
+uvicorn==0.49.0

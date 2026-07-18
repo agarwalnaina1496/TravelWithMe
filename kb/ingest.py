@@ -5,8 +5,9 @@ Reads a YAML file and upserts into Supabase kb_regions table.
 Creates the table if it does not exist.
 """
 
-import sys
 import json
+import os
+import sys
 import yaml
 import psycopg2
 from psycopg2.extras import Json
@@ -15,10 +16,7 @@ from datetime import date, datetime
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 # Fill these in before running
 
-YOUR_PASSWORD = "FGQmHAEd0B2HlSvI"
-PROJECT_REF = "epvedeqnurqnyewksrmw"
-
-DB_URL = f"postgresql://postgres:{YOUR_PASSWORD}@db.{PROJECT_REF}.supabase.co:5432/postgres"
+DB_URL_ENVIRONMENT_VARIABLE = "SUPABASE_DB_URL"
 
 # ── VALID ENUMS ───────────────────────────────────────────────────────────────
 
@@ -203,7 +201,12 @@ def ingest(yaml_path):
     print("Validation passed.")
 
     print("Connecting to Supabase...")
-    conn = psycopg2.connect(DB_URL)
+    db_url = os.environ.get(DB_URL_ENVIRONMENT_VARIABLE)
+    if not db_url:
+        raise RuntimeError(
+            f"Set {DB_URL_ENVIRONMENT_VARIABLE} before running the ingest script."
+        )
+    conn = psycopg2.connect(db_url)
     cur = conn.cursor()
 
     print("Creating table if not exists...")
