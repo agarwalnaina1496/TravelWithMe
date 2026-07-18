@@ -13,12 +13,12 @@ class AgentExecution:
 
 
 class AgentEngine(Protocol):
-    def scout(
+    async def scout(
         self, trip_state: dict[str, Any], message: Optional[str]
     ) -> AgentExecution:
         ...
 
-    def meridian(
+    async def meridian(
         self, trip_state: dict[str, Any], message: Optional[str]
     ) -> AgentExecution:
         ...

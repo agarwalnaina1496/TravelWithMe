@@ -1,23 +1,7 @@
 """Normalize workflow responses into validated API contracts."""
 
-from typing import Any
-
 from ..schemas import AgentMeta, MeridianResponse, ScoutResponse
 from .agent_engine import AgentExecution
-
-
-def _unwrap_agent_response(raw_response: Any) -> dict[str, Any]:
-    if isinstance(raw_response, list) and raw_response:
-        raw_response = raw_response[0]
-
-    if isinstance(raw_response, dict):
-        if isinstance(raw_response.get("json"), dict):
-            return raw_response["json"]
-        if isinstance(raw_response.get("output"), dict):
-            return raw_response["output"]
-        return raw_response
-
-    return {}
 
 
 def _agent_meta(execution: AgentExecution) -> AgentMeta:
@@ -26,7 +10,7 @@ def _agent_meta(execution: AgentExecution) -> AgentMeta:
 
 
 def _normalize_scout_response(execution: AgentExecution) -> ScoutResponse:
-    response = _unwrap_agent_response(execution.response)
+    response = execution.response
     return ScoutResponse(
         message=response.get("message") or "",
         state_delta=response.get("state_delta") or {},
@@ -36,7 +20,7 @@ def _normalize_scout_response(execution: AgentExecution) -> ScoutResponse:
 
 
 def _normalize_meridian_response(execution: AgentExecution) -> MeridianResponse:
-    response = _unwrap_agent_response(execution.response)
+    response = execution.response
     normalized = {
         "status": response.get("status") or "HARD_FAIL",
         "message": response.get("message") or "",

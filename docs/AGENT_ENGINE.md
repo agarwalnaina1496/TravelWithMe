@@ -17,6 +17,7 @@ The selected engine is read when FastAPI starts. Changing it requires a restart 
 twm/services/
   agent_engine/
     contracts.py              engine-neutral protocol and AgentExecution
+    settings.py               immutable selected-engine configuration
     factory.py                configuration-driven engine selection
     n8n.py                    n8n webhook adapter
     langgraph.py              LangGraph engine adapter
@@ -41,6 +42,14 @@ START -> prepare_input -> invoke_<agent> -> parse_<agent>_output -> END
 ```
 
 FastAPI owns the HTTP receive/respond boundary. LangGraph owns agent preparation, invocation, and structured-output parsing.
+
+## Execution Lifecycle
+
+FastAPI loads and validates the selected engine settings once during application startup. Its lifespan owns one shared `httpx.AsyncClient`, injects that transport into the n8n adapter, and closes it during shutdown. Routers resolve the asynchronous `AgentEngine` protocol through a FastAPI dependency instead of retaining a module-global engine.
+
+Both Scout and Meridian operations are asynchronous. The n8n adapter awaits the shared HTTP transport and converts supported webhook list, `json`, and `output` wrappers into one canonical dictionary before shared response validation. LangGraph uses asynchronous graph and structured-model invocation. The shared normalizer therefore has no engine-specific wrapper handling.
+
+Only the selected engine's required settings are loaded. With the committed `n8n` default, missing LangGraph credentials do not block startup. Selecting LangGraph explicitly requires its provider settings and does not construct or fall back to n8n.
 
 ## Supported Values
 

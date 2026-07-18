@@ -40,8 +40,10 @@ class InvokeStructuredModelNode:
     def __init__(self, structured_model: Any) -> None:
         self._structured_model = structured_model
 
-    def __call__(self, state: AgentGraphState) -> dict[str, Any]:
-        return {"model_result": self._structured_model.invoke(state["messages"])}
+    async def __call__(self, state: AgentGraphState) -> dict[str, Any]:
+        return {
+            "model_result": await self._structured_model.ainvoke(state["messages"])
+        }
 
 
 class ParseStructuredOutputNode(ABC):

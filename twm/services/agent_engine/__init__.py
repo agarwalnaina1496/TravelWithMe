@@ -4,10 +4,12 @@ from .contracts import AgentEngine, AgentExecution
 from .factory import get_agent_engine
 from .langgraph import LangGraphAgentEngine
 from .n8n import N8NAgentEngine
+from .settings import AgentEngineSettings
 
 __all__ = [
     "AgentEngine",
     "AgentExecution",
+    "AgentEngineSettings",
     "LangGraphAgentEngine",
     "N8NAgentEngine",
     "get_agent_engine",

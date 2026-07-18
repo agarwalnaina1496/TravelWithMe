@@ -1,5 +1,6 @@
 """Graph topology and shared input-node tests."""
 
+import asyncio
 import json
 
 import pytest
@@ -46,7 +47,11 @@ def test_prepare_node_uses_prompt_and_phase_input(
     monkeypatch.setattr(engine_module, "load_prompt_release", prompt_release)
     engine = LangGraphAgentEngine(runtime=LangGraphRuntime(model=model))
 
-    engine.scout({"trip_context": {"region": "Uttarakhand"}}, "Tell me more.")
+    asyncio.run(
+        engine.scout(
+            {"trip_context": {"region": "Uttarakhand"}}, "Tell me more."
+        )
+    )
 
     messages = model.calls["ScoutModelOutput"][0]
     assert isinstance(messages[0], SystemMessage)

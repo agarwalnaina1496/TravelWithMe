@@ -1,8 +1,7 @@
-from functools import lru_cache
+from fastapi import Request
 
-from .services import AgentEngine, get_agent_engine
+from .services import AgentEngine
 
 
-@lru_cache(maxsize=1)
-def get_engine() -> AgentEngine:
-    return get_agent_engine()
+def get_engine(request: Request) -> AgentEngine:
+    return request.app.state.agent_engine
