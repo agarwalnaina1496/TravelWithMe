@@ -30,7 +30,7 @@ https://<render-service-host>
 n8n is used as the internal workflow/orchestration layer:
 
 ```text
-http://13.201.32.120:5678
+https://n8n.example.com
 ```
 
 Postgres is not currently the app knowledge base. It is only used by n8n to persist workflows, credentials, and execution data.
@@ -43,22 +43,22 @@ AMI: Ubuntu Server 24.04 LTS (HVM), SSD Volume Type
 Architecture: 64-bit x86 / amd64
 Instance type: t3.micro
 Storage: 20 GiB EBS
-Public IPv4: 13.201.32.120
+Public IPv4: <EC2_PUBLIC_IP>
 User: ubuntu
-Local PEM path: /c/Users/agarw/Desktop/TWM/twm-key.pem
+Local PEM path: <secure-local-key-path>
 ```
 
 `t3.micro` is okay for testing/MVP. For smoother n8n usage, `t3.small` is preferred.
 
 ## Security Group Rules
 
-Current inbound rules in security group `twm-sg` while n8n is still directly exposed:
+Required inbound rules keep n8n and SSH off the public internet:
 
 ```text
-22    TCP  SSH      0.0.0.0/0
+22    TCP  SSH      <ADMIN_IP>/32
 80    TCP  HTTP     0.0.0.0/0
 443   TCP  HTTPS    0.0.0.0/0
-5678  TCP  n8n      0.0.0.0/0
+5678  TCP  n8n      no public rule
 ```
 
 ## Connect To EC2
@@ -66,7 +66,7 @@ Current inbound rules in security group `twm-sg` while n8n is still directly exp
 From local Git Bash:
 
 ```bash
-ssh -i /c/Users/agarw/Desktop/TWM/twm-key.pem ubuntu@13.201.32.120
+ssh -i <secure-local-key-path> ubuntu@<EC2_PUBLIC_IP>
 ```
 
 After connecting, the terminal prompt should look similar to:
@@ -232,7 +232,7 @@ FastAPI health:
 https://<render-service-host>/health
 
 n8n:
-http://13.201.32.120:5678
+https://n8n.example.com
 ```
 
 UI base API URL:

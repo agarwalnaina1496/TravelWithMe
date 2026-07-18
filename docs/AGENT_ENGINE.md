@@ -82,6 +82,8 @@ N8N_MERIDIAN_WEBHOOK_URL=https://<n8n-host>/webhook/meridian
 
 Both live workflows must be active. The versioned `n8n/*.json` files are backups; editing them does not update the live workflows. See [Self-hosted n8n](SELF_HOSTED_N8N.md).
 
+Production webhook URLs must be HTTPS and each live Webhook node must require the server-only `X-TWM-Webhook-Token` Header Auth credential. Configure the matching `N8N_WEBHOOK_TOKEN` secret on FastAPI. See [Backend security boundaries](SECURITY_BOUNDARIES.md).
+
 ## Switch On Render
 
 ### Select LangGraph

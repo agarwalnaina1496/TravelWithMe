@@ -24,6 +24,12 @@ from twm.services import (
 from twm.services.response_normalization import _normalize_meridian_response
 from twm.schemas.scout import ScoutResponse
 from tests.factories import recommendation_option, traveler_criteria
+from twm.security import (
+    MAX_CONTAINER_ITEMS,
+    MAX_DATA_DEPTH,
+    MAX_MESSAGE_CHARACTERS,
+    MAX_PHASE_STATE_BYTES,
+)
 
 
 def fake_langgraph_model(outputs: dict[str, dict]) -> Mock:
@@ -84,8 +90,8 @@ def test_active_phase_prompt_releases_are_complete() -> None:
     validate_prompt_release_files()
 
     assert load_prompt_versions() == {
-        "scout": "1.5.0",
-        "meridian": "1.3.0",
+        "scout": "1.6.0",
+        "meridian": "1.4.0",
     }
     meridian_prompt = load_prompt_release("meridian").content
     assert "conversation_context.awaiting" in meridian_prompt
@@ -292,7 +298,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     assert response.status_code == 200
     assert response.json()["agent_meta"] == {
         "agent": "meridian",
-        "prompt_version": "1.3.0",
+        "prompt_version": "1.4.0",
     }
     release = load_prompt_release("meridian")
     forward.assert_called_once_with(
@@ -591,7 +597,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         "message": "A mountain trip can work well.",
         "state_delta": {"trip_context": {"destination_scope": "mountains"}},
         "intent": "advise",
-        "agent_meta": {"agent": "scout", "prompt_version": "1.5.0"},
+        "agent_meta": {"agent": "scout", "prompt_version": "1.6.0"},
     }
     assert meridian_response.status_code == 200
     assert meridian_response.json() == {
@@ -607,5 +613,60 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         },
         "message": "What budget should I use?",
         "options": [],
-        "agent_meta": {"agent": "meridian", "prompt_version": "1.3.0"},
+        "agent_meta": {"agent": "meridian", "prompt_version": "1.4.0"},
     }
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/scout",
+            {"trip_state": {}, "message": "x" * (MAX_MESSAGE_CHARACTERS + 1)},
+        ),
+        (
+            "/scout",
+            {"trip_state": {"values": list(range(MAX_CONTAINER_ITEMS + 1))}},
+        ),
+        (
+            "/meridian",
+            {
+                "trip_state": {
+                    "trip_context": {"large": "x" * MAX_PHASE_STATE_BYTES},
+                    "advisor_state": {},
+                    "matcher_state": {},
+                }
+            },
+        ),
+    ],
+)
+def test_agent_api_rejects_resource_abusive_input_without_invoking_engine(
+    api_client: TestClient, monkeypatch, path: str, payload: dict
+) -> None:
+    engine = Mock()
+    monkeypatch.setattr(trip_matcher, "engine", engine)
+
+    response = api_client.post(path, json=payload)
+
+    assert response.status_code == 422
+    engine.scout.assert_not_called()
+    engine.meridian.assert_not_called()
+
+
+def test_agent_api_rejects_excessive_state_depth_without_invoking_engine(
+    api_client: TestClient, monkeypatch
+) -> None:
+    nested: dict = {}
+    cursor = nested
+    for _ in range(MAX_DATA_DEPTH + 1):
+        cursor["next"] = {}
+        cursor = cursor["next"]
+    engine = Mock()
+    monkeypatch.setattr(trip_matcher, "engine", engine)
+
+    response = api_client.post(
+        "/scout", json={"trip_state": nested, "message": "travel question"}
+    )
+
+    assert response.status_code == 422
+    engine.scout.assert_not_called()

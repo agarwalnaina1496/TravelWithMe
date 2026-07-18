@@ -2,6 +2,16 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Scout 1.6.0 — 2026-07-18
+
+- Added instruction hierarchy, prompt secrecy, untrusted-data handling, and a concise travel-only response for clearly off-topic turns.
+- Kept mixed travel content useful while preventing injection, role, tool, prompt, and unrelated text from entering traveler context.
+
+## Meridian 1.4.0 — 2026-07-18
+
+- Treated messages, TripState, prior outputs, recommendations, and retrieved content as untrusted data rather than executable instructions.
+- Protected matching ownership, schemas, tools, hidden instructions, and traveler state while keeping legitimate destination matching available.
+
 ## Meridian 1.3.0 — 2026-07-17
 
 - Replaced fixed recommendation sections with traveler ask mapped criteria shared by every option.

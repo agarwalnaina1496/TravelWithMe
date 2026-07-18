@@ -28,13 +28,14 @@ execution data
 EC2 n8n uses `n8n.env`, not the FastAPI property files under `twm/shared/properties/`.
 
 ```properties
-N8N_HOST=13.201.32.120
+N8N_HOST=n8n.example.com
 N8N_PORT=5678
-N8N_PROTOCOL=http
-N8N_SECURE_COOKIE=false
-WEBHOOK_URL=http://13.201.32.120:5678/
-N8N_EDITOR_BASE_URL=http://13.201.32.120:5678/
+N8N_PROTOCOL=https
+N8N_SECURE_COOKIE=true
+WEBHOOK_URL=https://n8n.example.com/
+N8N_EDITOR_BASE_URL=https://n8n.example.com/
 N8N_ENCRYPTION_KEY=long-random-secret
+N8N_DB_PASSWORD=long-random-secret
 API_BASE_URL=https://<render-service-host>
 ```
 
@@ -50,43 +51,35 @@ Keep `N8N_ENCRYPTION_KEY` stable. If it changes, saved n8n credentials may stop 
 
 ## EC2 n8n Setup
 
-Current EC2 n8n URL:
+Production n8n URL:
 
 ```text
-http://13.201.32.120:5678
+https://n8n.example.com
 ```
 
-For EC2, n8n public URL values should point to the EC2 public IP:
+Publish n8n only through an HTTPS reverse proxy:
 
 ```yaml
-- N8N_HOST=13.201.32.120
+- N8N_HOST=n8n.example.com
 - N8N_PORT=5678
-- N8N_PROTOCOL=http
-- N8N_SECURE_COOKIE=false
-- WEBHOOK_URL=http://13.201.32.120:5678/
-- N8N_EDITOR_BASE_URL=http://13.201.32.120:5678/
-- N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-```
-
-Later with domain + HTTPS:
-
-```yaml
-- N8N_HOST=n8n.yourdomain.com
 - N8N_PROTOCOL=https
 - N8N_SECURE_COOKIE=true
-- WEBHOOK_URL=https://n8n.yourdomain.com/
-- N8N_EDITOR_BASE_URL=https://n8n.yourdomain.com/
+- WEBHOOK_URL=https://n8n.example.com/
+- N8N_EDITOR_BASE_URL=https://n8n.example.com/
+- N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+- DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD}
 ```
 
 Initial EC2 n8n setup:
 
 ```text
-1. Open http://13.201.32.120:5678.
+1. Open the restricted HTTPS editor URL.
 2. Create n8n admin account.
 3. Import n8n/scout.json.
 4. Import n8n/meridian.json.
-5. Activate both workflows.
-6. Verify webhook paths:
+5. Create the `TWM webhook auth` Header Auth credential using header `X-TWM-Webhook-Token`, and attach it to both Webhook nodes.
+6. Activate both workflows.
+7. Verify webhook paths:
    - scout
    - meridian
 ```
@@ -121,7 +114,7 @@ Changing [n8n/scout.json](../n8n/scout.json) or [n8n/meridian.json](../n8n/merid
 Edit live workflow first:
 
 ```text
-1. Open http://13.201.32.120:5678.
+1. Open the restricted HTTPS n8n editor.
 2. Edit workflow in n8n UI.
 3. Save.
 4. Activate.
@@ -166,7 +159,7 @@ docker compose up -d
 Then import in n8n UI:
 
 ```text
-http://13.201.32.120:5678
+https://n8n.example.com
 ```
 
 ## n8n Docker Commands

@@ -1,15 +1,26 @@
 """Scout API contracts."""
 
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .common import AgentMeta
+from ..security import MAX_MESSAGE_CHARACTERS, validate_phase_state
+
+
+BoundedMessage = Annotated[str, StringConstraints(max_length=MAX_MESSAGE_CHARACTERS)]
 
 
 class ScoutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     trip_state: dict[str, Any] = Field(default_factory=dict)
-    message: Optional[str] = None
+    message: Optional[BoundedMessage] = None
+
+    @model_validator(mode="after")
+    def validate_untrusted_state(self) -> "ScoutRequest":
+        validate_phase_state(self.trip_state)
+        return self
 
 
 class ScoutStateDelta(BaseModel):

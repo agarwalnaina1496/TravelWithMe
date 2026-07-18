@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import AgentMeta
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
+from .scout import BoundedMessage
+from ..security import validate_phase_state
 
 
 class MeridianAdvisorConversationContext(BaseModel):
@@ -34,7 +36,12 @@ class MeridianRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trip_state: MeridianTripState = Field(default_factory=MeridianTripState)
-    message: Optional[str] = None
+    message: Optional[BoundedMessage] = None
+
+    @model_validator(mode="after")
+    def validate_untrusted_state(self) -> "MeridianRequest":
+        validate_phase_state(self.trip_state.model_dump())
+        return self
 
 
 class MeridianStateDelta(BaseModel):
