@@ -4,19 +4,12 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "authentication": "headerAuth",
         "path": "meridian",
         "responseMode": "responseNode",
         "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "configure-twm-webhook-auth",
-          "name": "TWM webhook auth"
-        }
-      },
       "position": [
         -80,
         0

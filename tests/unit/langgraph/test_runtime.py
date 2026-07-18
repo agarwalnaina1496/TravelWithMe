@@ -34,7 +34,6 @@ def test_settings_validate_only_selected_engine(
     values = {
         "n8n_scout_webhook_url": "https://agents.test/scout",
         "n8n_meridian_webhook_url": "https://agents.test/meridian",
-        "n8n_webhook_token": "token",
     }
     monkeypatch.setattr(
         settings_module.property_loader,
