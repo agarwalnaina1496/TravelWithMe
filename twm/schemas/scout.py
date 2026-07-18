@@ -11,15 +11,48 @@ from ..security import MAX_MESSAGE_CHARACTERS, validate_phase_state
 BoundedMessage = Annotated[str, StringConstraints(max_length=MAX_MESSAGE_CHARACTERS)]
 
 
+class ScoutAdvisorConversationContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    last_advisor_message: Optional[str] = None
+
+
+class ScoutAdvisorState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_context: ScoutAdvisorConversationContext = Field(
+        default_factory=ScoutAdvisorConversationContext
+    )
+
+
+ScoutStage = Literal[
+    "new",
+    "matching",
+    "recommendation_ready",
+    "recommended",
+    "matched",
+    "planning",
+    "planned",
+]
+
+
+class ScoutTripState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stage: ScoutStage = "new"
+    trip_context: dict[str, Any] = Field(default_factory=dict)
+    advisor_state: ScoutAdvisorState = Field(default_factory=ScoutAdvisorState)
+
+
 class ScoutRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_state: dict[str, Any] = Field(default_factory=dict)
+    trip_state: ScoutTripState = Field(default_factory=ScoutTripState)
     message: Optional[BoundedMessage] = None
 
     @model_validator(mode="after")
     def validate_untrusted_state(self) -> "ScoutRequest":
-        validate_phase_state(self.trip_state)
+        validate_phase_state(self.trip_state.model_dump())
         return self
 
 

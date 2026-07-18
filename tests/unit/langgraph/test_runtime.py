@@ -5,8 +5,8 @@ from unittest.mock import Mock
 import pytest
 from pydantic import BaseModel
 
-from twm.services import LangGraphRuntime
-from twm.services.langgraph import runtime as runtime_module
+from twm.services import AgentEngineSettings, LangGraphRuntime
+from twm.services.agent_engine import settings as settings_module
 
 
 class StructuredOutput(BaseModel):
@@ -28,15 +28,30 @@ def test_runtime_prepares_provider_structured_output() -> None:
     )
 
 
-def test_runtime_requires_credentials_only_when_constructed(
+def test_settings_validate_only_selected_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def missing(key: str) -> str:
-        raise KeyError(key)
+    values = {
+        "n8n_scout_webhook_url": "https://agents.test/scout",
+        "n8n_meridian_webhook_url": "https://agents.test/meridian",
+        "n8n_webhook_token": "token",
+    }
+    monkeypatch.setattr(
+        settings_module.property_loader,
+        "get_string_property_with_default",
+        lambda key, default: "n8n" if key == "agent_engine" else default,
+    )
+    monkeypatch.setattr(
+        settings_module.property_loader, "get_string_property", values.__getitem__
+    )
+    monkeypatch.setattr(
+        settings_module.property_loader, "get_environment", lambda: "test"
+    )
 
-    monkeypatch.setattr(runtime_module.property_loader, "get_string_property", missing)
-    with pytest.raises(ValueError, match="GROQ_API_KEY is required"):
-        LangGraphRuntime()
+    settings = AgentEngineSettings.load()
+
+    assert settings.engine == "n8n"
+    assert settings.groq_api_key is None
 
 
 @pytest.mark.parametrize(
@@ -53,18 +68,24 @@ def test_runtime_rejects_invalid_configuration(
     temperature: str,
     error: str,
 ) -> None:
+    values = {"agent_engine": "langgraph", "langgraph_temperature": temperature}
     monkeypatch.setattr(
-        runtime_module.property_loader, "get_string_property", lambda key: "test-key"
+        settings_module.property_loader,
+        "get_string_property",
+        lambda key: "test-key",
     )
     monkeypatch.setattr(
-        runtime_module.property_loader,
+        settings_module.property_loader,
         "get_int_property_with_default",
         lambda key, default: timeout,
     )
     monkeypatch.setattr(
-        runtime_module.property_loader,
+        settings_module.property_loader,
         "get_string_property_with_default",
-        lambda key, default: temperature if key == "langgraph_temperature" else default,
+        lambda key, default: values.get(key, default),
+    )
+    monkeypatch.setattr(
+        settings_module.property_loader, "get_environment", lambda: "test"
     )
     with pytest.raises(ValueError, match=error):
-        LangGraphRuntime()
+        AgentEngineSettings.load()

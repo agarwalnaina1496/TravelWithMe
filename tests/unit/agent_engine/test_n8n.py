@@ -1,69 +1,70 @@
 """n8n engine fallback contract tests."""
 
+import asyncio
 import json
 from pathlib import Path
-from unittest.mock import Mock
+
+import httpx
+import pytest
 
 from twm.prompts import PromptRelease
-from twm.services import N8NAgentEngine
+from twm.services import AgentEngineSettings, N8NAgentEngine
 from twm.services.agent_engine import n8n as n8n_module
-from twm.services.response_normalization import (
-    _normalize_meridian_response,
-    _normalize_scout_response,
-)
 
 
-def test_configuration_failures_preserve_each_agent_contract(monkeypatch) -> None:
+def test_n8n_transport_authenticates_and_canonicalizes_wrappers(monkeypatch) -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json=[{"json": {"output": {"message": "ok"}}}])
+
+    settings = AgentEngineSettings(
+        engine="n8n",
+        environment="prod",
+        n8n_scout_webhook_url="https://agents.example/webhook/scout",
+        n8n_meridian_webhook_url="https://agents.example/webhook/meridian",
+        n8n_webhook_token="server-secret",
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    engine = N8NAgentEngine(settings, client)
     monkeypatch.setattr(
         n8n_module,
         "load_prompt_release",
         lambda agent: PromptRelease(agent, "test", "prompt"),
     )
+
+    execution = asyncio.run(engine.scout({}, "travel"))
+    asyncio.run(client.aclose())
+
+    assert execution.response == {"message": "ok"}
+    assert captured[0].headers["X-TWM-Webhook-Token"] == "server-secret"
+    assert captured[0].url == "https://agents.example/webhook/scout"
+
+
+def test_n8n_transport_propagates_upstream_errors(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"detail": "unavailable"})
+
+    settings = AgentEngineSettings(
+        engine="n8n",
+        environment="test",
+        n8n_scout_webhook_url="https://agents.test/scout",
+        n8n_webhook_token="token",
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    engine = N8NAgentEngine(settings, client)
     monkeypatch.setattr(
-        n8n_module.property_loader,
-        "get_string_property",
-        lambda key: (_ for _ in ()).throw(KeyError(key)),
-    )
-    engine = N8NAgentEngine()
-
-    scout = _normalize_scout_response(engine.scout({}, "hello"))
-    meridian = _normalize_meridian_response(engine.meridian({}, "find options"))
-
-    assert scout.state_delta.model_dump() == {"trip_context": {}}
-    assert meridian.status == "HARD_FAIL"
-    assert meridian.state_delta.matcher_state == {
-        "conversation_context": {"awaiting": None}
-    }
-
-
-def test_production_webhook_requires_https_and_server_auth(monkeypatch) -> None:
-    values = {
-        "n8n_scout_webhook_url": "https://agents.example/webhook/scout",
-        "n8n_webhook_token": "server-secret",
-    }
-    monkeypatch.setattr(
-        n8n_module.property_loader, "get_string_property", values.__getitem__
-    )
-    monkeypatch.setattr(
-        n8n_module.property_loader, "get_environment", lambda: "prod"
-    )
-    response = Mock()
-    response.json.return_value = {"output": {}}
-    client = Mock()
-    client.__enter__ = Mock(return_value=client)
-    client.__exit__ = Mock(return_value=False)
-    client.post.return_value = response
-    monkeypatch.setattr(n8n_module.httpx, "Client", Mock(return_value=client))
-
-    N8NAgentEngine()._forward(
-        "scout", "n8n_scout_webhook_url", {"message": "travel"}
+        n8n_module,
+        "load_prompt_release",
+        lambda agent: PromptRelease(agent, "test", "prompt"),
     )
 
-    client.post.assert_called_once_with(
-        "https://agents.example/webhook/scout",
-        json={"message": "travel"},
-        headers={"X-TWM-Webhook-Token": "server-secret"},
-    )
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            asyncio.run(engine.scout({}, "travel"))
+    finally:
+        asyncio.run(client.aclose())
 
 
 def _assert_workflow_uses_backend_output_schema(

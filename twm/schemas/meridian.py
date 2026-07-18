@@ -6,29 +6,23 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import AgentMeta
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
-from .scout import BoundedMessage
+from .scout import (
+    BoundedMessage,
+    ScoutAdvisorConversationContext,
+    ScoutAdvisorState,
+)
 from ..security import validate_phase_state
 
 
-class MeridianAdvisorConversationContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    last_advisor_message: Optional[str] = None
-
-
-class MeridianAdvisorState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    conversation_context: MeridianAdvisorConversationContext = Field(
-        default_factory=MeridianAdvisorConversationContext
-    )
+MeridianAdvisorConversationContext = ScoutAdvisorConversationContext
+MeridianAdvisorState = ScoutAdvisorState
 
 
 class MeridianTripState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trip_context: dict[str, Any] = Field(default_factory=dict)
-    advisor_state: MeridianAdvisorState = Field(default_factory=MeridianAdvisorState)
+    advisor_state: ScoutAdvisorState = Field(default_factory=ScoutAdvisorState)
     matcher_state: dict[str, Any] = Field(default_factory=dict)
 
 

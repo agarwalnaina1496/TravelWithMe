@@ -12,7 +12,7 @@ class FakeStructuredModel:
         self.outputs = outputs
         self.calls = calls
 
-    def invoke(self, messages: list[Any]) -> dict[str, Any]:
+    async def ainvoke(self, messages: list[Any]) -> dict[str, Any]:
         self.calls.append(messages)
         output = self.outputs.pop(0)
         if isinstance(output, BaseException):

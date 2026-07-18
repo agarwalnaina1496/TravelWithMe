@@ -1,11 +1,12 @@
 """Meridian graph behavior and n8n parity tests."""
 
+import asyncio
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from twm.services import N8NAgentEngine
+from twm.services import AgentEngineSettings, N8NAgentEngine
 from twm.services.agent_engine import langgraph as langgraph_module
 from twm.services.agent_engine import n8n as n8n_module
 from twm.services.response_normalization import _normalize_meridian_response
@@ -60,14 +61,17 @@ def test_meridian_normalized_contract_matches_n8n(
 ) -> None:
     monkeypatch.setattr(n8n_module, "load_prompt_release", prompt_release)
     monkeypatch.setattr(langgraph_module, "load_prompt_release", prompt_release)
-    n8n = N8NAgentEngine()
-    monkeypatch.setattr(n8n, "_forward", Mock(return_value=output))
+    settings = AgentEngineSettings(engine="n8n", environment="test")
+    n8n = N8NAgentEngine(settings, Mock())
+    monkeypatch.setattr(n8n, "_forward", AsyncMock(return_value=output))
     langgraph = make_langgraph_engine({"MeridianModelOutput": [output]})
     state = {"trip_context": {"destination_scope": "mountains"}}
 
     assert _normalize_meridian_response(
-        langgraph.meridian(state, "Find options.")
-    ) == _normalize_meridian_response(n8n.meridian(state, "Find options."))
+        asyncio.run(langgraph.meridian(state, "Find options."))
+    ) == _normalize_meridian_response(
+        asyncio.run(n8n.meridian(state, "Find options."))
+    )
 
 
 def test_meridian_malformed_output_uses_failure_shape(
@@ -82,7 +86,7 @@ def test_meridian_malformed_output_uses_failure_shape(
         }
     )
 
-    response = engine.meridian({}, "hello").response
+    response = asyncio.run(engine.meridian({}, "hello")).response
 
     assert response["status"] == "HARD_FAIL"
     assert response["state_delta"] == {
@@ -108,7 +112,7 @@ def test_meridian_rejects_ui_owned_state(monkeypatch: pytest.MonkeyPatch) -> Non
         }
     )
 
-    response = engine.meridian({}, "select this").response
+    response = asyncio.run(engine.meridian({}, "select this")).response
     assert response["status"] == "HARD_FAIL"
     assert response["state_delta"] == {
         "matcher_state": {"conversation_context": {"awaiting": None}}

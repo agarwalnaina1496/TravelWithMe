@@ -1,3 +1,6 @@
+from contextlib import AsyncExitStack, asynccontextmanager
+
+import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,11 +9,26 @@ from .shared.properties import property_loader
 from .middleware import SecurityBoundaryMiddleware
 from .routers.health import router as health_api
 from .routers.trip_matcher import router as trip_matcher_api
+from .services import AgentEngineSettings, get_agent_engine
+
+
+@asynccontextmanager
+async def application_lifespan(app: FastAPI):
+    settings = AgentEngineSettings.load()
+    async with AsyncExitStack() as stack:
+        http_client = None
+        if settings.engine == "n8n":
+            http_client = await stack.enter_async_context(
+                httpx.AsyncClient(timeout=60.0)
+            )
+        app.state.agent_engine = get_agent_engine(settings, http_client)
+        yield
 
 
 def initialize_app() -> FastAPI:
     app = FastAPI(
         title="TravelWithMe Trip Matcher",
+        lifespan=application_lifespan,
         docs_url=None if property_loader.get_environment() == "prod" else "/docs",
         redoc_url=None if property_loader.get_environment() == "prod" else "/redoc",
         openapi_url=None if property_loader.get_environment() == "prod" else "/openapi.json",

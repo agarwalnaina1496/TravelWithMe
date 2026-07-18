@@ -1,7 +1,7 @@
 """API tests for the Scout and Meridian router."""
 
 from copy import deepcopy
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +17,7 @@ from twm.routers import trip_matcher
 from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
 from twm.services import (
     AgentExecution,
+    AgentEngineSettings,
     LangGraphAgentEngine,
     LangGraphRuntime,
     N8NAgentEngine,
@@ -37,15 +38,37 @@ def fake_langgraph_model(outputs: dict[str, dict]) -> Mock:
 
     def with_structured_output(schema: type, **kwargs):
         runnable = Mock()
-        runnable.invoke.return_value = {
+        runnable.ainvoke = AsyncMock(return_value={
             "raw": None,
             "parsed": schema.model_validate(outputs[schema.__name__]),
             "parsing_error": None,
-        }
+        })
         return runnable
 
     model.with_structured_output.side_effect = with_structured_output
     return model
+
+
+def async_engine() -> Mock:
+    engine = Mock(spec=[])
+    engine.scout = AsyncMock()
+    engine.meridian = AsyncMock()
+    return engine
+
+
+def set_engine(api_client: TestClient, engine: object) -> None:
+    api_client.app.dependency_overrides[trip_matcher.get_engine] = lambda: engine
+
+
+def n8n_engine() -> N8NAgentEngine:
+    settings = AgentEngineSettings(
+        engine="n8n",
+        environment="test",
+        n8n_scout_webhook_url="https://agents.test/webhook/scout",
+        n8n_meridian_webhook_url="https://agents.test/webhook/meridian",
+        n8n_webhook_token="test-token",
+    )
+    return N8NAgentEngine(settings, Mock())
 
 
 def meridian_success_output() -> dict:
@@ -66,12 +89,12 @@ def meridian_success_output() -> dict:
 def assert_meridian_api_rejects(
     api_client: TestClient, monkeypatch, output: dict
 ) -> None:
-    engine = Mock()
+    engine = async_engine()
     engine.meridian.return_value = AgentExecution(
         response=output,
         prompt_release=PromptRelease("meridian", "2.0.0", "prompt"),
     )
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    set_engine(api_client, engine)
 
     with pytest.raises(ValidationError):
         api_client.post(
@@ -106,7 +129,7 @@ def test_active_phase_prompt_releases_are_complete() -> None:
 def test_scout_api_preserves_entry_contract(
     api_client: TestClient, monkeypatch
 ) -> None:
-    engine = Mock()
+    engine = async_engine()
     engine.scout.return_value = AgentExecution(
         response={
             "message": "Here is a broad answer.",
@@ -115,7 +138,7 @@ def test_scout_api_preserves_entry_contract(
         },
         prompt_release=PromptRelease("scout", "1.1.0", "prompt"),
     )
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    set_engine(api_client, engine)
     payload = {
         "trip_state": {
             "stage": "new",
@@ -135,15 +158,22 @@ def test_scout_api_preserves_entry_contract(
         "agent_meta": {"agent": "scout", "prompt_version": "1.1.0"},
     }
     engine.scout.assert_called_once_with(
-        payload["trip_state"], "Tell me about Uttarakhand."
+        {
+            "stage": "new",
+            "trip_context": {},
+            "advisor_state": {
+                "conversation_context": {"last_advisor_message": None}
+            },
+        },
+        "Tell me about Uttarakhand.",
     )
 
 
 def test_scout_api_forwards_backend_output_schema(
     api_client: TestClient, monkeypatch
 ) -> None:
-    engine = N8NAgentEngine()
-    forward = Mock(
+    engine = n8n_engine()
+    forward = AsyncMock(
         return_value={
             "message": "A mountain trip can work well.",
             "state_delta": {"trip_context": {"region": "Uttarakhand"}},
@@ -151,7 +181,7 @@ def test_scout_api_forwards_backend_output_schema(
         }
     )
     monkeypatch.setattr(engine, "_forward", forward)
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    set_engine(api_client, engine)
     payload = {
         "trip_state": {"stage": "new", "trip_context": {}},
         "message": "Tell me about Uttarakhand.",
@@ -162,11 +192,16 @@ def test_scout_api_forwards_backend_output_schema(
     assert response.status_code == 200
     release = load_prompt_release("scout")
     forward.assert_called_once_with(
-        "scout",
-        "n8n_scout_webhook_url",
+        "https://agents.test/webhook/scout",
         {
             "prompt": release.content,
-            "trip_state": payload["trip_state"],
+            "trip_state": {
+                "stage": "new",
+                "trip_context": {},
+                "advisor_state": {
+                    "conversation_context": {"last_advisor_message": None}
+                },
+            },
             "message": "Tell me about Uttarakhand.",
             "output_schema": ScoutAgentOutput.model_json_schema(),
         },
@@ -196,7 +231,7 @@ def test_scout_response_rejects_non_owned_state_delta(
 def test_meridian_api_forwards_phase_slice_and_message(
     api_client: TestClient, monkeypatch
 ) -> None:
-    engine = Mock()
+    engine = async_engine()
     engine.meridian.return_value = AgentExecution(
         response={
             "status": "NEEDS_CLARIFICATION",
@@ -214,7 +249,7 @@ def test_meridian_api_forwards_phase_slice_and_message(
         },
         prompt_release=PromptRelease("meridian", "1.0.0", "prompt"),
     )
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    set_engine(api_client, engine)
     payload = {
         "trip_state": {
             "trip_context": {"destination_scope": "mountains"},
@@ -254,8 +289,8 @@ def test_meridian_api_forwards_phase_slice_and_message(
 def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     api_client: TestClient, monkeypatch
 ) -> None:
-    engine = N8NAgentEngine()
-    forward = Mock(
+    engine = n8n_engine()
+    forward = AsyncMock(
         return_value={
             "status": "SUCCESS",
             "message": "I used that clarification to update the matches.",
@@ -274,7 +309,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
         }
     )
     monkeypatch.setattr(engine, "_forward", forward)
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    set_engine(api_client, engine)
     payload = {
         "trip_state": {
             "trip_context": {"destination_scope": "mountains"},
@@ -302,8 +337,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     }
     release = load_prompt_release("meridian")
     forward.assert_called_once_with(
-        "meridian",
-        "n8n_meridian_webhook_url",
+        "https://agents.test/webhook/meridian",
         {
             "prompt": release.content,
             "trip_state": payload["trip_state"],
@@ -332,7 +366,7 @@ def test_meridian_api_rejects_full_ui_state(api_client: TestClient) -> None:
 def test_meridian_api_returns_canonical_failure_suggestions(
     api_client: TestClient, monkeypatch
 ) -> None:
-    engine = Mock()
+    engine = async_engine()
     engine.meridian.return_value = AgentExecution(
         response={
             "status": "BUDGET_FAIL",
@@ -348,7 +382,7 @@ def test_meridian_api_returns_canonical_failure_suggestions(
         },
         prompt_release=PromptRelease("meridian", "1.0.0", "prompt"),
     )
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    set_engine(api_client, engine)
 
     response = api_client.post(
         "/meridian",
@@ -373,7 +407,7 @@ def test_meridian_api_returns_canonical_failure_suggestions(
 def test_meridian_api_returns_typed_dynamic_recommendations(
     api_client: TestClient, monkeypatch
 ) -> None:
-    engine = Mock()
+    engine = async_engine()
     option = recommendation_option()
     option["evaluations"][0]["details"] = [
         {
@@ -403,7 +437,7 @@ def test_meridian_api_returns_typed_dynamic_recommendations(
         },
         prompt_release=PromptRelease("meridian", "2.0.0", "prompt"),
     )
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    set_engine(api_client, engine)
 
     response = api_client.post(
         "/meridian",
@@ -563,9 +597,8 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
             },
         }
     )
-    monkeypatch.setattr(
-        trip_matcher,
-        "engine",
+    set_engine(
+        api_client,
         LangGraphAgentEngine(runtime=LangGraphRuntime(model=model)),
     )
 
@@ -643,14 +676,34 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
 def test_agent_api_rejects_resource_abusive_input_without_invoking_engine(
     api_client: TestClient, monkeypatch, path: str, payload: dict
 ) -> None:
-    engine = Mock()
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    engine = async_engine()
+    set_engine(api_client, engine)
 
     response = api_client.post(path, json=payload)
 
     assert response.status_code == 422
     engine.scout.assert_not_called()
     engine.meridian.assert_not_called()
+
+
+def test_scout_api_rejects_full_ui_state(api_client: TestClient) -> None:
+    engine = async_engine()
+    set_engine(api_client, engine)
+    response = api_client.post(
+        "/scout",
+        json={
+            "trip_state": {
+                "stage": "matching",
+                "trip_context": {},
+                "advisor_state": {},
+                "active_agent": "scout",
+                "matcher_state": {},
+            }
+        },
+    )
+
+    assert response.status_code == 422
+    engine.scout.assert_not_called()
 
 
 def test_agent_api_rejects_excessive_state_depth_without_invoking_engine(
@@ -661,8 +714,8 @@ def test_agent_api_rejects_excessive_state_depth_without_invoking_engine(
     for _ in range(MAX_DATA_DEPTH + 1):
         cursor["next"] = {}
         cursor = cursor["next"]
-    engine = Mock()
-    monkeypatch.setattr(trip_matcher, "engine", engine)
+    engine = async_engine()
+    set_engine(api_client, engine)
 
     response = api_client.post(
         "/scout", json={"trip_state": nested, "message": "travel question"}

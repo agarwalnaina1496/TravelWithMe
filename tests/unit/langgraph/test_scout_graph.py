@@ -1,11 +1,12 @@
 """Scout graph behavior and n8n parity tests."""
 
+import asyncio
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from twm.services import N8NAgentEngine
+from twm.services import AgentEngineSettings, N8NAgentEngine
 from twm.services.agent_engine import langgraph as langgraph_module
 from twm.services.agent_engine import n8n as n8n_module
 from twm.services.response_normalization import _normalize_scout_response
@@ -39,14 +40,17 @@ def test_scout_normalized_contract_matches_n8n(
 ) -> None:
     monkeypatch.setattr(n8n_module, "load_prompt_release", prompt_release)
     monkeypatch.setattr(langgraph_module, "load_prompt_release", prompt_release)
-    n8n = N8NAgentEngine()
-    monkeypatch.setattr(n8n, "_forward", Mock(return_value=output))
+    settings = AgentEngineSettings(engine="n8n", environment="test")
+    n8n = N8NAgentEngine(settings, Mock())
+    monkeypatch.setattr(n8n, "_forward", AsyncMock(return_value=output))
     langgraph = make_langgraph_engine({"ScoutModelOutput": [output]})
     state = {"stage": "advising", "trip_context": {}}
 
     assert _normalize_scout_response(
-        langgraph.scout(state, "Help me choose.")
-    ) == _normalize_scout_response(n8n.scout(state, "Help me choose."))
+        asyncio.run(langgraph.scout(state, "Help me choose."))
+    ) == _normalize_scout_response(
+        asyncio.run(n8n.scout(state, "Help me choose."))
+    )
 
 
 def test_scout_malformed_output_uses_failure_shape(
@@ -61,7 +65,7 @@ def test_scout_malformed_output_uses_failure_shape(
         }
     )
 
-    response = engine.scout({}, "hello").response
+    response = asyncio.run(engine.scout({}, "hello")).response
 
     assert response["state_delta"] == {}
     assert response["intent"] is None
@@ -76,7 +80,7 @@ def test_scout_provider_error_propagates_without_fallback(
     )
 
     with pytest.raises(RuntimeError, match="provider unavailable"):
-        engine.scout({}, "hello")
+        asyncio.run(engine.scout({}, "hello"))
 
 
 def test_scout_rejects_ui_owned_state(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,6 +99,6 @@ def test_scout_rejects_ui_owned_state(monkeypatch: pytest.MonkeyPatch) -> None:
         }
     )
 
-    response = engine.scout({}, "select this").response
+    response = asyncio.run(engine.scout({}, "select this")).response
     assert response["state_delta"] == {}
     assert response["intent"] is None
