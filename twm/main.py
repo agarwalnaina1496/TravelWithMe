@@ -1,15 +1,27 @@
 from contextlib import AsyncExitStack, asynccontextmanager
+import logging
 
 import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from .shared.properties import property_loader
 from .middleware import SecurityBoundaryMiddleware
 from .routers.health import router as health_api
 from .routers.trip_matcher import router as trip_matcher_api
-from .services import AgentEngineSettings, get_agent_engine
+from .services import (
+    AgentAdapterError,
+    AgentAdapterTimeoutError,
+    AgentEngineSettings,
+    AgentOutputError,
+    get_agent_engine,
+)
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
@@ -53,6 +65,47 @@ def initialize_app() -> FastAPI:
             "max_request_body_bytes", 131_072
         ),
     )
+
+    @app.exception_handler(AgentOutputError)
+    async def handle_invalid_agent_output(_, error: AgentOutputError):
+        logger.warning(
+            "%s output failed the common contract: %s",
+            error.agent,
+            error.failures,
+        )
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "The travel assistant returned an invalid response."},
+        )
+
+    @app.exception_handler(AgentAdapterTimeoutError)
+    async def handle_agent_timeout(_, error: AgentAdapterTimeoutError):
+        logger.warning("Agent invocation timed out: %s", type(error).__name__)
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "The travel assistant timed out."},
+        )
+
+    @app.exception_handler(AgentAdapterError)
+    async def handle_agent_adapter_error(_, error: AgentAdapterError):
+        logger.warning("Agent invocation failed: %s", type(error).__name__)
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "The travel assistant is temporarily unavailable."},
+        )
+
+    @app.exception_handler(ValidationError)
+    async def handle_unexpected_agent_validation(_, error: ValidationError):
+        failures = [
+            {"type": item["type"], "loc": list(item["loc"])}
+            for item in error.errors(include_input=False)
+        ]
+        logger.warning("Agent response normalization failed: %s", failures)
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "The travel assistant returned an invalid response."},
+        )
+
     app.include_router(health_api)
     app.include_router(trip_matcher_api)
 

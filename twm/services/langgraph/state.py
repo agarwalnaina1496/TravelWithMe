@@ -1,21 +1,17 @@
-"""Shared state contracts used by every agent graph."""
+"""Shared raw-invocation state used by every agent graph."""
 
-from typing import Any, Optional, TypedDict
+from typing import TypedDict
 
 from langchain_core.messages import BaseMessage
 
 
 class AgentGraphInput(TypedDict):
-    prompt: str
-    trip_state: dict[str, Any]
-    message: Optional[str]
+    messages: list[BaseMessage]
 
 
 class AgentGraphState(AgentGraphInput, total=False):
-    messages: list[BaseMessage]
-    model_result: dict[str, Any]
-    response: dict[str, Any]
+    raw_output: str
 
 
 class AgentGraphOutput(TypedDict):
-    response: dict[str, Any]
+    raw_output: str

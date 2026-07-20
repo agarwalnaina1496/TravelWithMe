@@ -59,7 +59,8 @@ Required Render environment variable:
 ENVIRONMENT=prod
 AGENT_ENGINE=n8n
 LANGGRAPH_MODEL=openai/gpt-oss-120b
-GROQ_API_KEY=<secret>
+LANGGRAPH_MODEL_PROVIDER=groq
+LANGGRAPH_API_KEY=<secret>
 ```
 
 FastAPI config is loaded from:
@@ -106,7 +107,7 @@ The UI should not call n8n directly.
 
 ## Selected Engine Requirements
 
-With `AGENT_ENGINE=langgraph`, execution stays inside FastAPI and requires `GROQ_API_KEY`.
+With `AGENT_ENGINE=langgraph`, execution stays inside FastAPI and requires `LANGGRAPH_MODEL_PROVIDER`, `LANGGRAPH_MODEL`, and `LANGGRAPH_API_KEY`. The current provider is Groq, but Backend agent behavior is not coupled to a provider-specific model class.
 
 With `AGENT_ENGINE=n8n`, FastAPI temporarily reads the committed production webhook URLs from `properties-prod.ini` and calls them without an auth header:
 

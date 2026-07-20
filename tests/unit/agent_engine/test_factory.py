@@ -1,29 +1,39 @@
-"""Configuration-driven engine selection tests."""
+"""Configuration-driven adapter selection tests."""
 
 from unittest.mock import Mock
 
 import pytest
 
-from twm.services import AgentEngineSettings, N8NAgentEngine
+from twm.services import (
+    AgentEngineSettings,
+    AgentExecutionService,
+    LangGraphAgentAdapter,
+    N8NAgentAdapter,
+)
 from twm.services.agent_engine import factory
 from twm.shared.properties import property_loader
 
 
-def test_factory_selects_exact_configured_engine(monkeypatch) -> None:
+def test_factory_wraps_exact_configured_adapter(monkeypatch) -> None:
     client = Mock()
     n8n_settings = AgentEngineSettings(engine="n8n", environment="test")
-    assert isinstance(
-        factory.get_agent_engine(n8n_settings, client), N8NAgentEngine
-    )
+    engine = factory.get_agent_engine(n8n_settings, client)
+    assert isinstance(engine, AgentExecutionService)
+    assert isinstance(engine._adapter, N8NAgentAdapter)
 
-    sentinel = object()
+    sentinel = Mock(spec=LangGraphAgentAdapter)
     monkeypatch.setattr(
-        factory, "LangGraphAgentEngine", lambda settings: sentinel
+        factory, "LangGraphAgentAdapter", lambda settings: sentinel
     )
     langgraph_settings = AgentEngineSettings(
-        engine="langgraph", environment="test", groq_api_key="test"
+        engine="langgraph",
+        environment="test",
+        langgraph_model_provider="groq",
+        langgraph_api_key="test",
     )
-    assert factory.get_agent_engine(langgraph_settings, client) is sentinel
+    engine = factory.get_agent_engine(langgraph_settings, client)
+    assert isinstance(engine, AgentExecutionService)
+    assert engine._adapter is sentinel
 
 
 def test_unknown_engine_is_rejected() -> None:

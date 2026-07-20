@@ -11,6 +11,7 @@ os.environ["AGENT_ENGINE"] = "n8n"
 os.environ["ENVIRONMENT"] = "test"
 os.environ["N8N_SCOUT_WEBHOOK_URL"] = "https://agents.test/webhook/scout"
 os.environ["N8N_MERIDIAN_WEBHOOK_URL"] = "https://agents.test/webhook/meridian"
+os.environ["CORS_ALLOWED_ORIGINS"] = '["https://ui.test"]'
 
 from twm.main import app
 

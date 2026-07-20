@@ -1,6 +1,7 @@
 """API tests for the Scout and Meridian router."""
 
 from copy import deepcopy
+import json
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -14,13 +15,12 @@ from twm.prompts import (
     validate_prompt_release_files,
 )
 from twm.routers import trip_matcher
-from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
 from twm.services import (
+    AgentAdapterTimeoutError,
     AgentExecution,
-    AgentEngineSettings,
-    LangGraphAgentEngine,
+    AgentExecutionService,
+    LangGraphAgentAdapter,
     LangGraphRuntime,
-    N8NAgentEngine,
 )
 from twm.services.response_normalization import _normalize_meridian_response
 from twm.schemas.scout import ScoutResponse
@@ -31,22 +31,7 @@ from twm.security import (
     MAX_MESSAGE_CHARACTERS,
     MAX_PHASE_STATE_BYTES,
 )
-
-
-def fake_langgraph_model(outputs: dict[str, dict]) -> Mock:
-    model = Mock()
-
-    def with_structured_output(schema: type, **kwargs):
-        runnable = Mock()
-        runnable.ainvoke = AsyncMock(return_value={
-            "raw": None,
-            "parsed": schema.model_validate(outputs[schema.__name__]),
-            "parsing_error": None,
-        })
-        return runnable
-
-    model.with_structured_output.side_effect = with_structured_output
-    return model
+from tests.unit.langgraph.fakes import FakeChatModel
 
 
 def async_engine() -> Mock:
@@ -60,14 +45,12 @@ def set_engine(api_client: TestClient, engine: object) -> None:
     api_client.app.dependency_overrides[trip_matcher.get_engine] = lambda: engine
 
 
-def n8n_engine() -> N8NAgentEngine:
-    settings = AgentEngineSettings(
-        engine="n8n",
-        environment="test",
-        n8n_scout_webhook_url="https://agents.test/webhook/scout",
-        n8n_meridian_webhook_url="https://agents.test/webhook/meridian",
+def common_engine(*outputs: dict) -> tuple[AgentExecutionService, AsyncMock]:
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        side_effect=[json.dumps(output) for output in outputs]
     )
-    return N8NAgentEngine(settings, Mock())
+    return AgentExecutionService(adapter), adapter
 
 
 def meridian_success_output() -> dict:
@@ -95,17 +78,21 @@ def assert_meridian_api_rejects(
     )
     set_engine(api_client, engine)
 
-    with pytest.raises(ValidationError):
-        api_client.post(
-            "/meridian",
-            json={
-                "trip_state": {
-                    "trip_context": {},
-                    "advisor_state": {"conversation_context": {}},
-                    "matcher_state": {},
-                }
-            },
-        )
+    response = api_client.post(
+        "/meridian",
+        json={
+            "trip_state": {
+                "trip_context": {},
+                "advisor_state": {"conversation_context": {}},
+                "matcher_state": {},
+            }
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "The travel assistant returned an invalid response."
+    }
 
 
 def test_active_phase_prompt_releases_are_complete() -> None:
@@ -168,18 +155,16 @@ def test_scout_api_preserves_entry_contract(
     )
 
 
-def test_scout_api_forwards_backend_output_schema(
+def test_scout_api_uses_common_prepared_invocation(
     api_client: TestClient, monkeypatch
 ) -> None:
-    engine = n8n_engine()
-    forward = AsyncMock(
-        return_value={
+    engine, adapter = common_engine(
+        {
             "message": "A mountain trip can work well.",
             "state_delta": {"trip_context": {"region": "Uttarakhand"}},
             "intent": "advise",
         }
     )
-    monkeypatch.setattr(engine, "_forward", forward)
     set_engine(api_client, engine)
     payload = {
         "trip_state": {"stage": "new", "trip_context": {}},
@@ -190,21 +175,11 @@ def test_scout_api_forwards_backend_output_schema(
 
     assert response.status_code == 200
     release = load_prompt_release("scout")
-    forward.assert_called_once_with(
-        "https://agents.test/webhook/scout",
-        {
-            "prompt": release.content,
-            "trip_state": {
-                "stage": "new",
-                "trip_context": {},
-                "advisor_state": {
-                    "conversation_context": {"last_advisor_message": None}
-                },
-            },
-            "message": "Tell me about Uttarakhand.",
-            "output_schema": ScoutAgentOutput.model_json_schema(),
-        },
-    )
+    agent, invocation = adapter.invoke.await_args.args
+    assert agent == "scout"
+    assert invocation.system_prompt.startswith(release.content)
+    assert '"intent"' in invocation.system_prompt
+    assert "Tell me about Uttarakhand." in invocation.user_prompt
 
 
 @pytest.mark.parametrize(
@@ -288,9 +263,8 @@ def test_meridian_api_forwards_phase_slice_and_message(
 def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     api_client: TestClient, monkeypatch
 ) -> None:
-    engine = n8n_engine()
-    forward = AsyncMock(
-        return_value={
+    engine, adapter = common_engine(
+        {
             "status": "SUCCESS",
             "message": "I used that clarification to update the matches.",
             "state_delta": {
@@ -307,7 +281,6 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
             "options": [recommendation_option()],
         }
     )
-    monkeypatch.setattr(engine, "_forward", forward)
     set_engine(api_client, engine)
     payload = {
         "trip_state": {
@@ -335,15 +308,11 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
         "prompt_version": "1.5.0",
     }
     release = load_prompt_release("meridian")
-    forward.assert_called_once_with(
-        "https://agents.test/webhook/meridian",
-        {
-            "prompt": release.content,
-            "trip_state": payload["trip_state"],
-            "message": "Keep it mid-range.",
-            "output_schema": MeridianAgentOutput.model_json_schema(),
-        },
-    )
+    agent, invocation = adapter.invoke.await_args.args
+    assert agent == "meridian"
+    assert invocation.system_prompt.startswith(release.content)
+    assert '"traveler_criteria"' in invocation.system_prompt
+    assert "Keep it mid-range." in invocation.user_prompt
 
 
 def test_meridian_api_rejects_full_ui_state(api_client: TestClient) -> None:
@@ -574,31 +543,39 @@ def test_meridian_api_rejects_superseded_or_malformed_option_content(
 def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
     api_client: TestClient, monkeypatch
 ) -> None:
-    model = fake_langgraph_model(
-        {
-            "ScoutModelOutput": {
-                "message": "A mountain trip can work well.",
-                "state_delta": {"trip_context": {"destination_scope": "mountains"}},
-                "intent": "advise",
-            },
-            "MeridianModelOutput": {
-                "status": "NEEDS_CLARIFICATION",
-                "message": "What budget should I use?",
-                "state_delta": {
-                    "matcher_state": {
-                        "conversation_context": {
-                            "last_meridian_message": "What budget should I use?",
-                            "awaiting": "budget",
+    model = FakeChatModel(
+        [
+            json.dumps(
+                {
+                    "message": "A mountain trip can work well.",
+                    "state_delta": {
+                        "trip_context": {"destination_scope": "mountains"}
+                    },
+                    "intent": "advise",
+                }
+            ),
+            json.dumps(
+                {
+                    "status": "NEEDS_CLARIFICATION",
+                    "message": "What budget should I use?",
+                    "state_delta": {
+                        "matcher_state": {
+                            "conversation_context": {
+                                "last_meridian_message": "What budget should I use?",
+                                "awaiting": "budget",
+                            }
                         }
-                    }
-                },
-                "options": [],
-            },
-        }
+                    },
+                    "options": [],
+                }
+            ),
+        ]
     )
     set_engine(
         api_client,
-        LangGraphAgentEngine(runtime=LangGraphRuntime(model=model)),
+        AgentExecutionService(
+            LangGraphAgentAdapter(runtime=LangGraphRuntime(model=model))
+        ),
     )
 
     scout_response = api_client.post(
@@ -647,6 +624,45 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         "options": [],
         "agent_meta": {"agent": "meridian", "prompt_version": "1.5.0"},
     }
+
+
+def test_invalid_output_after_repair_returns_cors_enabled_502(
+    api_client: TestClient,
+) -> None:
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(side_effect=["not-json", "still-not-json"])
+    set_engine(api_client, AgentExecutionService(adapter))
+
+    response = api_client.post(
+        "/scout",
+        headers={"Origin": "https://ui.test"},
+        json={"trip_state": {}, "message": "Help me plan."},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "The travel assistant returned an invalid response."
+    }
+    assert response.headers["access-control-allow-origin"] == "https://ui.test"
+    assert adapter.invoke.await_count == 2
+
+
+def test_adapter_timeout_returns_cors_enabled_504(api_client: TestClient) -> None:
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        side_effect=AgentAdapterTimeoutError("provider timed out")
+    )
+    set_engine(api_client, AgentExecutionService(adapter))
+
+    response = api_client.post(
+        "/scout",
+        headers={"Origin": "https://ui.test"},
+        json={"trip_state": {}, "message": "Help me plan."},
+    )
+
+    assert response.status_code == 504
+    assert response.json() == {"detail": "The travel assistant timed out."}
+    assert response.headers["access-control-allow-origin"] == "https://ui.test"
 
 
 @pytest.mark.parametrize(
