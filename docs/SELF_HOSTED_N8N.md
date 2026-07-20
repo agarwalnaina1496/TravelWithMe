@@ -8,7 +8,15 @@ FastAPI now runs on Render. See [Render FastAPI deployment](RENDER_FASTAPI.md).
 
 ## What n8n Does
 
-n8n is the default orchestration layer for Trip Matcher. LangGraph remains available through an explicit manual configuration switch; see [Agent engine selection](AGENT_ENGINE.md).
+n8n is the default thin model-invocation adapter for Trip Matcher. FastAPI owns prompt preparation, parsing, Pydantic validation, the single repair attempt, and public response normalization. LangGraph remains available through an explicit manual configuration switch; see [Agent engine selection](AGENT_ENGINE.md).
+
+Each agent workflow has three logical nodes:
+
+```text
+Webhook -> Agent (+ model connection) -> Respond to Webhook
+```
+
+There is no n8n structured-output parser node. The response is `{"raw_output":"<unparsed model completion>"}`.
 
 Current workflows:
 
@@ -93,10 +101,11 @@ FastAPI on Render loads prompt files locally, then sends prompt text in the n8n 
 n8n reads:
 
 ```text
-Webhook body.prompt
+Webhook body.system_prompt
+Webhook body.user_prompt
 ```
 
-as the LangChain agent system message.
+The agent uses these as its system and user messages, then returns its raw completion to FastAPI.
 
 ## Updating n8n Workflows
 
@@ -121,6 +130,8 @@ Edit live workflow first:
 ```
 
 At this point the workflow is live.
+
+Because this private contract changes in coordination with FastAPI, import and activate both updated workflows immediately before deploying the matching Backend version. If the Backend deploy must be rolled back, also restore both previous workflow exports.
 
 Then sync repo for versioning:
 

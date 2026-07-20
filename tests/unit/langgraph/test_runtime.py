@@ -1,30 +1,40 @@
-"""LangGraph provider runtime configuration tests."""
+"""Provider-neutral LangGraph runtime configuration tests."""
 
 from unittest.mock import Mock
 
 import pytest
-from pydantic import BaseModel
 
 from twm.services import AgentEngineSettings, LangGraphRuntime
 from twm.services.agent_engine import settings as settings_module
+from twm.services.langgraph import runtime as runtime_module
 
 
-class StructuredOutput(BaseModel):
-    message: str
-
-
-def test_runtime_prepares_provider_structured_output() -> None:
+def test_runtime_initializes_configured_provider_without_provider_class(
+    monkeypatch,
+) -> None:
     model = Mock()
-    structured = object()
-    model.with_structured_output.return_value = structured
-    runtime = LangGraphRuntime(model=model)
+    initializer = Mock(return_value=model)
+    monkeypatch.setattr(runtime_module, "init_chat_model", initializer)
+    settings = AgentEngineSettings(
+        engine="langgraph",
+        environment="test",
+        langgraph_model_provider="groq",
+        langgraph_api_key="secret",
+        langgraph_model="openai/gpt-oss-120b",
+        langgraph_temperature=0.3,
+        langgraph_timeout_seconds=45,
+    )
 
-    assert runtime.structured_model(StructuredOutput) is structured
-    model.with_structured_output.assert_called_once_with(
-        StructuredOutput,
-        method="json_schema",
-        include_raw=True,
-        strict=False,
+    runtime = LangGraphRuntime(settings=settings)
+
+    assert runtime.model is model
+    initializer.assert_called_once_with(
+        model="openai/gpt-oss-120b",
+        model_provider="groq",
+        api_key="secret",
+        temperature=0.3,
+        timeout=45.0,
+        max_retries=0,
     )
 
 
@@ -50,7 +60,44 @@ def test_settings_validate_only_selected_engine(
     settings = AgentEngineSettings.load()
 
     assert settings.engine == "n8n"
-    assert settings.groq_api_key is None
+    assert settings.langgraph_api_key is None
+    assert settings.langgraph_model_provider is None
+
+
+def test_langgraph_settings_are_provider_neutral(monkeypatch) -> None:
+    values = {
+        "langgraph_api_key": "secret",
+    }
+    defaults = {
+        "agent_engine": "langgraph",
+        "langgraph_model_provider": "anthropic",
+        "langgraph_model": "claude-test",
+        "langgraph_temperature": "0.4",
+    }
+    monkeypatch.setattr(
+        settings_module.property_loader,
+        "get_string_property",
+        values.__getitem__,
+    )
+    monkeypatch.setattr(
+        settings_module.property_loader,
+        "get_string_property_with_default",
+        lambda key, default: defaults.get(key, default),
+    )
+    monkeypatch.setattr(
+        settings_module.property_loader,
+        "get_int_property_with_default",
+        lambda key, default: 30,
+    )
+    monkeypatch.setattr(
+        settings_module.property_loader, "get_environment", lambda: "test"
+    )
+
+    settings = AgentEngineSettings.load()
+
+    assert settings.langgraph_model_provider == "anthropic"
+    assert settings.langgraph_model == "claude-test"
+    assert settings.langgraph_api_key == "secret"
 
 
 @pytest.mark.parametrize(
@@ -67,7 +114,12 @@ def test_runtime_rejects_invalid_configuration(
     temperature: str,
     error: str,
 ) -> None:
-    values = {"agent_engine": "langgraph", "langgraph_temperature": temperature}
+    defaults = {
+        "agent_engine": "langgraph",
+        "langgraph_model_provider": "groq",
+        "langgraph_model": "test-model",
+        "langgraph_temperature": temperature,
+    }
     monkeypatch.setattr(
         settings_module.property_loader,
         "get_string_property",
@@ -81,7 +133,7 @@ def test_runtime_rejects_invalid_configuration(
     monkeypatch.setattr(
         settings_module.property_loader,
         "get_string_property_with_default",
-        lambda key, default: values.get(key, default),
+        lambda key, default: defaults.get(key, default),
     )
     monkeypatch.setattr(
         settings_module.property_loader, "get_environment", lambda: "test"

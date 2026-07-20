@@ -1,191 +1,119 @@
 # Agent Engine Selection
 
-This runbook owns the Backend procedure for selecting n8n or LangGraph for both Scout and Meridian.
+This runbook owns the Backend procedure for selecting n8n or LangGraph for Scout and Meridian. The public `POST /scout` and `POST /meridian` contracts do not change with the selected engine.
 
-The public API remains engine-neutral:
+The engine is selected when FastAPI starts. Changing it requires a restart or redeploy; there is no per-request switch, automatic fallback, or shadow execution.
+
+## Common Execution Pipeline
+
+FastAPI owns the agent behavior that must remain identical across engines:
 
 ```text
-POST /scout
-POST /meridian
+validate request
+  -> load the Backend prompt release
+  -> prepare the system and traveler messages
+  -> invoke the selected thin adapter
+  -> parse JSON and validate the Pydantic output contract
+  -> invoke the same adapter once to repair invalid output
+  -> normalize the public response
 ```
 
-The selected engine is read when FastAPI starts. Changing it requires a restart or redeploy. There is no per-request switch, automatic fallback, or shadow execution.
+If the first completion is invalid, FastAPI makes exactly one repair invocation. If the repaired completion is still invalid, FastAPI returns a CORS-enabled `502`. Adapter timeouts return a CORS-enabled `504`. Parsing failures are infrastructure failures; they must never be represented as a successful Scout response or as Meridian `HARD_FAIL`.
+
+The adapters return raw model text and do not parse or normalize it:
+
+- n8n: `Webhook -> Agent (+ configured model) -> Respond to Webhook`
+- LangGraph: `START -> invoke_<agent> -> END`
 
 ## Code Layout
 
 ```text
 twm/services/
   agent_engine/
-    contracts.py              engine-neutral protocol and AgentExecution
-    settings.py               immutable selected-engine configuration
-    factory.py                configuration-driven engine selection
-    n8n.py                    n8n webhook adapter
-    langgraph.py              LangGraph engine adapter
+    contracts.py   common engine and thin-adapter contracts
+    service.py     shared preparation, parsing, validation, and repair
+    settings.py    immutable selected-engine configuration
+    factory.py     adapter selection and common-service assembly
+    n8n.py         raw n8n webhook transport
+    langgraph.py   raw LangGraph graph adapter
   langgraph/
-    runtime.py                provider configuration and graph compilation
-    state.py                  shared graph input, working state, and output
-    nodes.py                  reusable input, invocation, and parser template nodes
-    scout/
-      models.py               Scout structured model output
-      nodes.py                Scout invocation and output-parser nodes
-      graph.py                Scout graph assembly and edges
-    meridian/
-      models.py               Meridian structured model output
-      nodes.py                Meridian invocation and output-parser nodes
-      graph.py                Meridian graph assembly and edges
+    runtime.py     generic chat-model initialization and graph compilation
+    state.py       messages-in/raw-output graph state
+    nodes.py       reusable model invocation node
+    scout/graph.py
+    meridian/graph.py
 ```
-
-Both graphs follow an explicit flow:
-
-```text
-START -> prepare_input -> invoke_<agent> -> parse_<agent>_output -> END
-```
-
-FastAPI owns the HTTP receive/respond boundary. LangGraph owns agent preparation, invocation, and structured-output parsing.
-
-## Execution Lifecycle
-
-FastAPI loads and validates the selected engine settings once during application startup. Its lifespan owns one shared `httpx.AsyncClient`, injects that transport into the n8n adapter, and closes it during shutdown. Routers resolve the asynchronous `AgentEngine` protocol through a FastAPI dependency instead of retaining a module-global engine.
-
-Both Scout and Meridian operations are asynchronous. The n8n adapter awaits the shared HTTP transport and converts supported webhook list, `json`, and `output` wrappers into one canonical dictionary before shared response validation. LangGraph uses asynchronous graph and structured-model invocation. The shared normalizer therefore has no engine-specific wrapper handling.
-
-Only the selected engine's required settings are loaded. With the committed `n8n` default, missing LangGraph credentials do not block startup. Selecting LangGraph explicitly requires its provider settings and does not construct or fall back to n8n.
 
 ## Supported Values
 
 ```properties
-AGENT_ENGINE=langgraph
 AGENT_ENGINE=n8n
+AGENT_ENGINE=langgraph
 ```
 
-The committed and Render defaults are `n8n`. LangGraph is available only through an explicit manual configuration switch.
+The committed and Render default is `n8n`.
 
-## LangGraph Requirements
+## n8n Private Contract
 
-LangGraph runs statelessly inside FastAPI and uses the Backend-owned prompt releases and response normalization.
+FastAPI sends this private payload to the selected agent webhook:
 
-Required secret:
-
-```properties
-GROQ_API_KEY=<secret>
+```json
+{
+  "system_prompt": "<Backend prompt plus output schema>",
+  "user_prompt": "<framed traveler request>"
+}
 ```
 
-Default non-secret settings:
+The workflow returns exactly:
 
-```properties
-LANGGRAPH_MODEL=openai/gpt-oss-120b
-LANGGRAPH_TEMPERATURE=0.7
-LANGGRAPH_TIMEOUT_SECONDS=60
-```
-
-Store `GROQ_API_KEY` only in the deployment platform or local secret environment. Do not add it to property files, `render.yaml`, logs, prompts, graph state, tests, or responses.
-
-## n8n Requirements
-
-While n8n remains the selected transitional engine, the production property overlay provides both webhook URLs:
-
-```properties
-n8n_scout_webhook_url=http://13.201.32.120:5678/webhook/scout
-n8n_meridian_webhook_url=http://13.201.32.120:5678/webhook/meridian
+```json
+{"raw_output":"<unparsed model completion>"}
 ```
 
 Both live workflows must be active. The versioned `n8n/*.json` files are backups; editing them does not update the live workflows. See [Self-hosted n8n](SELF_HOSTED_N8N.md).
 
-This temporary direct handoff is unauthenticated and uses HTTP by explicit pre-MVP product decision pending the LangGraph switch. It does not require Render n8n URL or token secrets. Do not treat it as the target production security posture; see [Backend security boundaries](SECURITY_BOUNDARIES.md).
+## LangGraph Model Configuration
+
+LangGraph uses LangChain's generic chat-model initializer. Application code does not depend directly on a provider-specific chat-model class. The current provider is Groq, backed by the installed provider integration package; a future provider can be selected through configuration and its corresponding integration dependency.
+
+```properties
+LANGGRAPH_MODEL_PROVIDER=groq
+LANGGRAPH_MODEL=openai/gpt-oss-120b
+LANGGRAPH_API_KEY=<secret>
+LANGGRAPH_TEMPERATURE=0.7
+LANGGRAPH_TIMEOUT_SECONDS=60
+```
+
+Keep `LANGGRAPH_API_KEY` only in the deployment platform or local secret environment. Do not add it to property files, logs, prompts, graph state, tests, or responses.
+
+Only the selected engine's required settings are loaded. Missing LangGraph credentials do not block startup when n8n is selected.
 
 ## Switch On Render
 
-### Select LangGraph
+To select LangGraph:
 
-1. Open the `travelwithme-api` service in Render.
-2. Set `AGENT_ENGINE=langgraph`.
-3. Set `GROQ_API_KEY` as a secret.
-4. Confirm `LANGGRAPH_MODEL=openai/gpt-oss-120b` or another separately approved value.
-5. Save the environment changes and redeploy/restart.
-6. Confirm startup logs contain `Selected agent engine: langgraph` and do not contain credentials or traveler payloads.
-7. Run the health and agent smoke checks below.
+1. Set `AGENT_ENGINE=langgraph`.
+2. Set the provider, model, and `LANGGRAPH_API_KEY` values above.
+3. Redeploy or restart FastAPI.
+4. Confirm the selected-engine startup log and run the smoke checks.
 
-### Select n8n
+To select n8n:
 
-1. Confirm the n8n service is healthy and both live workflows are active.
-2. Confirm both webhook URL settings are present in `properties-prod.ini`.
-3. Set `AGENT_ENGINE=n8n` in Render.
-4. Save the environment change and redeploy/restart.
-5. Confirm startup logs contain `Selected agent engine: n8n`.
-6. Run the health and agent smoke checks below.
-
-## Local Selection
-
-Set the environment before starting FastAPI. PowerShell example:
-
-```powershell
-$env:AGENT_ENGINE = "n8n"
-python -m uvicorn twm.main:app --host 0.0.0.0 --port 8000
-```
-
-For LangGraph, also provide `GROQ_API_KEY` through the local secret environment. Do not write the secret into the repository.
+1. Confirm both live n8n workflows use the current private raw-output contract and are active.
+2. Set `AGENT_ENGINE=n8n`.
+3. Redeploy or restart FastAPI and run the smoke checks.
 
 ## Smoke Verification
 
-Set `BASE_URL` to the deployed FastAPI origin.
+Check `GET /health`, then send representative requests to both `POST /scout` and `POST /meridian`. Verify that responses contain the existing public fields and Backend-owned `agent_meta`, and contain no engine-specific wrapper fields.
 
-Health:
+Neither engine may write UI-owned lifecycle stage, active-agent routing, selected option, or recommendation history.
 
-```bash
-curl --fail "$BASE_URL/health"
-```
+## Rollback
 
-Expected:
+1. Confirm the previous adapter and its configuration are healthy.
+2. Restore the previous `AGENT_ENGINE` value.
+3. Redeploy or restart FastAPI.
+4. Re-run `/health`, `/scout`, and `/meridian` smoke checks.
 
-```json
-{"status":"ok"}
-```
-
-Scout:
-
-```bash
-curl --fail --request POST "$BASE_URL/scout" \
-  --header "Content-Type: application/json" \
-  --data '{
-    "trip_state": {
-      "stage": "new",
-      "trip_context": {},
-      "advisor_state": {}
-    },
-    "message": "Tell me what to consider for a mountain trip."
-  }'
-```
-
-Verify `message`, `state_delta`, `intent`, and Backend-owned `agent_meta`. Engine-specific fields must not appear.
-
-Meridian:
-
-```bash
-curl --fail --request POST "$BASE_URL/meridian" \
-  --header "Content-Type: application/json" \
-  --data '{
-    "trip_state": {
-      "trip_context": {"destination_scope": "mountains"},
-      "advisor_state": {"conversation_context": {}},
-      "matcher_state": {}
-    },
-    "message": "Help me narrow down mountain options."
-  }'
-```
-
-Verify an approved `status`, `message`, `state_delta`, `options`, and Backend-owned `agent_meta`. Neither engine may write lifecycle stage, active-agent routing, selected option, or recommendation history.
-
-## Manual Rollback To n8n
-
-1. Confirm the n8n service and both live workflows are healthy.
-2. Set `AGENT_ENGINE=n8n` on the FastAPI service.
-3. Redeploy/restart FastAPI.
-4. Confirm `Selected agent engine: n8n` in startup logs.
-5. Run `/health`, `/scout`, and `/meridian` smoke checks.
-6. Keep the UI deployment and stored TripState unchanged; neither requires migration.
-
-Keep `AGENT_ENGINE=n8n` selected after rollback. Select LangGraph again only after it has been explicitly re-verified and approved, then redeploy, confirm the startup log, and repeat the smoke checks.
-
-## Failure Behavior
-
-FastAPI fails startup when the selected engine or its required configuration is invalid. Provider or graph execution failures do not invoke n8n automatically. Use the manual rollback procedure only after an operator decides to switch engines.
+No UI deployment or TripState migration is required because the public API contract remains unchanged.

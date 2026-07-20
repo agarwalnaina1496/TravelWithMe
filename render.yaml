@@ -10,9 +10,11 @@ services:
         value: prod
       - key: AGENT_ENGINE
         value: n8n
+      - key: LANGGRAPH_MODEL_PROVIDER
+        value: groq
       - key: LANGGRAPH_MODEL
         value: openai/gpt-oss-120b
-      - key: GROQ_API_KEY
+      - key: LANGGRAPH_API_KEY
         sync: false
       - key: TRUSTED_HOSTS
         value: '["travelwithme-zf9f.onrender.com"]'

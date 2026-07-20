@@ -1,4 +1,4 @@
-"""n8n engine fallback contract tests."""
+"""n8n raw-output adapter and workflow contract tests."""
 
 import asyncio
 import json
@@ -7,101 +7,142 @@ from pathlib import Path
 import httpx
 import pytest
 
-from twm.prompts import PromptRelease
-from twm.services import AgentEngineSettings, N8NAgentEngine
-from twm.services.agent_engine import n8n as n8n_module
+from twm.services import (
+    AgentAdapterError,
+    AgentAdapterTimeoutError,
+    AgentEngineSettings,
+    AgentInvocation,
+    N8NAgentAdapter,
+)
 
 
-def test_n8n_transport_uses_configured_url_and_canonicalizes_wrappers(monkeypatch) -> None:
+def settings() -> AgentEngineSettings:
+    return AgentEngineSettings(
+        engine="n8n",
+        environment="test",
+        n8n_scout_webhook_url="http://agents.example/webhook/scout",
+        n8n_meridian_webhook_url="http://agents.example/webhook/meridian",
+    )
+
+
+def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> None:
     captured: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(request)
-        return httpx.Response(200, json=[{"json": {"output": {"message": "ok"}}}])
+        return httpx.Response(200, json={"raw_output": '{"message":"ok"}'})
 
-    settings = AgentEngineSettings(
-        engine="n8n",
-        environment="prod",
-        n8n_scout_webhook_url="http://agents.example/webhook/scout",
-        n8n_meridian_webhook_url="http://agents.example/webhook/meridian",
-    )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    engine = N8NAgentEngine(settings, client)
-    monkeypatch.setattr(
-        n8n_module,
-        "load_prompt_release",
-        lambda agent: PromptRelease(agent, "test", "prompt"),
-    )
-
-    execution = asyncio.run(engine.scout({}, "travel"))
-    asyncio.run(client.aclose())
-
-    assert execution.response == {"message": "ok"}
-    assert "X-TWM-Webhook-Token" not in captured[0].headers
-    assert captured[0].url == "http://agents.example/webhook/scout"
-
-
-def test_n8n_transport_propagates_upstream_errors(monkeypatch) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(503, json={"detail": "unavailable"})
-
-    settings = AgentEngineSettings(
-        engine="n8n",
-        environment="test",
-        n8n_scout_webhook_url="https://agents.test/scout",
-    )
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    engine = N8NAgentEngine(settings, client)
-    monkeypatch.setattr(
-        n8n_module,
-        "load_prompt_release",
-        lambda agent: PromptRelease(agent, "test", "prompt"),
-    )
+    adapter = N8NAgentAdapter(settings(), client)
 
     try:
-        with pytest.raises(httpx.HTTPStatusError):
-            asyncio.run(engine.scout({}, "travel"))
+        raw_output = asyncio.run(
+            adapter.invoke(
+                "scout",
+                AgentInvocation(
+                    system_prompt="system with schema",
+                    user_prompt="untrusted traveler data",
+                ),
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert raw_output == '{"message":"ok"}'
+    assert captured[0].url == "http://agents.example/webhook/scout"
+    assert json.loads(captured[0].content) == {
+        "system_prompt": "system with schema",
+        "user_prompt": "untrusted traveler data",
+    }
+    assert "X-TWM-Webhook-Token" not in captured[0].headers
+
+
+def test_n8n_adapter_maps_timeout() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = N8NAgentAdapter(settings(), client)
+
+    try:
+        with pytest.raises(AgentAdapterTimeoutError):
+            asyncio.run(
+                adapter.invoke("scout", AgentInvocation("system", "user"))
+            )
     finally:
         asyncio.run(client.aclose())
 
 
-def _assert_workflow_uses_backend_output_schema(
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(503, json={"detail": "unavailable"}),
+        httpx.Response(200, json={"output": "legacy-wrapper"}),
+        httpx.Response(200, text="not-json"),
+    ],
+)
+def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
+    response: httpx.Response,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return response
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = N8NAgentAdapter(settings(), client)
+
+    try:
+        with pytest.raises(AgentAdapterError):
+            asyncio.run(
+                adapter.invoke("meridian", AgentInvocation("system", "user"))
+            )
+    finally:
+        asyncio.run(client.aclose())
+
+
+def _assert_workflow_is_thin_raw_adapter(
     workflow_name: str, agent_name: str
 ) -> None:
     workflow_path = Path(__file__).parents[3] / "n8n" / workflow_name
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
     nodes = {node["name"]: node for node in workflow["nodes"]}
-    schema_node = f"{agent_name} output schema"
 
-    assert nodes[agent_name]["parameters"]["hasOutputParser"] is True
-    assert "authentication" not in nodes["Webhook"]["parameters"]
-    assert "credentials" not in nodes["Webhook"]
-    assert "UNTRUSTED_TRAVELER_DATA" in nodes[agent_name]["parameters"]["text"]
-    assert "hasOutputParser" not in nodes[agent_name]["parameters"]["options"]
-    assert (
-        "body.output_schema"
-        in nodes[schema_node]["parameters"]["inputSchema"]
+    assert {"Webhook", agent_name, "Groq Chat Model", "Respond to Webhook"} == set(
+        nodes
     )
-    assert workflow["connections"][schema_node] == {
-        "ai_outputParser": [
-            [{"node": agent_name, "type": "ai_outputParser", "index": 0}]
-        ]
-    }
-    assert "Output parser" not in nodes
-    assert workflow["connections"][agent_name] == {
-        "main": [
-            [{"node": "Respond to Webhook", "type": "main", "index": 0}]
-        ]
-    }
+    main_nodes = [
+        node
+        for node in workflow["nodes"]
+        if node["type"] != "@n8n/n8n-nodes-langchain.lmChatGroq"
+    ]
+    assert len(main_nodes) == 3
+    assert not any("outputParser" in node["type"] for node in workflow["nodes"])
+    assert "hasOutputParser" not in nodes[agent_name]["parameters"]
+    assert (
+        nodes[agent_name]["parameters"]["text"]
+        == "={{ $('Webhook').item.json.body.user_prompt }}"
+    )
+    assert (
+        nodes[agent_name]["parameters"]["options"]["systemMessage"]
+        == "={{ $('Webhook').item.json.body.system_prompt }}"
+    )
     assert (
         nodes["Respond to Webhook"]["parameters"]["responseBody"]
-        == "={{ $json.output }}"
+        == "={{ { raw_output: $json.output } }}"
+    )
+    assert "authentication" not in nodes["Webhook"]["parameters"]
+    assert "credentials" not in nodes["Webhook"]
+    assert workflow["connections"][agent_name]["main"][0][0]["node"] == (
+        "Respond to Webhook"
+    )
+    assert not any(
+        "ai_outputParser" in connection
+        for connection in workflow["connections"].values()
     )
 
 
-def test_meridian_workflow_uses_backend_output_schema() -> None:
-    _assert_workflow_uses_backend_output_schema("meridian.json", "Meridian")
+def test_scout_workflow_is_thin_raw_adapter() -> None:
+    _assert_workflow_is_thin_raw_adapter("scout.json", "Scout")
 
 
-def test_scout_workflow_uses_backend_output_schema() -> None:
-    _assert_workflow_uses_backend_output_schema("scout.json", "Scout")
+def test_meridian_workflow_is_thin_raw_adapter() -> None:
+    _assert_workflow_is_thin_raw_adapter("meridian.json", "Meridian")

@@ -40,7 +40,10 @@ def test_application_lifespan_owns_and_closes_shared_http_client(monkeypatch) ->
 def test_langgraph_lifespan_does_not_construct_n8n_transport(monkeypatch) -> None:
     engine = Mock()
     settings = AgentEngineSettings(
-        engine="langgraph", environment="test", groq_api_key="test"
+        engine="langgraph",
+        environment="test",
+        langgraph_model_provider="groq",
+        langgraph_api_key="test",
     )
     monkeypatch.setattr(main.AgentEngineSettings, "load", lambda: settings)
     monkeypatch.setattr(

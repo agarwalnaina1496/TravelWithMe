@@ -10,7 +10,8 @@ class AgentEngineSettings:
     environment: str
     n8n_scout_webhook_url: str | None = None
     n8n_meridian_webhook_url: str | None = None
-    groq_api_key: str | None = None
+    langgraph_model_provider: str | None = None
+    langgraph_api_key: str | None = None
     langgraph_model: str = "openai/gpt-oss-120b"
     langgraph_temperature: float = 0.7
     langgraph_timeout_seconds: int = 60
@@ -36,7 +37,10 @@ class AgentEngineSettings:
             return cls(
                 engine=engine,
                 environment=environment,
-                groq_api_key=_required("groq_api_key"),
+                langgraph_model_provider=_required_with_default(
+                    "langgraph_model_provider", "groq"
+                ),
+                langgraph_api_key=_required("langgraph_api_key"),
                 langgraph_model=_required_with_default(
                     "langgraph_model", "openai/gpt-oss-120b"
                 ),
@@ -47,6 +51,7 @@ class AgentEngineSettings:
         raise ValueError(
             f"Unsupported AGENT_ENGINE: {engine or '<empty>'}. Expected n8n or langgraph."
         )
+
 
 def _required(key: str) -> str:
     try:
