@@ -1,5 +1,6 @@
 """LangGraph adapter returning raw model completions."""
 
+from collections.abc import Mapping
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -49,6 +50,10 @@ class LangGraphAgentAdapter:
                 f"{agent} LangGraph invocation failed"
             ) from error
 
+        if not isinstance(result, Mapping):
+            raise AgentAdapterError(
+                f"{agent} LangGraph response was not a mapping"
+            )
         raw_output = result.get("raw_output")
         if not isinstance(raw_output, str) or not raw_output.strip():
             raise AgentAdapterError(

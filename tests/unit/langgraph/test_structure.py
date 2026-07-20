@@ -1,6 +1,7 @@
 """Single-node LangGraph topology and adapter tests."""
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -72,6 +73,20 @@ def test_langgraph_adapter_maps_provider_failures(error, expected) -> None:
     )
 
     with pytest.raises(expected):
+        asyncio.run(
+            adapter.invoke("scout", AgentInvocation("system", "user"))
+        )
+
+
+@pytest.mark.parametrize("result", [None, [], "raw output"])
+def test_langgraph_adapter_rejects_non_mapping_graph_result(result) -> None:
+    adapter = LangGraphAgentAdapter(
+        runtime=LangGraphRuntime(model=FakeChatModel([]))
+    )
+    adapter._scout_graph = AsyncMock()
+    adapter._scout_graph.ainvoke.return_value = result
+
+    with pytest.raises(AgentAdapterError):
         asyncio.run(
             adapter.invoke("scout", AgentInvocation("system", "user"))
         )

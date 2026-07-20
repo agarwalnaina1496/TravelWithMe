@@ -96,11 +96,12 @@ def initialize_app() -> FastAPI:
 
     @app.exception_handler(ValidationError)
     async def handle_unexpected_agent_validation(_, error: ValidationError):
-        failures = [
-            {"type": item["type"], "loc": list(item["loc"])}
-            for item in error.errors(include_input=False)
+        failure_types = [
+            item["type"] for item in error.errors(include_input=False)
         ]
-        logger.warning("Agent response normalization failed: %s", failures)
+        logger.warning(
+            "Agent response normalization failed: types=%s", failure_types
+        )
         return JSONResponse(
             status_code=502,
             content={"detail": "The travel assistant returned an invalid response."},

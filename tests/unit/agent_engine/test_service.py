@@ -105,6 +105,8 @@ def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
     assert "previous completion failed" in repair_invocation.system_prompt
     assert "UNTRUSTED_FAILED_COMPLETION" in repair_invocation.user_prompt
     repair_data = json.loads(repair_invocation.user_prompt.split("\n", 1)[1])
+    original_invocation = adapter.invoke.await_args_list[0].args[1]
+    assert repair_data["original_user_prompt"] == original_invocation.user_prompt
     assert repair_data["failed_completion"] == "not-json"
     assert repair_data["validation_failures"] == [
         {"type": "json_invalid", "loc": []}
@@ -130,6 +132,37 @@ def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> N
     assert adapter.invoke.await_count == 2
     assert captured.value.agent == "meridian"
     assert captured.value.failures
+
+
+def test_common_service_redacts_model_controlled_validation_locations(
+    monkeypatch, caplog
+) -> None:
+    sensitive_key = "passport_ABC123"
+    invalid = {
+        "message": "Invalid",
+        "state_delta": {},
+        "intent": "advise",
+        sensitive_key: "secret",
+    }
+    engine, adapter = service_with_outputs(
+        monkeypatch,
+        json.dumps(invalid),
+        json.dumps(invalid),
+    )
+
+    with pytest.raises(AgentOutputError) as captured:
+        asyncio.run(engine.scout({}, "Help me."))
+
+    repair_invocation = adapter.invoke.await_args_list[1].args[1]
+    repair_data = json.loads(repair_invocation.user_prompt.split("\n", 1)[1])
+    assert repair_data["validation_failures"] == [
+        {"type": "extra_forbidden", "loc": ["<redacted>"]}
+    ]
+    assert captured.value.failures == [
+        {"type": "extra_forbidden", "loc": ["<redacted>"]}
+    ]
+    assert "output remained invalid" in caplog.text
+    assert sensitive_key not in caplog.text
 
 
 def test_common_service_repairs_ui_owned_state_instead_of_applying_it(
