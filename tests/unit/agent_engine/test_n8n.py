@@ -36,7 +36,7 @@ def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> No
     adapter = N8NAgentAdapter(settings(), client)
 
     try:
-        raw_output = asyncio.run(
+        result = asyncio.run(
             adapter.invoke(
                 "scout",
                 AgentInvocation(
@@ -48,7 +48,8 @@ def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> No
     finally:
         asyncio.run(client.aclose())
 
-    assert raw_output == '{"message":"ok"}'
+    assert result.raw_output == '{"message":"ok"}'
+    assert result.metadata == {}
     assert captured[0].url == "http://agents.example/webhook/scout"
     assert json.loads(captured[0].content) == {
         "system_prompt": "system with schema",

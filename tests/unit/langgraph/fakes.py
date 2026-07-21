@@ -15,4 +15,6 @@ class FakeChatModel:
         output = self.outputs.pop(0)
         if isinstance(output, BaseException):
             raise output
+        if isinstance(output, AIMessage):
+            return output
         return AIMessage(content=output)

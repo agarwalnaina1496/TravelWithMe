@@ -4,7 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from twm.services import (
     AgentAdapterError,
@@ -48,12 +48,55 @@ def test_langgraph_adapter_returns_raw_content_for_both_agents() -> None:
         )
     )
 
-    assert scout == '{"message":"scout"}'
-    assert meridian == '{"message":"meridian"}'
+    assert scout.raw_output == '{"message":"scout"}'
+    assert meridian.raw_output == '{"message":"meridian"}'
     assert isinstance(model.calls[0][0], SystemMessage)
     assert model.calls[0][0].content == "scout system"
     assert isinstance(model.calls[0][1], HumanMessage)
     assert model.calls[0][1].content == "scout user"
+
+
+def test_langgraph_adapter_preserves_provider_telemetry() -> None:
+    response = AIMessage(
+        content='{"message":"scout"}',
+        response_metadata={
+            "finish_reason": "stop",
+            "token_usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 40,
+                "total_tokens": 160,
+                "queue_time": 0.0025,
+                "prompt_time": 0.005,
+                "completion_time": 0.04,
+                "total_time": 0.0475,
+            },
+        },
+        usage_metadata={
+            "input_tokens": 120,
+            "output_tokens": 40,
+            "total_tokens": 160,
+            "output_token_details": {"reasoning": 8},
+        },
+    )
+    adapter = LangGraphAgentAdapter(
+        runtime=LangGraphRuntime(model=FakeChatModel([response]))
+    )
+
+    result = asyncio.run(
+        adapter.invoke("scout", AgentInvocation("system", "user"))
+    )
+
+    assert result.metadata == {
+        "finish_reason": "stop",
+        "input_tokens": 120,
+        "output_tokens": 40,
+        "total_tokens": 160,
+        "reasoning_tokens": 8,
+        "queue_time_ms": 2.5,
+        "model_time_ms": 45.0,
+        "provider_total_time_ms": 47.5,
+        "provider_attempts": 1,
+    }
 
 
 @pytest.mark.parametrize(

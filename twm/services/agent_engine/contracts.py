@@ -1,6 +1,6 @@
 """Engine-neutral execution contracts."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Protocol
 
 from ...prompts import PromptRelease
@@ -18,6 +18,14 @@ class AgentInvocation:
 
 
 @dataclass(frozen=True)
+class AgentInvocationResult:
+    """Raw completion plus provider telemetry exposed by the selected engine."""
+
+    raw_output: str
+    metadata: dict[str, str | int | float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class AgentExecution:
     response: dict[str, Any]
     prompt_release: PromptRelease
@@ -26,7 +34,9 @@ class AgentExecution:
 class AgentAdapter(Protocol):
     """Invoke one engine and return its unparsed model completion."""
 
-    async def invoke(self, agent: AgentName, invocation: AgentInvocation) -> str:
+    async def invoke(
+        self, agent: AgentName, invocation: AgentInvocation
+    ) -> AgentInvocationResult:
         ...
 
 

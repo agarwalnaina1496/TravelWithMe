@@ -2,6 +2,11 @@
 
 Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
 
+## Meridian 1.6.0 — 2026-07-21
+
+- Uses the Backend-supplied JSON Schema as the single structural output contract instead of duplicating hand-written JSON examples in the prompt.
+- Requires one complete JSON object while retaining the existing recommendation and identity contract.
+
 ## Scout 1.7.0 — 2026-07-18
 
 - Treats brief conversational turns as valid conversation rather than adversarial or clearly off topic.

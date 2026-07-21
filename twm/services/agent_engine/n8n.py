@@ -6,6 +6,7 @@ from .contracts import (
     AgentAdapterError,
     AgentAdapterTimeoutError,
     AgentInvocation,
+    AgentInvocationResult,
     AgentName,
 )
 from .settings import AgentEngineSettings
@@ -18,7 +19,9 @@ class N8NAgentAdapter:
         self._settings = settings
         self._http_client = http_client
 
-    async def invoke(self, agent: AgentName, invocation: AgentInvocation) -> str:
+    async def invoke(
+        self, agent: AgentName, invocation: AgentInvocation
+    ) -> AgentInvocationResult:
         urls = {
             "scout": self._settings.n8n_scout_webhook_url,
             "meridian": self._settings.n8n_meridian_webhook_url,
@@ -45,4 +48,4 @@ class N8NAgentAdapter:
             raise AgentAdapterError(
                 f"{agent} n8n response did not contain raw_output"
             )
-        return raw_output
+        return AgentInvocationResult(raw_output=raw_output)
