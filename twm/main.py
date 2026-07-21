@@ -19,6 +19,13 @@ from .services import (
     AgentOutputError,
     get_agent_engine,
 )
+from .telemetry import (
+    CORRELATION_HEADERS,
+    JsonStdoutSink,
+    TelemetryContextMiddleware,
+    TelemetryLogger,
+    TelemetrySettings,
+)
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -38,6 +45,9 @@ async def application_lifespan(app: FastAPI):
 
 
 def initialize_app() -> FastAPI:
+    telemetry_logger = TelemetryLogger(
+        settings=TelemetrySettings.load(), sink=JsonStdoutSink()
+    )
     app = FastAPI(
         title="TravelWithMe Trip Matcher",
         lifespan=application_lifespan,
@@ -54,7 +64,8 @@ def initialize_app() -> FastAPI:
         allow_origins=property_loader.get_list_property("cors_allowed_origins"),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", *CORRELATION_HEADERS],
+        expose_headers=list(CORRELATION_HEADERS),
     )
     app.add_middleware(
         SecurityBoundaryMiddleware,
@@ -65,6 +76,8 @@ def initialize_app() -> FastAPI:
             "max_request_body_bytes", 131_072
         ),
     )
+    app.add_middleware(TelemetryContextMiddleware, logger=telemetry_logger)
+    app.state.telemetry = telemetry_logger
 
     @app.exception_handler(AgentOutputError)
     async def handle_invalid_agent_output(_, error: AgentOutputError):

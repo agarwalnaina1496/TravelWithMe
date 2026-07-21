@@ -43,4 +43,5 @@ TODO: Define in-trip assistance, notifications, itinerary changes, and support b
 - [Render FastAPI deployment](docs/RENDER_FASTAPI.md)
 - [Self-hosted n8n](docs/SELF_HOSTED_N8N.md)
 - [Backend security boundaries](docs/SECURITY_BOUNDARIES.md)
+- [Backend telemetry](docs/TELEMETRY.md)
 - [EC2 setup](docs/EC2_SETUP.md)
