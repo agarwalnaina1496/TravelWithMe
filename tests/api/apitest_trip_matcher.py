@@ -19,6 +19,7 @@ from twm.services import (
     AgentAdapterTimeoutError,
     AgentExecution,
     AgentExecutionService,
+    AgentInvocationResult,
     LangGraphAgentAdapter,
     LangGraphRuntime,
 )
@@ -48,7 +49,10 @@ def set_engine(api_client: TestClient, engine: object) -> None:
 def common_engine(*outputs: dict) -> tuple[AgentExecutionService, AsyncMock]:
     adapter = AsyncMock()
     adapter.invoke = AsyncMock(
-        side_effect=[json.dumps(output) for output in outputs]
+        side_effect=[
+            AgentInvocationResult(raw_output=json.dumps(output))
+            for output in outputs
+        ]
     )
     return AgentExecutionService(adapter), adapter
 
@@ -100,7 +104,7 @@ def test_active_phase_prompt_releases_are_complete() -> None:
 
     assert load_prompt_versions() == {
         "scout": "1.7.0",
-        "meridian": "1.5.0",
+        "meridian": "1.6.0",
     }
     meridian_prompt = load_prompt_release("meridian").content
     assert "conversation_context.awaiting" in meridian_prompt
@@ -305,7 +309,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     assert response.status_code == 200
     assert response.json()["agent_meta"] == {
         "agent": "meridian",
-        "prompt_version": "1.5.0",
+        "prompt_version": "1.6.0",
     }
     release = load_prompt_release("meridian")
     agent, invocation = adapter.invoke.await_args.args
@@ -622,7 +626,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         },
         "message": "What budget should I use?",
         "options": [],
-        "agent_meta": {"agent": "meridian", "prompt_version": "1.5.0"},
+        "agent_meta": {"agent": "meridian", "prompt_version": "1.6.0"},
     }
 
 
@@ -630,7 +634,12 @@ def test_invalid_output_after_repair_returns_cors_enabled_502(
     api_client: TestClient,
 ) -> None:
     adapter = AsyncMock()
-    adapter.invoke = AsyncMock(side_effect=["not-json", "still-not-json"])
+    adapter.invoke = AsyncMock(
+        side_effect=[
+            AgentInvocationResult(raw_output="not-json"),
+            AgentInvocationResult(raw_output="still-not-json"),
+        ]
+    )
     set_engine(api_client, AgentExecutionService(adapter))
 
     response = api_client.post(

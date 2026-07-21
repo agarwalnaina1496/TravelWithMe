@@ -10,6 +10,7 @@ from .contracts import (
     AgentAdapterError,
     AgentAdapterTimeoutError,
     AgentInvocation,
+    AgentInvocationResult,
     AgentName,
 )
 from .settings import AgentEngineSettings
@@ -27,7 +28,9 @@ class LangGraphAgentAdapter:
         self._scout_graph = build_scout_graph(runtime)
         self._meridian_graph = build_meridian_graph(runtime)
 
-    async def invoke(self, agent: AgentName, invocation: AgentInvocation) -> str:
+    async def invoke(
+        self, agent: AgentName, invocation: AgentInvocation
+    ) -> AgentInvocationResult:
         graphs = {
             "scout": self._scout_graph,
             "meridian": self._meridian_graph,
@@ -59,7 +62,19 @@ class LangGraphAgentAdapter:
             raise AgentAdapterError(
                 f"{agent} LangGraph response did not contain raw_output"
             )
-        return raw_output
+        metadata = result.get("provider_metadata")
+        if not isinstance(metadata, Mapping):
+            metadata = {}
+        return AgentInvocationResult(
+            raw_output=raw_output,
+            metadata={
+                key: value
+                for key, value in metadata.items()
+                if isinstance(key, str)
+                and isinstance(value, (str, int, float))
+                and not isinstance(value, bool)
+            },
+        )
 
 
 def _is_timeout_error(error: BaseException) -> bool:

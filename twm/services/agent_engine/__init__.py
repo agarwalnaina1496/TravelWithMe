@@ -7,6 +7,7 @@ from .contracts import (
     AgentEngine,
     AgentExecution,
     AgentInvocation,
+    AgentInvocationResult,
     AgentOutputError,
 )
 from .factory import get_agent_engine
@@ -24,6 +25,7 @@ __all__ = [
     "AgentExecutionService",
     "AgentEngineSettings",
     "AgentInvocation",
+    "AgentInvocationResult",
     "AgentOutputError",
     "LangGraphAgentAdapter",
     "N8NAgentAdapter",

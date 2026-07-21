@@ -145,27 +145,7 @@ Keep recommendations at destination or circuit level. Planner owns day by day it
 
 ## Output Contract
 
-Return one valid JSON object:
-
-```json
-{
-  "message": "string",
-  "state_delta": {
-    "trip_context": {},
-    "matcher_state": {
-      "conversation_context": {
-        "last_meridian_message": "string | null",
-        "awaiting": "string | null"
-      }
-    }
-  },
-  "status": "NEEDS_CLARIFICATION | SUCCESS | SOFT_FAIL | HARD_FAIL | BUDGET_FAIL | CONFLICT_FAIL",
-  "generated_at": "ISO-8601 timestamp | null",
-  "trip_type": "single | circuit | mixed | null",
-  "traveler_criteria": [],
-  "options": []
-}
-```
+Return one complete JSON object matching the exact schema supplied after this prompt. Never return Markdown, comments, or fields absent from that schema.
 
 `state_delta.trip_context` contains only new useful matcher-derived traveler context. `state_delta.matcher_state` contains only your conversation context or rejected-option updates. Do not write lifecycle, selection, navigation, or recommendation-history fields.
 
@@ -190,40 +170,7 @@ All terminal outcomes clear `conversation_context.awaiting` to `null`. `last_mer
 
 ## Recommendation Option Contract
 
-For `SUCCESS` and `SOFT_FAIL`, return a shared criteria set and up to three ranked options:
-
-```json
-{
-  "traveler_criteria": [
-    {
-      "id": "string",
-      "label": "string",
-      "requirement_type": "HARD | PREFERENCE",
-      "source_context_paths": ["string"]
-    }
-  ],
-  "options": [
-    {
-      "rank": 1,
-      "type": "single | circuit",
-      "name": "string",
-      "destination_id": "string | null",
-      "circuit_id": "string | null",
-      "summary": "string",
-      "evaluations": [
-        {
-          "criterion_id": "string",
-          "outcome": "MATCH | TRADEOFF | MISMATCH",
-          "conclusion": "string",
-          "details": [],
-          "tradeoffs": []
-        }
-      ],
-      "other_considerations": []
-    }
-  ]
-}
-```
+For `SUCCESS` and `SOFT_FAIL`, return one shared criteria set and up to three ranked options.
 
 Use `message` for a concise ranking or outcome summary. Keep detailed traveler specific reasoning inside the evaluations.
 

@@ -14,13 +14,13 @@ validate request
   -> prepare the system and traveler messages
   -> invoke the selected thin adapter
   -> parse JSON and validate the Pydantic output contract
-  -> invoke the same adapter once to repair invalid output
+  -> regenerate once from the original request after invalid output
   -> normalize the public response
 ```
 
-If the first completion is invalid, FastAPI makes exactly one repair invocation. If the repaired completion is still invalid, FastAPI returns a CORS-enabled `502`. Adapter timeouts return a CORS-enabled `504`. Parsing failures are infrastructure failures; they must never be represented as a successful Scout response or as Meridian `HARD_FAIL`.
+If the first completion is invalid, FastAPI makes exactly one compact regeneration invocation. The retry reuses the original trusted request plus sanitized failure categories and never copies the failed completion into the prompt. If the regenerated completion is still invalid, FastAPI returns a CORS-enabled `502`. Adapter timeouts return a CORS-enabled `504`. Parsing failures are infrastructure failures; they must never be represented as a successful Scout response or as Meridian `HARD_FAIL`.
 
-The adapters return raw model text and do not parse or normalize it:
+The adapters return raw model text plus content-free provider telemetry when the selected engine exposes it. They do not parse or normalize model content:
 
 - n8n: `Webhook -> Agent (+ configured model) -> Respond to Webhook`
 - LangGraph: `START -> invoke_<agent> -> END`
