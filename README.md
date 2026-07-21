@@ -44,4 +44,5 @@ TODO: Define in-trip assistance, notifications, itinerary changes, and support b
 - [Self-hosted n8n](docs/SELF_HOSTED_N8N.md)
 - [Backend security boundaries](docs/SECURITY_BOUNDARIES.md)
 - [Backend telemetry](docs/TELEMETRY.md)
+- [Production Axiom log delivery](docs/AXIOM_LOG_DELIVERY.md)
 - [EC2 setup](docs/EC2_SETUP.md)

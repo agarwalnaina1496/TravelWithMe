@@ -32,7 +32,9 @@ All values pass through key-based secret redaction and string-size limits before
 
 ## Extension boundary
 
-Business call sites depend on `TelemetryLogger.event`, not `JsonStdoutSink`. New destinations implement the small `TelemetrySink.emit` protocol. Tests use `InMemorySink`. This boundary can later move to a separately versioned library while preserving application call sites and the envelope contract.
+Business call sites depend on `TelemetryLogger.event`, not `JsonStdoutSink`. New destinations implement the small `TelemetrySink` delivery and shutdown protocol. Tests use `InMemorySink`. This boundary can later move to a separately versioned library while preserving application call sites and the envelope contract.
+
+Production keeps stdout and may add standard OTLP/HTTP delivery when the production logs endpoint is configured. See [Production Axiom log delivery](AXIOM_LOG_DELIVERY.md) for sink selection, Render secrets, verification queries, credential rotation, usage checks, and provider-independent rollback.
 
 ## Rollback
 

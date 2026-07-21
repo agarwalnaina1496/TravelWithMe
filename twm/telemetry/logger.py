@@ -71,3 +71,9 @@ class TelemetryLogger:
         except Exception:
             # Observability must never alter traveler-facing behavior.
             return
+
+    def shutdown(self) -> None:
+        try:
+            self._sink.shutdown()
+        except Exception:
+            return

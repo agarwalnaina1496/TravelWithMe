@@ -26,6 +26,7 @@ def test_application_lifespan_owns_and_closes_shared_http_client(monkeypatch) ->
     monkeypatch.setattr(main.AgentEngineSettings, "load", lambda: settings)
     monkeypatch.setattr(main, "get_agent_engine", lambda loaded, transport: engine)
     app = FastAPI()
+    app.state.telemetry = Mock()
 
     async def exercise_lifespan() -> None:
         async with main.application_lifespan(app):
@@ -35,6 +36,7 @@ def test_application_lifespan_owns_and_closes_shared_http_client(monkeypatch) ->
     asyncio.run(exercise_lifespan())
 
     assert client.closed is True
+    app.state.telemetry.shutdown.assert_called_once_with()
 
 
 def test_langgraph_lifespan_does_not_construct_n8n_transport(monkeypatch) -> None:
@@ -59,9 +61,12 @@ def test_langgraph_lifespan_does_not_construct_n8n_transport(monkeypatch) -> Non
         lambda loaded, transport: engine if transport is None else None,
     )
     app = FastAPI()
+    app.state.telemetry = Mock()
 
     async def exercise_lifespan() -> None:
         async with main.application_lifespan(app):
             assert app.state.agent_engine is engine
 
     asyncio.run(exercise_lifespan())
+
+    app.state.telemetry.shutdown.assert_called_once_with()

@@ -74,6 +74,8 @@ twm/shared/properties/properties-{ENVIRONMENT}.ini
 
 Render sets `PORT` automatically. The Dockerfile starts FastAPI on `${PORT:-8000}`.
 
+Production telemetry continues to write stdout and can additionally use the standard OTLP/HTTP logs exporter. `render.yaml` declares the OTLP environment slots, while endpoint and authorization headers remain uncommitted Render values. Render workspace Log Streams stay disabled because a Hobby workspace default would include dev and production services. See [Production Axiom log delivery](AXIOM_LOG_DELIVERY.md) for configuration, credential handling, smoke testing, queries, and rollback.
+
 ## API Health Check
 
 After deploy, check:
