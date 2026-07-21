@@ -16,6 +16,12 @@ services:
         value: openai/gpt-oss-120b
       - key: LANGGRAPH_API_KEY
         sync: false
+      - key: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
+        value: http/protobuf
+      - key: OTEL_EXPORTER_OTLP_LOGS_HEADERS
+        sync: false
       - key: TRUSTED_HOSTS
         value: '["travelwithme-zf9f.onrender.com"]'
       - key: CORS_ALLOWED_ORIGINS

@@ -21,10 +21,10 @@ from .services import (
 )
 from .telemetry import (
     CORRELATION_HEADERS,
-    JsonStdoutSink,
     TelemetryContextMiddleware,
     TelemetryLogger,
     TelemetrySettings,
+    build_telemetry_sink,
 )
 
 
@@ -41,12 +41,20 @@ async def application_lifespan(app: FastAPI):
                 httpx.AsyncClient(timeout=60.0)
             )
         app.state.agent_engine = get_agent_engine(settings, http_client)
-        yield
+        try:
+            yield
+        finally:
+            app.state.telemetry.shutdown()
 
 
 def initialize_app() -> FastAPI:
+    telemetry_settings = TelemetrySettings.load()
     telemetry_logger = TelemetryLogger(
-        settings=TelemetrySettings.load(), sink=JsonStdoutSink()
+        settings=telemetry_settings,
+        sink=build_telemetry_sink(
+            environment=telemetry_settings.environment,
+            service=telemetry_settings.service,
+        ),
     )
     app = FastAPI(
         title="TravelWithMe Trip Matcher",
