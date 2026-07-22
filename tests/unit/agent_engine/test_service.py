@@ -332,9 +332,11 @@ def test_agent_execution_emits_repair_events_on_validation_failure(monkeypatch) 
         and event["fields"]["attempt"] == 1
         for event in events
     )
-    # Repair started
+    # Repair started with attempt 2
     assert any(
-        event["event"] == "be.agent.repair.started" for event in events
+        event["event"] == "be.agent.repair.started"
+        and event["fields"]["attempt"] == 2
+        for event in events
     )
     # Attempt 2: input prepared, invocation, and success
     assert any(
