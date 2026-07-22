@@ -1,7 +1,6 @@
 """Common Scout and Meridian execution, parsing, validation, and repair."""
 
 import json
-import logging
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -11,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 from ...prompts import PromptRelease, load_prompt_release
 from ...schemas import MeridianAgentOutput, ScoutAgentOutput
 from ...security import frame_untrusted_payload
+from ...telemetry import TelemetryLogger
 from .contracts import (
     AgentAdapter,
     AgentExecution,
@@ -18,9 +18,6 @@ from .contracts import (
     AgentName,
     AgentOutputError,
 )
-
-
-logger = logging.getLogger("uvicorn.error")
 
 OUTPUT_CONTRACT_INSTRUCTION = (
     "Return only one JSON object matching the JSON Schema below. "
@@ -55,8 +52,15 @@ AGENT_DEFINITIONS: dict[AgentName, AgentDefinition] = {
 class AgentExecutionService:
     """Run both agents through one engine-independent application pipeline."""
 
-    def __init__(self, adapter: AgentAdapter) -> None:
+    def __init__(
+        self,
+        adapter: AgentAdapter,
+        telemetry: TelemetryLogger,
+        engine_name: str,
+    ) -> None:
         self._adapter = adapter
+        self._telemetry = telemetry
+        self._engine_name = engine_name
 
     async def scout(
         self, trip_state: dict[str, Any], message: str | None
@@ -79,27 +83,56 @@ class AgentExecutionService:
         invocation = _build_invocation(
             release, definition.output_model, trip_state, message
         )
-        raw_output = await self._invoke(agent, invocation, attempt=1)
+        raw_output = await self._invoke(
+            agent, invocation, attempt=1, prompt_version=release.version
+        )
+        validated_attempt = 1
 
         try:
             response = _parse_and_validate(raw_output, definition)
         except _OutputValidationFailure as first_failure:
-            _log_validation_failure(agent, 1, first_failure.failures)
+            self._log_validation_failure(agent, 1, first_failure.failures)
+            self._telemetry.warning(
+                f"Starting {agent.capitalize()} repair attempt",
+                event="be.agent.repair.started",
+                source="agent_engine",
+                agent=agent,
+                engine=self._engine_name,
+                attempt=2,
+                validation_failures=first_failure.failures,
+            )
             regenerated_output = await self._invoke(
                 agent,
                 _build_regeneration_invocation(invocation, first_failure.failures),
                 attempt=2,
+                prompt_version=release.version,
             )
+            validated_attempt = 2
             try:
                 response = _parse_and_validate(regenerated_output, definition)
             except _OutputValidationFailure as final_failure:
-                _log_validation_failure(agent, 2, final_failure.failures)
-                logger.warning(
-                    "%s output remained invalid after one regeneration: %s",
-                    agent,
-                    final_failure.failures,
+                self._log_validation_failure(agent, 2, final_failure.failures)
+                self._telemetry.error(
+                    f"{agent.capitalize()} response remained invalid",
+                    event="be.agent.output.invalid",
+                    source="agent_engine",
+                    agent=agent,
+                    engine=self._engine_name,
+                    attempt=2,
+                    status="failed",
+                    validation_failures=final_failure.failures,
                 )
                 raise AgentOutputError(agent, final_failure.failures) from None
+
+        self._telemetry.info(
+            f"{agent.capitalize()} response validated",
+            event="be.agent.output.validated",
+            source="agent_engine",
+            agent=agent,
+            engine=self._engine_name,
+            attempt=validated_attempt,
+            status="success",
+        )
 
         return AgentExecution(response=response, prompt_release=release)
 
@@ -108,44 +141,74 @@ class AgentExecutionService:
         agent: AgentName,
         invocation: AgentInvocation,
         attempt: int,
+        prompt_version: str,
     ) -> str:
+        common_fields = {
+            "agent": agent,
+            "engine": self._engine_name,
+            "attempt": attempt,
+            "prompt_version": prompt_version,
+        }
+        self._telemetry.info(
+            f"Calling {agent.capitalize()}",
+            event="be.agent.invocation.started",
+            source="agent_engine",
+            fields=common_fields,
+            payload={
+                "system_prompt": invocation.system_prompt,
+                "user_prompt": invocation.user_prompt,
+            },
+        )
         started_at = time.perf_counter()
         try:
             result = await self._adapter.invoke(agent, invocation)
         except Exception as error:
             duration_ms = round((time.perf_counter() - started_at) * 1000)
-            logger.warning(
-                "Agent invocation failed: agent=%s attempt=%s duration_ms=%s "
-                "error_type=%s",
-                agent,
-                attempt,
-                duration_ms,
-                type(error).__name__,
+            self._telemetry.error(
+                f"{agent.capitalize()} invocation failed",
+                event="be.agent.invocation.failed",
+                source="agent_engine",
+                fields={
+                    **common_fields,
+                    "status": "failed",
+                    "duration_ms": duration_ms,
+                    "error_type": type(error).__name__,
+                },
             )
             raise
         duration_ms = round((time.perf_counter() - started_at) * 1000)
-        metadata = result.metadata
-        logger.info(
-            "Agent invocation completed: agent=%s attempt=%s duration_ms=%s "
-            "raw_output_chars=%s finish_reason=%s input_tokens=%s "
-            "output_tokens=%s reasoning_tokens=%s total_tokens=%s "
-            "queue_time_ms=%s model_time_ms=%s provider_total_time_ms=%s "
-            "provider_attempts=%s",
-            agent,
-            attempt,
-            duration_ms,
-            len(result.raw_output),
-            metadata.get("finish_reason"),
-            metadata.get("input_tokens"),
-            metadata.get("output_tokens"),
-            metadata.get("reasoning_tokens"),
-            metadata.get("total_tokens"),
-            metadata.get("queue_time_ms"),
-            metadata.get("model_time_ms"),
-            metadata.get("provider_total_time_ms"),
-            metadata.get("provider_attempts"),
+        response_fields = {
+            **result.metadata,
+            **common_fields,
+            "status": "success",
+            "duration_ms": duration_ms,
+            "raw_output_chars": len(result.raw_output),
+        }
+        self._telemetry.info(
+            f"{agent.capitalize()} response received",
+            event="be.agent.raw_response.received",
+            source="agent_engine",
+            fields=response_fields,
+            response=result.raw_output,
         )
         return result.raw_output
+
+    def _log_validation_failure(
+        self,
+        agent: AgentName,
+        attempt: int,
+        failures: list[dict[str, Any]],
+    ) -> None:
+        self._telemetry.warning(
+            f"{agent.capitalize()} response failed validation",
+            event="be.agent.output.validation_failed",
+            source="agent_engine",
+            agent=agent,
+            engine=self._engine_name,
+            attempt=attempt,
+            status="failed",
+            validation_failures=failures,
+        )
 
 
 def _build_invocation(
@@ -197,17 +260,6 @@ def _parse_and_validate(
     except ValidationError as error:
         failures = _sanitized_validation_failures(error, definition.output_model)
         raise _OutputValidationFailure(failures) from None
-
-
-def _log_validation_failure(
-    agent: AgentName, attempt: int, failures: list[dict[str, Any]]
-) -> None:
-    logger.warning(
-        "Agent output validation failed: agent=%s attempt=%s failure_types=%s",
-        agent,
-        attempt,
-        [failure["type"] for failure in failures],
-    )
 
 
 def _sanitized_validation_failures(

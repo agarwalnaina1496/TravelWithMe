@@ -75,17 +75,19 @@ class TelemetryContextMiddleware:
                     response_headers[TURN_ID_HEADER] = context.turn_id
             await send(message)
 
-        self.logger.event(
-            "be.http.request.received",
+        agent = scope["path"].removeprefix("/").capitalize()
+        self.logger.info(
+            f"Received {agent} HTTP request",
+            event="be.http.request.received",
             source="http",
             fields={"method": scope["method"], "path": scope["path"]},
         )
         try:
             await self.app(scope, receive, correlated_send)
         except Exception as exc:
-            self.logger.event(
-                "be.http.request.failed",
-                level="ERROR",
+            self.logger.error(
+                f"{agent} HTTP request failed",
+                event="be.http.request.failed",
                 source="http",
                 fields={
                     "method": scope["method"],
@@ -96,8 +98,9 @@ class TelemetryContextMiddleware:
             )
             raise
         else:
-            self.logger.event(
-                "be.http.response.sent",
+            self.logger.info(
+                f"Sent {agent} HTTP response",
+                event="be.http.response.sent",
                 source="http",
                 fields={
                     "method": scope["method"],

@@ -26,7 +26,9 @@ The committed workflow JSON files are backups and currently mirror the transitio
 
 ## Secrets and logging
 
-Keep model keys, database passwords, encryption keys, credential IDs containing sensitive context, and private endpoints in deployment secrets. `kb/ingest.py` reads its complete connection string from `SUPABASE_DB_URL`; never commit it to source control. The telemetry foundation emits metadata-only request lifecycle events in production and does not pass request bodies, prompt content, TripState, retrieved records, authorization headers, or provider responses to its sink. A future approved instrumentation change must apply the shared redaction and field-size boundary before enabling diagnostic content. See [Backend telemetry](TELEMETRY.md).
+Keep model keys, database passwords, encryption keys, credential IDs containing sensitive context, and private endpoints in deployment secrets. `kb/ingest.py` reads its complete connection string from `SUPABASE_DB_URL`; never commit it to source control.
+
+The approved production telemetry mode records sanitized, bounded Scout/Meridian request data, exact prepared agent input, raw adapter response, validation outcomes, and normalized public response. Every value passes through the shared redaction and field-size boundary before stdout or OTLP delivery. Authorization values, cookies, passwords, secrets, credential tokens, API keys, database/connection URLs, and webhook URLs must remain redacted in success and failure paths. Production log access therefore grants access to diagnostic traveler/model content and must be restricted accordingly. Switch `TELEMETRY_PAYLOAD_MODE` to `metadata` or `off` and redeploy for immediate content containment. See [Backend telemetry](TELEMETRY.md).
 
 Rotate any credential that was previously committed. Removing it from the current source does not invalidate copies in Git history.
 

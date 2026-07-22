@@ -1,6 +1,6 @@
 """Replaceable telemetry delivery boundaries."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 import json
 import os
@@ -102,7 +102,7 @@ class OtlpHttpSink:
             observed_timestamp=time_ns(),
             severity_text=level_name,
             severity_number=_OTLP_SEVERITY.get(level_name, SeverityNumber.INFO),
-            body=dict(event),
+            body=str(event.get("message", event.get("event", "Telemetry event"))),
             attributes=_flatten_attributes(event),
             event_name=str(event.get("event", "telemetry.event")),
         )
@@ -136,11 +136,21 @@ def _flatten_attributes(
     flattened: dict[str, Any] = {}
     for key, item in value.items():
         path = f"{prefix}.{key}" if prefix else str(key)
-        if isinstance(item, Mapping):
-            flattened.update(_flatten_attributes(item, path))
-        elif item is not None:
-            flattened[path] = item
+        _flatten_attribute_value(flattened, path, item)
     return flattened
+
+
+def _flatten_attribute_value(
+    flattened: dict[str, Any], path: str, value: Any
+) -> None:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            _flatten_attribute_value(flattened, f"{path}.{key}", child)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for index, child in enumerate(value):
+            _flatten_attribute_value(flattened, f"{path}.{index}", child)
+    elif value is not None:
+        flattened[path] = value
 
 
 class InMemorySink:

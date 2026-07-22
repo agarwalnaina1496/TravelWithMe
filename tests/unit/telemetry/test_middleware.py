@@ -106,6 +106,7 @@ def test_concurrent_requests_do_not_leak_context() -> None:
 
     asyncio.run(exercise())
     assert {event["request_id"] for event in sink.events} == {"request-a", "request-b"}
+    assert all(event["message"] for event in sink.events)
     assert get_correlation_context() is None
 
 

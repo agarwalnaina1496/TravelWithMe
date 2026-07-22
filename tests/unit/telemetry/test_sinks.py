@@ -114,8 +114,14 @@ def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
         "level": "WARNING",
         "service": "test-service",
         "event": "be.http.response.sent",
+        "message": "Sent Scout HTTP response",
         "request_id": "request-1",
-        "fields": {"status_code": 502},
+        "fields": {
+            "status_code": 502,
+            "validation_failures": [
+                {"type": "missing", "loc": ["options", 0]}
+            ],
+        },
     }
 
     sink.emit(event)
@@ -123,9 +129,13 @@ def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
 
     exported = exporter.get_finished_logs()[0].log_record
 
-    assert exported.body == event
+    assert exported.body == "Sent Scout HTTP response"
     assert exported.severity_text == "WARNING"
     assert exported.attributes["request_id"] == "request-1"
+    assert exported.attributes["message"] == "Sent Scout HTTP response"
     assert exported.attributes["fields.status_code"] == 502
+    assert exported.attributes["fields.validation_failures.0.type"] == "missing"
+    assert exported.attributes["fields.validation_failures.0.loc.0"] == "options"
+    assert exported.attributes["fields.validation_failures.0.loc.1"] == 0
 
     sink.shutdown()
