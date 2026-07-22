@@ -10,6 +10,7 @@ import pytest
 from twm.prompts import PromptRelease
 from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
 from twm.security import UNTRUSTED_DATA_PREAMBLE
+from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings, CorrelationContext, reset_correlation_context, set_correlation_context
 from twm.services import (
     AgentExecutionService,
     AgentInvocationResult,
@@ -31,6 +32,8 @@ def service_with_outputs(
             for output in outputs
         ]
     )
+    adapter.engine_name = "mock"
+    adapter.endpoint = lambda agent: None
     monkeypatch.setattr(
         service_module,
         "load_prompt_release",
@@ -258,3 +261,28 @@ def test_large_truncated_completion_is_not_copied_into_regeneration(
     retry = adapter.invoke.await_args_list[1].args[1]
     assert truncated not in retry.system_prompt
     assert truncated not in retry.user_prompt
+
+
+def test_agent_execution_emits_lifecycle_events_with_full_payload(monkeypatch) -> None:
+    sink = InMemorySink()
+    telemetry_logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 1024), sink
+    )
+    token = set_correlation_context(CorrelationContext("request-123", "trip-1", "turn-1"))
+    try:
+        engine, _ = service_with_outputs(monkeypatch, json.dumps({
+            "message": "A mountain trip can work well.",
+            "state_delta": {"trip_context": {"region": "Uttarakhand"}},
+            "intent": "advise",
+        }))
+        engine = AgentExecutionService(engine._adapter, telemetry_logger=telemetry_logger)
+
+        asyncio.run(engine.scout({"stage": "new", "trip_context": {}}, "Tell me about mountain trips."))
+
+        events = sink.events
+        assert any(event["event"] == "be.agent.input.prepared" for event in events)
+        assert any(event["event"] == "be.agent.invocation.started" for event in events)
+        assert any(event["event"] == "be.agent.raw_response.received" for event in events)
+        assert any(event["event"] == "be.agent.output.validated" for event in events)
+    finally:
+        reset_correlation_context(token)

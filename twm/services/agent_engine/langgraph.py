@@ -25,8 +25,20 @@ class LangGraphAgentAdapter:
         settings: AgentEngineSettings | None = None,
     ) -> None:
         runtime = runtime or LangGraphRuntime(settings=settings)
+        self._settings = settings
         self._scout_graph = build_scout_graph(runtime)
         self._meridian_graph = build_meridian_graph(runtime)
+
+    @property
+    def engine_name(self) -> str:
+        return "langgraph"
+
+    def endpoint(self, agent: AgentName) -> str | None:
+        provider = self._settings.langgraph_model_provider
+        model = self._settings.langgraph_model
+        if provider:
+            return f"langgraph:{provider}/{model}"
+        return f"langgraph:{model}"
 
     async def invoke(
         self, agent: AgentName, invocation: AgentInvocation

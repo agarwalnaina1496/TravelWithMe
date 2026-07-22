@@ -22,6 +22,7 @@ from twm.services import (
     AgentInvocationResult,
     LangGraphAgentAdapter,
     LangGraphRuntime,
+    AgentEngineSettings,
 )
 from twm.services.response_normalization import _normalize_meridian_response
 from twm.schemas.scout import ScoutResponse
@@ -157,6 +158,85 @@ def test_scout_api_preserves_entry_contract(
         },
         "Tell me about Uttarakhand.",
     )
+
+
+def test_scout_api_emits_request_and_response_telemetry(
+    api_client: TestClient, monkeypatch
+) -> None:
+    from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
+
+    engine = async_engine()
+    engine.scout.return_value = AgentExecution(
+        response={
+            "message": "Here is a broad answer.",
+            "state_delta": {"trip_context": {"region": "Uttarakhand"}},
+            "intent": "advise",
+        },
+        prompt_release=PromptRelease("scout", "1.1.0", "prompt"),
+    )
+    set_engine(api_client, engine)
+
+    sink = InMemorySink()
+    api_client.app.state.telemetry = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 1024), sink
+    )
+
+    response = api_client.post(
+        "/scout",
+        json={
+            "trip_state": {"stage": "new", "trip_context": {}, "advisor_state": {}},
+            "message": "Tell me about Uttarakhand.",
+        },
+    )
+
+    assert response.status_code == 200
+    events = sink.events
+    assert any(event["event"] == "be.request.validated" for event in events)
+    assert any(event["event"] == "be.response.normalized" for event in events)
+    assert any(event["event"] == "be.response.normalized" and event["fields"]["path"] == "/scout" for event in events)
+
+
+def test_meridian_api_emits_request_and_response_telemetry(
+    api_client: TestClient, monkeypatch
+) -> None:
+    from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
+
+    engine = async_engine()
+    engine.meridian.return_value = AgentExecution(
+        response={
+            "status": "SUCCESS",
+            "message": "Here is a broad answer.",
+            "state_delta": {"matcher_state": {"conversation_context": {"awaiting": None}}},
+            "trip_type": "single",
+            "traveler_criteria": traveler_criteria(),
+            "options": [recommendation_option()],
+        },
+        prompt_release=PromptRelease("meridian", "1.2.0", "prompt"),
+    )
+    set_engine(api_client, engine)
+
+    sink = InMemorySink()
+    api_client.app.state.telemetry = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 1024), sink
+    )
+
+    response = api_client.post(
+        "/meridian",
+        json={
+            "trip_state": {
+                "trip_context": {},
+                "advisor_state": {"conversation_context": {}},
+                "matcher_state": {},
+            },
+            "message": "Please narrow those down.",
+        },
+    )
+
+    assert response.status_code == 200
+    events = sink.events
+    assert any(event["event"] == "be.request.validated" for event in events)
+    assert any(event["event"] == "be.response.normalized" for event in events)
+    assert any(event["event"] == "be.response.normalized" and event["fields"]["path"] == "/meridian" for event in events)
 
 
 def test_scout_api_uses_common_prepared_invocation(
@@ -578,7 +658,17 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
     set_engine(
         api_client,
         AgentExecutionService(
-            LangGraphAgentAdapter(runtime=LangGraphRuntime(model=model))
+            LangGraphAgentAdapter(
+                runtime=LangGraphRuntime(model=model),
+                settings=AgentEngineSettings(
+                    engine="langgraph",
+                    environment="test",
+                    langgraph_model_provider="groq",
+                    langgraph_model="openai/gpt-oss-120b",
+                    langgraph_api_key="fake",
+                    langgraph_timeout_seconds=30,
+                ),
+            )
         ),
     )
 

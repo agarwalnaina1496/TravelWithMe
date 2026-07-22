@@ -40,7 +40,11 @@ async def application_lifespan(app: FastAPI):
             http_client = await stack.enter_async_context(
                 httpx.AsyncClient(timeout=60.0)
             )
-        app.state.agent_engine = get_agent_engine(settings, http_client)
+        app.state.agent_engine = get_agent_engine(
+            settings,
+            http_client,
+            telemetry_logger=app.state.telemetry,
+        )
         try:
             yield
         finally:

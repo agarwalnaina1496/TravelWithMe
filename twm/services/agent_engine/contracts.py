@@ -34,6 +34,14 @@ class AgentExecution:
 class AgentAdapter(Protocol):
     """Invoke one engine and return its unparsed model completion."""
 
+    @property
+    def engine_name(self) -> str:
+        ...
+
+    def endpoint(self, agent: AgentName) -> str | None:
+        """Return a safe logical endpoint identifier for telemetry events."""
+        ...
+
     async def invoke(
         self, agent: AgentName, invocation: AgentInvocation
     ) -> AgentInvocationResult:

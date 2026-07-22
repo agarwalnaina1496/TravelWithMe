@@ -19,6 +19,13 @@ class N8NAgentAdapter:
         self._settings = settings
         self._http_client = http_client
 
+    @property
+    def engine_name(self) -> str:
+        return "n8n"
+
+    def endpoint(self, agent: AgentName) -> str | None:
+        return f"n8n:{agent}"
+
     async def invoke(
         self, agent: AgentName, invocation: AgentInvocation
     ) -> AgentInvocationResult:
