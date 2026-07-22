@@ -37,6 +37,43 @@ class TelemetryLogger:
         fields: Mapping[str, Any] | None = None,
         payload: Any = None,
     ) -> None:
+        """Compatibility entry point for internal telemetry events."""
+        self._log(
+            name,
+            event=name,
+            level=level,
+            source=source,
+            fields=fields,
+            payload=payload,
+        )
+
+    def debug(self, message: str, **kwargs: Any) -> None:
+        self._log(message, level="DEBUG", **kwargs)
+
+    def info(self, message: str, **kwargs: Any) -> None:
+        self._log(message, level="INFO", **kwargs)
+
+    def warning(self, message: str, **kwargs: Any) -> None:
+        self._log(message, level="WARNING", **kwargs)
+
+    def error(self, message: str, **kwargs: Any) -> None:
+        self._log(message, level="ERROR", **kwargs)
+
+    def critical(self, message: str, **kwargs: Any) -> None:
+        self._log(message, level="CRITICAL", **kwargs)
+
+    def _log(
+        self,
+        message: str,
+        *,
+        event: str,
+        level: str,
+        source: str = "application",
+        fields: Mapping[str, Any] | None = None,
+        payload: Any = None,
+        response: Any = None,
+        **structured_fields: Any,
+    ) -> None:
         if not self.settings.enabled:
             return
         try:
@@ -51,26 +88,36 @@ class TelemetryLogger:
                 "environment": self.settings.environment,
                 "service": self.settings.service,
                 "source": source,
-                "event": name,
+                "event": event,
+                "message": message,
                 "request_id": context.request_id if context else str(uuid4()),
             }
             if context and context.trip_id:
                 envelope["trip_id"] = context.trip_id
             if context and context.turn_id:
                 envelope["turn_id"] = context.turn_id
-            if fields:
-                envelope["fields"] = dict(fields)
-            if payload is not None:
-                if self.settings.payload_mode is PayloadMode.METADATA:
-                    envelope["payload_metadata"] = payload_metadata(payload)
-                elif self.settings.payload_mode is PayloadMode.FULL:
-                    envelope["payload"] = payload
+            combined_fields = dict(fields or {})
+            combined_fields.update(structured_fields)
+            if combined_fields:
+                envelope["fields"] = combined_fields
+            self._add_diagnostic(envelope, "payload", payload)
+            self._add_diagnostic(envelope, "response", response)
 
             safe_event = sanitize(envelope, self.settings.max_field_size)
             self._sink.emit(safe_event)
         except Exception:
             # Observability must never alter traveler-facing behavior.
             return
+
+    def _add_diagnostic(
+        self, envelope: dict[str, Any], name: str, value: Any
+    ) -> None:
+        if value is None or self.settings.payload_mode is PayloadMode.OFF:
+            return
+        if self.settings.payload_mode is PayloadMode.METADATA:
+            envelope[f"{name}_metadata"] = payload_metadata(value)
+        elif self.settings.payload_mode is PayloadMode.FULL:
+            envelope[name] = value
 
     def shutdown(self) -> None:
         try:

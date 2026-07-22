@@ -32,6 +32,7 @@ from twm.security import (
     MAX_MESSAGE_CHARACTERS,
     MAX_PHASE_STATE_BYTES,
 )
+from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
 from tests.unit.langgraph.fakes import FakeChatModel
 
 
@@ -46,6 +47,19 @@ def set_engine(api_client: TestClient, engine: object) -> None:
     api_client.app.dependency_overrides[trip_matcher.get_engine] = lambda: engine
 
 
+def set_logger(api_client: TestClient, logger: TelemetryLogger) -> None:
+    api_client.app.dependency_overrides[trip_matcher.get_logger] = (
+        lambda: logger
+    )
+
+
+def logger_for_test() -> TelemetryLogger:
+    return TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 16_384),
+        InMemorySink(),
+    )
+
+
 def common_engine(*outputs: dict) -> tuple[AgentExecutionService, AsyncMock]:
     adapter = AsyncMock()
     adapter.invoke = AsyncMock(
@@ -54,7 +68,7 @@ def common_engine(*outputs: dict) -> tuple[AgentExecutionService, AsyncMock]:
             for output in outputs
         ]
     )
-    return AgentExecutionService(adapter), adapter
+    return AgentExecutionService(adapter, logger_for_test(), "test-engine"), adapter
 
 
 def meridian_success_output() -> dict:
@@ -119,6 +133,11 @@ def test_active_phase_prompt_releases_are_complete() -> None:
 def test_scout_api_preserves_entry_contract(
     api_client: TestClient, monkeypatch
 ) -> None:
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 16_384), sink
+    )
+    set_logger(api_client, logger)
     engine = async_engine()
     engine.scout.return_value = AgentExecution(
         response={
@@ -138,7 +157,15 @@ def test_scout_api_preserves_entry_contract(
         "message": "Tell me about Uttarakhand.",
     }
 
-    response = api_client.post("/scout", json=payload)
+    response = api_client.post(
+        "/scout",
+        json=payload,
+        headers={
+            "X-TWM-Request-ID": "request-1",
+            "X-TWM-Trip-ID": "trip-1",
+            "X-TWM-Turn-ID": "turn-1",
+        },
+    )
 
     assert response.status_code == 200
     assert response.json() == {
@@ -157,6 +184,22 @@ def test_scout_api_preserves_entry_contract(
         },
         "Tell me about Uttarakhand.",
     )
+    received, returning = sink.events
+    assert received["message"] == "Received Scout request"
+    assert received["payload"] == {
+        "trip_state": {
+            "stage": "new",
+            "trip_context": {},
+            "advisor_state": {"conversation_context": {}},
+        },
+        "message": "Tell me about Uttarakhand.",
+    }
+    assert returning["message"] == "Returning Scout response"
+    assert returning["response"] == response.json()
+    assert {
+        (event["request_id"], event["trip_id"], event["turn_id"])
+        for event in sink.events
+    } == {("request-1", "trip-1", "turn-1")}
 
 
 def test_scout_api_uses_common_prepared_invocation(
@@ -578,7 +621,9 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
     set_engine(
         api_client,
         AgentExecutionService(
-            LangGraphAgentAdapter(runtime=LangGraphRuntime(model=model))
+            LangGraphAgentAdapter(runtime=LangGraphRuntime(model=model)),
+            logger_for_test(),
+            "langgraph",
         ),
     )
 
@@ -640,7 +685,10 @@ def test_invalid_output_after_repair_returns_cors_enabled_502(
             AgentInvocationResult(raw_output="still-not-json"),
         ]
     )
-    set_engine(api_client, AgentExecutionService(adapter))
+    set_engine(
+        api_client,
+        AgentExecutionService(adapter, logger_for_test(), "test-engine"),
+    )
 
     response = api_client.post(
         "/scout",
@@ -661,7 +709,10 @@ def test_adapter_timeout_returns_cors_enabled_504(api_client: TestClient) -> Non
     adapter.invoke = AsyncMock(
         side_effect=AgentAdapterTimeoutError("provider timed out")
     )
-    set_engine(api_client, AgentExecutionService(adapter))
+    set_engine(
+        api_client,
+        AgentExecutionService(adapter, logger_for_test(), "test-engine"),
+    )
 
     response = api_client.post(
         "/scout",

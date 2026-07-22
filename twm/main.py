@@ -1,9 +1,8 @@
 from contextlib import AsyncExitStack, asynccontextmanager
-import logging
 
 import httpx
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -27,10 +26,6 @@ from .telemetry import (
     build_telemetry_sink,
 )
 
-
-logger = logging.getLogger("uvicorn.error")
-
-
 @asynccontextmanager
 async def application_lifespan(app: FastAPI):
     settings = AgentEngineSettings.load()
@@ -40,7 +35,9 @@ async def application_lifespan(app: FastAPI):
             http_client = await stack.enter_async_context(
                 httpx.AsyncClient(timeout=60.0)
             )
-        app.state.agent_engine = get_agent_engine(settings, http_client)
+        app.state.agent_engine = get_agent_engine(
+            settings, app.state.telemetry, http_client
+        )
         try:
             yield
         finally:
@@ -88,11 +85,16 @@ def initialize_app() -> FastAPI:
     app.state.telemetry = telemetry_logger
 
     @app.exception_handler(AgentOutputError)
-    async def handle_invalid_agent_output(_, error: AgentOutputError):
-        logger.warning(
-            "%s output failed the common contract: %s",
-            error.agent,
-            error.failures,
+    async def handle_invalid_agent_output(request: Request, error: AgentOutputError):
+        logger = request.app.state.telemetry
+        logger.error(
+            f"{error.agent.capitalize()} request failed after repair",
+            event="be.http.request.failed",
+            source="http",
+            agent=error.agent,
+            status_code=502,
+            error_type=type(error).__name__,
+            validation_failures=error.failures,
         )
         return JSONResponse(
             status_code=502,
@@ -100,28 +102,49 @@ def initialize_app() -> FastAPI:
         )
 
     @app.exception_handler(AgentAdapterTimeoutError)
-    async def handle_agent_timeout(_, error: AgentAdapterTimeoutError):
-        logger.warning("Agent invocation timed out: %s", type(error).__name__)
+    async def handle_agent_timeout(request: Request, error: AgentAdapterTimeoutError):
+        logger = request.app.state.telemetry
+        logger.error(
+            "Agent request timed out",
+            event="be.http.request.failed",
+            source="http",
+            status_code=504,
+            error_type=type(error).__name__,
+        )
         return JSONResponse(
             status_code=504,
             content={"detail": "The travel assistant timed out."},
         )
 
     @app.exception_handler(AgentAdapterError)
-    async def handle_agent_adapter_error(_, error: AgentAdapterError):
-        logger.warning("Agent invocation failed: %s", type(error).__name__)
+    async def handle_agent_adapter_error(request: Request, error: AgentAdapterError):
+        logger = request.app.state.telemetry
+        logger.error(
+            "Agent request failed",
+            event="be.http.request.failed",
+            source="http",
+            status_code=502,
+            error_type=type(error).__name__,
+        )
         return JSONResponse(
             status_code=502,
             content={"detail": "The travel assistant is temporarily unavailable."},
         )
 
     @app.exception_handler(ValidationError)
-    async def handle_unexpected_agent_validation(_, error: ValidationError):
+    async def handle_unexpected_agent_validation(
+        request: Request, error: ValidationError
+    ):
         failure_types = [
             item["type"] for item in error.errors(include_input=False)
         ]
-        logger.warning(
-            "Agent response normalization failed: types=%s", failure_types
+        logger = request.app.state.telemetry
+        logger.error(
+            "Agent response normalization failed",
+            event="be.response.normalization_failed",
+            source="http",
+            status_code=502,
+            validation_failure_types=failure_types,
         )
         return JSONResponse(
             status_code=502,

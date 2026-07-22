@@ -58,13 +58,13 @@ The exporter batches records in-process. The FastAPI lifespan shuts the provider
 
 Each OTLP record carries:
 
-- the complete sanitized event map as the structured log body;
+- the concise human-readable `message` as the primary log body shown in Axiom;
 - standard OTLP severity derived from `level`;
 - the application timestamp as the log timestamp;
-- flattened query attributes such as `request_id`, `trip_id`, `turn_id`, `event`, and `fields.status_code`;
+- the complete sanitized envelope as flattened query attributes such as `request_id`, `trip_id`, `turn_id`, `event`, `fields.agent`, `fields.attempt`, `payload.*`, and `response.*`;
 - `service.name=travelwithme-backend` as the OpenTelemetry resource.
 
-The stdout JSON contract is unchanged. Structured data must be queryable in Axiom; an escaped JSON-only message does not satisfy verification.
+Stdout remains one-line JSON and contains both `message` and the structured fields. Structured data must be queryable in Axiom; an escaped JSON-only message does not satisfy verification.
 
 ## Production smoke test
 
@@ -78,7 +78,9 @@ curl.exe -X POST "https://travelwithme-zf9f.onrender.com/scout" `
   --data "{}"
 ```
 
-A `422` response is expected and proves middleware coverage without invoking an agent. In Axiom Stream, confirm `be.http.request.received` and `be.http.response.sent` arrive with the same request ID. Inspect one event and confirm severity, resource service name, body fields, and flattened attributes are independently queryable.
+A `422` response is expected and proves middleware coverage without invoking an agent. In Axiom Stream, confirm the readable HTTP receipt/response messages arrive with the same request ID.
+
+Then submit one valid Scout turn and one valid Meridian turn from the production UI with a unique trip ID. Verify the ordered messages include `Received ... request`, `Calling ...`, `... response received`, `... response validated`, and `Returning ... response`. Inspect the records and confirm severity, resource service name, readable body, correlation fields, engine, attempt, sanitized payload, and sanitized response are independently queryable.
 
 ## APL query templates
 
@@ -104,11 +106,10 @@ Save the following queries after the smoke test. Axiom may expose OpenTelemetry 
 
 ### TWM - Agent attempts
 
-This becomes populated after the separately tracked instrumentation story emits `be.agent.*` events.
-
 ```apl
 ['twm-production']
 | where attributes.event startswith 'be.agent.'
+| project _time, body, attributes.request_id, attributes.trip_id, attributes.fields.agent, attributes.fields.engine, attributes.fields.attempt, attributes.event
 | order by _time desc
 | limit 200
 ```

@@ -56,6 +56,7 @@ def test_logger_emits_one_versioned_json_line_with_request_context() -> None:
         "service": "travelwithme-backend",
         "source": "unit",
         "event": "test.event",
+        "message": "test.event",
         "request_id": "request-1",
         "trip_id": "trip-1",
         "turn_id": "turn-1",
@@ -71,15 +72,45 @@ def test_redaction_and_size_limits_apply_before_sink() -> None:
         "test.sanitize",
         fields={
             "authorization": "Bearer private",
+            "access_token": "private",
+            "input_tokens": 120,
             "nested": {"api_key": "private", "safe": "x" * 100},
         },
     )
 
     fields = sink.events[0]["fields"]
     assert fields["authorization"] == REDACTED
+    assert fields["access_token"] == REDACTED
+    assert fields["input_tokens"] == 120
     assert fields["nested"]["api_key"] == REDACTED
     assert len(fields["nested"]["safe"]) == 20
     assert fields["nested"]["safe"].endswith("...[TRUNCATED]")
+
+
+def test_serialized_diagnostic_strings_redact_credential_values() -> None:
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        settings(payload_mode=PayloadMode.FULL, max_field_size=1024), sink
+    )
+
+    logger.info(
+        "Calling Scout",
+        event="be.agent.invocation.started",
+        payload={
+            "user_prompt": (
+                'data={"api_key":"private-key","input_tokens":120,'
+                '"webhook_url":"https://private.test/hook"}'
+            )
+        },
+        response='{"authorization":"Bearer private-token"}',
+    )
+
+    event = sink.events[0]
+    assert "private-key" not in event["payload"]["user_prompt"]
+    assert "private.test" not in event["payload"]["user_prompt"]
+    assert '"input_tokens":120' in event["payload"]["user_prompt"]
+    assert "private-token" not in event["response"]
+    assert REDACTED in event["payload"]["user_prompt"]
 
 
 @pytest.mark.parametrize(
@@ -101,6 +132,56 @@ def test_payload_mode_controls_content(mode, present, absent) -> None:
         assert present in event
     for key in absent:
         assert key not in event
+
+
+@pytest.mark.parametrize(
+    ("method", "level"),
+    [
+        ("debug", "DEBUG"),
+        ("info", "INFO"),
+        ("warning", "WARNING"),
+        ("error", "ERROR"),
+        ("critical", "CRITICAL"),
+    ],
+)
+def test_logging_style_methods_emit_readable_message_and_fields(
+    method, level
+) -> None:
+    sink = InMemorySink()
+    logger = TelemetryLogger(settings(payload_mode=PayloadMode.FULL), sink)
+
+    getattr(logger, method)(
+        "Calling Scout",
+        event="be.agent.invocation.started",
+        agent="scout",
+        attempt=1,
+        payload={"message": "hello"},
+        response={"message": "world"},
+    )
+
+    event = sink.events[0]
+    assert event["message"] == "Calling Scout"
+    assert event["level"] == level
+    assert event["fields"] == {"agent": "scout", "attempt": 1}
+    assert event["payload"] == {"message": "hello"}
+    assert event["response"] == {"message": "world"}
+
+
+def test_metadata_mode_describes_payload_and_response_without_content() -> None:
+    sink = InMemorySink()
+
+    TelemetryLogger(settings(), sink).info(
+        "Scout response received",
+        event="be.agent.raw_response.received",
+        payload={"private": "input"},
+        response={"private": "output"},
+    )
+
+    event = sink.events[0]
+    assert "payload" not in event
+    assert "response" not in event
+    assert event["payload_metadata"]["type"] == "dict"
+    assert event["response_metadata"]["type"] == "dict"
 
 
 def test_disabled_logger_and_broken_sink_are_fail_open() -> None:

@@ -4,9 +4,9 @@ The Backend emits provider-neutral, one-line JSON to stdout. Deployment configur
 
 ## Event envelope
 
-Every event uses schema version `1.0` and contains `schema_version`, `timestamp`, `level`, `environment`, `service`, `source`, application-owned `event`, and required `request_id`. Valid caller-provided `trip_id` and `turn_id` are optional. Sanitized `fields`, `payload_metadata`, or `payload` may be present.
+Every event uses schema version `1.0` and contains `schema_version`, `timestamp`, `level`, `environment`, `service`, `source`, a concise human-readable `message`, application-owned `event`, and required `request_id`. Valid caller-provided `trip_id` and `turn_id` are optional. Sanitized `fields`, `payload_metadata`, `response_metadata`, `payload`, or `response` may be present.
 
-The foundation events are `be.http.request.received`, `be.http.response.sent`, and `be.http.request.failed`. Detailed Scout and Meridian pipeline events belong to the separate instrumentation increment.
+Scout and Meridian emit readable checkpoints for HTTP receipt/response, validated input, agent invocation, raw adapter response, validation failure, repair, validated output, normalized public response, and failures. `attempt=1` identifies the initial invocation and `attempt=2` the single bounded repair invocation.
 
 ## Correlation contract
 
@@ -26,13 +26,26 @@ TELEMETRY_PAYLOAD_MODE=metadata
 TELEMETRY_MAX_FIELD_SIZE=16384
 ```
 
-The common configuration disables telemetry, while the production overlay enables metadata-only lifecycle events. Payload mode may be `off`, `metadata`, or `full`. `off` omits payload information, `metadata` records only type and serialized byte size, and `full` permits sanitized content supplied by an approved call site. Changing the setting does not make the foundation collect request bodies, prompts, TripState, or provider responses by itself.
+The common configuration disables telemetry, while the production overlay enables `full` diagnostic content for the approved Scout/Meridian call sites. Payload mode may be `off`, `metadata`, or `full`. `off` omits payload and response information, `metadata` records only type and serialized byte size, and `full` records sanitized, bounded content supplied by an approved call site.
 
-All values pass through key-based secret redaction and string-size limits before reaching a sink. Authorization data, cookies, passwords, secrets, tokens, API keys, database or connection URLs, and webhook URLs are redacted. Sink, serialization, and unsupported-value failures are fail-open and cannot change an API response.
+All values pass through key-based secret redaction and string-size limits before reaching a sink. Authorization data, cookies, passwords, secrets, credential tokens, API keys, database or connection URLs, and webhook URLs are redacted. Non-secret usage metrics such as `input_tokens` and `output_tokens` remain queryable. Sink, serialization, and unsupported-value failures are fail-open and cannot change an API response.
+
+Production diagnostic logs may contain traveler-provided trip context and model output after these controls. Access the Axiom dataset as production diagnostic data, keep queries narrowly scoped, and use `metadata` or `off` for immediate content containment.
 
 ## Extension boundary
 
-Business call sites depend on `TelemetryLogger.event`, not `JsonStdoutSink`. New destinations implement the small `TelemetrySink` delivery and shutdown protocol. Tests use `InMemorySink`. This boundary can later move to a separately versioned library while preserving application call sites and the envelope contract.
+Conversation call sites use `TelemetryLogger.debug/info/warning/error/critical` with a readable message, an application event name, and structured keyword fields. They do not construct envelopes or depend on a sink. `TelemetryLogger.event` remains an internal compatibility entry point. New destinations implement the small `TelemetrySink` delivery and shutdown protocol. Tests use `InMemorySink`. This boundary can later move to a separately versioned library while preserving application call sites and the envelope contract.
+
+```python
+logger.info(
+    "Calling Scout",
+    event="be.agent.invocation.started",
+    agent="scout",
+    engine="n8n",
+    attempt=1,
+    payload=sanitized_engine_input,
+)
+```
 
 Production keeps stdout and may add standard OTLP/HTTP delivery when the production logs endpoint is configured. See [Production Axiom log delivery](AXIOM_LOG_DELIVERY.md) for sink selection, Render secrets, verification queries, credential rotation, usage checks, and provider-independent rollback.
 
