@@ -207,6 +207,22 @@ class AgentExecutionService:
             result = await self._adapter.invoke(agent, invocation)
         except Exception as error:
             duration_ms = round((time.perf_counter() - started_at) * 1000)
+            # Emit telemetry event for invocation failure
+            self._emit(
+                "be.agent.invocation.failed",
+                level="WARNING",
+                source="agent",
+                fields=self._agent_event_fields(
+                    agent,
+                    attempt,
+                    prompt_version,
+                    "failed",
+                    {
+                        "duration_ms": duration_ms,
+                        "error_type": type(error).__name__,
+                    },
+                ),
+            )
             logger.warning(
                 "Agent invocation failed: agent=%s attempt=%s duration_ms=%s "
                 "error_type=%s",

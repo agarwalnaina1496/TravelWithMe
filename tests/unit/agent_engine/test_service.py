@@ -12,6 +12,7 @@ from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
 from twm.security import UNTRUSTED_DATA_PREAMBLE
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings, CorrelationContext, reset_correlation_context, set_correlation_context
 from twm.services import (
+    AgentAdapterTimeoutError,
     AgentExecutionService,
     AgentInvocationResult,
     AgentOutputError,
@@ -286,3 +287,196 @@ def test_agent_execution_emits_lifecycle_events_with_full_payload(monkeypatch) -
         assert any(event["event"] == "be.agent.output.validated" for event in events)
     finally:
         reset_correlation_context(token)
+
+
+def test_agent_execution_emits_repair_events_on_validation_failure(monkeypatch) -> None:
+    """Verify repair flow emits be.agent.output.validation_failed and be.agent.repair.started events."""
+    sink = InMemorySink()
+    telemetry_logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 1024), sink
+    )
+    repaired = {
+        "message": "A repaired answer.",
+        "state_delta": {},
+        "intent": "advise",
+    }
+    engine, _ = service_with_outputs(
+        monkeypatch,
+        "not-json",  # Attempt 1: invalid JSON
+        json.dumps(repaired),  # Attempt 2: valid JSON
+    )
+    engine = AgentExecutionService(engine._adapter, telemetry_logger=telemetry_logger)
+
+    asyncio.run(engine.scout({}, "Help me."))
+
+    events = sink.events
+    # Attempt 1: input prepared and invocation started
+    assert any(
+        event["event"] == "be.agent.input.prepared"
+        and event["fields"]["attempt"] == 1
+        for event in events
+    )
+    assert any(
+        event["event"] == "be.agent.invocation.started"
+        and event["fields"]["attempt"] == 1
+        for event in events
+    )
+    assert any(
+        event["event"] == "be.agent.raw_response.received"
+        and event["fields"]["attempt"] == 1
+        for event in events
+    )
+    # Validation failure on attempt 1
+    assert any(
+        event["event"] == "be.agent.output.validation_failed"
+        and event["fields"]["attempt"] == 1
+        for event in events
+    )
+    # Repair started
+    assert any(
+        event["event"] == "be.agent.repair.started" for event in events
+    )
+    # Attempt 2: input prepared, invocation, and success
+    assert any(
+        event["event"] == "be.agent.input.prepared"
+        and event["fields"]["attempt"] == 2
+        for event in events
+    )
+    assert any(
+        event["event"] == "be.agent.invocation.started"
+        and event["fields"]["attempt"] == 2
+        for event in events
+    )
+    assert any(
+        event["event"] == "be.agent.raw_response.received"
+        and event["fields"]["attempt"] == 2
+        for event in events
+    )
+    assert any(
+        event["event"] == "be.agent.output.validated"
+        and event["fields"]["attempt"] == 2
+        for event in events
+    )
+
+
+def test_agent_execution_emits_final_validation_failure_on_both_attempts(monkeypatch) -> None:
+    """Verify final validation failure events when both attempt 1 and 2 fail."""
+    sink = InMemorySink()
+    telemetry_logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 1024), sink
+    )
+    invalid = {
+        "message": "Invalid",
+        "state_delta": {},
+        "intent": "advise",
+    }
+    engine, _ = service_with_outputs(
+        monkeypatch,
+        "not-json",  # Attempt 1: invalid JSON
+        "still-not-json",  # Attempt 2: also invalid JSON
+    )
+    engine = AgentExecutionService(engine._adapter, telemetry_logger=telemetry_logger)
+
+    with pytest.raises(AgentOutputError):
+        asyncio.run(engine.scout({}, "Help me."))
+
+    events = sink.events
+    # Attempt 1 validation failure
+    attempt_1_failures = [
+        event for event in events
+        if event["event"] == "be.agent.output.validation_failed"
+        and event["fields"]["attempt"] == 1
+    ]
+    assert len(attempt_1_failures) == 1
+    assert "failures" in attempt_1_failures[0]["payload"]
+    # Repair started
+    assert any(
+        event["event"] == "be.agent.repair.started" for event in events
+    )
+    # Attempt 2 validation failure
+    attempt_2_failures = [
+        event for event in events
+        if event["event"] == "be.agent.output.validation_failed"
+        and event["fields"]["attempt"] == 2
+    ]
+    assert len(attempt_2_failures) == 1
+    assert "failures" in attempt_2_failures[0]["payload"]
+    # No be.agent.output.validated event (both failed)
+    assert not any(
+        event["event"] == "be.agent.output.validated" for event in events
+    )
+
+
+def test_agent_execution_emits_invocation_failed_on_adapter_timeout(monkeypatch) -> None:
+    """Verify be.agent.invocation.failed event is emitted on adapter timeout."""
+    sink = InMemorySink()
+    telemetry_logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 1024), sink
+    )
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        side_effect=AgentAdapterTimeoutError("provider timed out")
+    )
+    adapter.engine_name = "mock"
+    adapter.endpoint = lambda agent: None
+    monkeypatch.setattr(
+        service_module,
+        "load_prompt_release",
+        lambda agent: PromptRelease(agent, "test-version", f"{agent} prompt"),
+    )
+    engine = AgentExecutionService(adapter, telemetry_logger=telemetry_logger)
+
+    with pytest.raises(AgentAdapterTimeoutError):
+        asyncio.run(engine.scout({}, "Help me."))
+
+    events = sink.events
+    # Invocation started
+    assert any(
+        event["event"] == "be.agent.invocation.started"
+        and event["fields"]["attempt"] == 1
+        for event in events
+    )
+    # Invocation failed with timeout error type
+    failed_events = [
+        event for event in events
+        if event["event"] == "be.agent.invocation.failed"
+    ]
+    assert len(failed_events) == 1
+    assert failed_events[0]["fields"]["attempt"] == 1
+    assert failed_events[0]["fields"]["status"] == "failed"
+    assert failed_events[0]["fields"]["error_type"] == "AgentAdapterTimeoutError"
+    assert "duration_ms" in failed_events[0]["fields"]
+
+
+def test_agent_execution_emits_invocation_failed_on_adapter_error(monkeypatch) -> None:
+    """Verify be.agent.invocation.failed event is emitted on generic adapter error."""
+    from twm.services import AgentAdapterError
+    
+    sink = InMemorySink()
+    telemetry_logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 1024), sink
+    )
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        side_effect=AgentAdapterError("adapter connection failed")
+    )
+    adapter.engine_name = "mock"
+    adapter.endpoint = lambda agent: None
+    monkeypatch.setattr(
+        service_module,
+        "load_prompt_release",
+        lambda agent: PromptRelease(agent, "test-version", f"{agent} prompt"),
+    )
+    engine = AgentExecutionService(adapter, telemetry_logger=telemetry_logger)
+
+    with pytest.raises(AgentAdapterError):
+        asyncio.run(engine.scout({}, "Help me."))
+
+    events = sink.events
+    # Invocation failed with generic adapter error type
+    failed_events = [
+        event for event in events
+        if event["event"] == "be.agent.invocation.failed"
+    ]
+    assert len(failed_events) == 1
+    assert failed_events[0]["fields"]["error_type"] == "AgentAdapterError"
