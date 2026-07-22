@@ -40,10 +40,10 @@ def service_with_outputs(
         lambda agent: PromptRelease(agent, "test-version", f"{agent} prompt"),
     )
     sink = telemetry_sink or InMemorySink()
-    telemetry = TelemetryLogger(
+    logger = TelemetryLogger(
         TelemetrySettings(True, "test", PayloadMode.FULL, 16_384), sink
     )
-    return AgentExecutionService(adapter, telemetry, "test-engine"), adapter
+    return AgentExecutionService(adapter, logger, "test-engine"), adapter
 
 
 def meridian_success() -> dict:

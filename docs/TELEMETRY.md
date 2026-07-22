@@ -37,7 +37,7 @@ Production diagnostic logs may contain traveler-provided trip context and model 
 Conversation call sites use `TelemetryLogger.debug/info/warning/error/critical` with a readable message, an application event name, and structured keyword fields. They do not construct envelopes or depend on a sink. `TelemetryLogger.event` remains an internal compatibility entry point. New destinations implement the small `TelemetrySink` delivery and shutdown protocol. Tests use `InMemorySink`. This boundary can later move to a separately versioned library while preserving application call sites and the envelope contract.
 
 ```python
-telemetry.info(
+logger.info(
     "Calling Scout",
     event="be.agent.invocation.started",
     agent="scout",

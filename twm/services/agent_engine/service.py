@@ -55,11 +55,11 @@ class AgentExecutionService:
     def __init__(
         self,
         adapter: AgentAdapter,
-        telemetry: TelemetryLogger,
+        logger: TelemetryLogger,
         engine_name: str,
     ) -> None:
         self._adapter = adapter
-        self._telemetry = telemetry
+        self._logger = logger
         self._engine_name = engine_name
 
     async def scout(
@@ -92,7 +92,7 @@ class AgentExecutionService:
             response = _parse_and_validate(raw_output, definition)
         except _OutputValidationFailure as first_failure:
             self._log_validation_failure(agent, 1, first_failure.failures)
-            self._telemetry.warning(
+            self._logger.warning(
                 f"Starting {agent.capitalize()} repair attempt",
                 event="be.agent.repair.started",
                 source="agent_engine",
@@ -112,7 +112,7 @@ class AgentExecutionService:
                 response = _parse_and_validate(regenerated_output, definition)
             except _OutputValidationFailure as final_failure:
                 self._log_validation_failure(agent, 2, final_failure.failures)
-                self._telemetry.error(
+                self._logger.error(
                     f"{agent.capitalize()} response remained invalid",
                     event="be.agent.output.invalid",
                     source="agent_engine",
@@ -124,7 +124,7 @@ class AgentExecutionService:
                 )
                 raise AgentOutputError(agent, final_failure.failures) from None
 
-        self._telemetry.info(
+        self._logger.info(
             f"{agent.capitalize()} response validated",
             event="be.agent.output.validated",
             source="agent_engine",
@@ -149,7 +149,7 @@ class AgentExecutionService:
             "attempt": attempt,
             "prompt_version": prompt_version,
         }
-        self._telemetry.info(
+        self._logger.info(
             f"Calling {agent.capitalize()}",
             event="be.agent.invocation.started",
             source="agent_engine",
@@ -164,7 +164,7 @@ class AgentExecutionService:
             result = await self._adapter.invoke(agent, invocation)
         except Exception as error:
             duration_ms = round((time.perf_counter() - started_at) * 1000)
-            self._telemetry.error(
+            self._logger.error(
                 f"{agent.capitalize()} invocation failed",
                 event="be.agent.invocation.failed",
                 source="agent_engine",
@@ -184,7 +184,7 @@ class AgentExecutionService:
             "duration_ms": duration_ms,
             "raw_output_chars": len(result.raw_output),
         }
-        self._telemetry.info(
+        self._logger.info(
             f"{agent.capitalize()} response received",
             event="be.agent.raw_response.received",
             source="agent_engine",
@@ -199,7 +199,7 @@ class AgentExecutionService:
         attempt: int,
         failures: list[dict[str, Any]],
     ) -> None:
-        self._telemetry.warning(
+        self._logger.warning(
             f"{agent.capitalize()} response failed validation",
             event="be.agent.output.validation_failed",
             source="agent_engine",

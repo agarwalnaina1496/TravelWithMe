@@ -8,5 +8,5 @@ def get_engine(request: Request) -> AgentEngine:
     return request.app.state.agent_engine
 
 
-def get_telemetry(request: Request) -> TelemetryLogger:
+def get_logger(request: Request) -> TelemetryLogger:
     return request.app.state.telemetry

@@ -86,7 +86,8 @@ def initialize_app() -> FastAPI:
 
     @app.exception_handler(AgentOutputError)
     async def handle_invalid_agent_output(request: Request, error: AgentOutputError):
-        request.app.state.telemetry.error(
+        logger = request.app.state.telemetry
+        logger.error(
             f"{error.agent.capitalize()} request failed after repair",
             event="be.http.request.failed",
             source="http",
@@ -102,7 +103,8 @@ def initialize_app() -> FastAPI:
 
     @app.exception_handler(AgentAdapterTimeoutError)
     async def handle_agent_timeout(request: Request, error: AgentAdapterTimeoutError):
-        request.app.state.telemetry.error(
+        logger = request.app.state.telemetry
+        logger.error(
             "Agent request timed out",
             event="be.http.request.failed",
             source="http",
@@ -116,7 +118,8 @@ def initialize_app() -> FastAPI:
 
     @app.exception_handler(AgentAdapterError)
     async def handle_agent_adapter_error(request: Request, error: AgentAdapterError):
-        request.app.state.telemetry.error(
+        logger = request.app.state.telemetry
+        logger.error(
             "Agent request failed",
             event="be.http.request.failed",
             source="http",
@@ -135,7 +138,8 @@ def initialize_app() -> FastAPI:
         failure_types = [
             item["type"] for item in error.errors(include_input=False)
         ]
-        request.app.state.telemetry.error(
+        logger = request.app.state.telemetry
+        logger.error(
             "Agent response normalization failed",
             event="be.response.normalization_failed",
             source="http",

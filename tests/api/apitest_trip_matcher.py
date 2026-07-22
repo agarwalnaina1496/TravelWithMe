@@ -47,13 +47,13 @@ def set_engine(api_client: TestClient, engine: object) -> None:
     api_client.app.dependency_overrides[trip_matcher.get_engine] = lambda: engine
 
 
-def set_telemetry(api_client: TestClient, telemetry: TelemetryLogger) -> None:
-    api_client.app.dependency_overrides[trip_matcher.get_telemetry] = (
-        lambda: telemetry
+def set_logger(api_client: TestClient, logger: TelemetryLogger) -> None:
+    api_client.app.dependency_overrides[trip_matcher.get_logger] = (
+        lambda: logger
     )
 
 
-def telemetry_for_test() -> TelemetryLogger:
+def logger_for_test() -> TelemetryLogger:
     return TelemetryLogger(
         TelemetrySettings(True, "test", PayloadMode.FULL, 16_384),
         InMemorySink(),
@@ -68,7 +68,7 @@ def common_engine(*outputs: dict) -> tuple[AgentExecutionService, AsyncMock]:
             for output in outputs
         ]
     )
-    return AgentExecutionService(adapter, telemetry_for_test(), "test-engine"), adapter
+    return AgentExecutionService(adapter, logger_for_test(), "test-engine"), adapter
 
 
 def meridian_success_output() -> dict:
@@ -134,10 +134,10 @@ def test_scout_api_preserves_entry_contract(
     api_client: TestClient, monkeypatch
 ) -> None:
     sink = InMemorySink()
-    telemetry = TelemetryLogger(
+    logger = TelemetryLogger(
         TelemetrySettings(True, "test", PayloadMode.FULL, 16_384), sink
     )
-    set_telemetry(api_client, telemetry)
+    set_logger(api_client, logger)
     engine = async_engine()
     engine.scout.return_value = AgentExecution(
         response={
@@ -622,7 +622,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         api_client,
         AgentExecutionService(
             LangGraphAgentAdapter(runtime=LangGraphRuntime(model=model)),
-            telemetry_for_test(),
+            logger_for_test(),
             "langgraph",
         ),
     )
@@ -687,7 +687,7 @@ def test_invalid_output_after_repair_returns_cors_enabled_502(
     )
     set_engine(
         api_client,
-        AgentExecutionService(adapter, telemetry_for_test(), "test-engine"),
+        AgentExecutionService(adapter, logger_for_test(), "test-engine"),
     )
 
     response = api_client.post(
@@ -711,7 +711,7 @@ def test_adapter_timeout_returns_cors_enabled_504(api_client: TestClient) -> Non
     )
     set_engine(
         api_client,
-        AgentExecutionService(adapter, telemetry_for_test(), "test-engine"),
+        AgentExecutionService(adapter, logger_for_test(), "test-engine"),
     )
 
     response = api_client.post(

@@ -16,12 +16,12 @@ from twm.shared.properties import property_loader
 
 def test_factory_wraps_exact_configured_adapter(monkeypatch) -> None:
     client = Mock()
-    telemetry = Mock()
+    logger = Mock()
     n8n_settings = AgentEngineSettings(engine="n8n", environment="test")
-    engine = factory.get_agent_engine(n8n_settings, telemetry, client)
+    engine = factory.get_agent_engine(n8n_settings, logger, client)
     assert isinstance(engine, AgentExecutionService)
     assert isinstance(engine._adapter, N8NAgentAdapter)
-    assert engine._telemetry is telemetry
+    assert engine._logger is logger
     assert engine._engine_name == "n8n"
 
     sentinel = Mock(spec=LangGraphAgentAdapter)
@@ -34,7 +34,7 @@ def test_factory_wraps_exact_configured_adapter(monkeypatch) -> None:
         langgraph_model_provider="groq",
         langgraph_api_key="test",
     )
-    engine = factory.get_agent_engine(langgraph_settings, telemetry, client)
+    engine = factory.get_agent_engine(langgraph_settings, logger, client)
     assert isinstance(engine, AgentExecutionService)
     assert engine._adapter is sentinel
 

@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from ..core import get_engine, get_telemetry
+from ..core import get_engine, get_logger
 from ..schemas import MeridianRequest, MeridianResponse, ScoutRequest, ScoutResponse
 from ..services import AgentEngine
 from ..services.response_normalization import (
@@ -14,17 +14,17 @@ from ..telemetry import TelemetryLogger
 router = APIRouter(tags=["Trip Matcher"])
 
 EngineDependency = Annotated[AgentEngine, Depends(get_engine)]
-TelemetryDependency = Annotated[TelemetryLogger, Depends(get_telemetry)]
+LoggerDependency = Annotated[TelemetryLogger, Depends(get_logger)]
 
 
 @router.post("/scout", response_model=ScoutResponse)
 async def scout(
     payload: ScoutRequest,
     engine: EngineDependency,
-    telemetry: TelemetryDependency,
+    logger: LoggerDependency,
 ):
     request_data = payload.model_dump(mode="json", exclude_none=True)
-    telemetry.info(
+    logger.info(
         "Received Scout request",
         event="be.request.validated",
         source="http",
@@ -33,7 +33,7 @@ async def scout(
     )
     execution = await engine.scout(payload.trip_state.model_dump(), payload.message)
     response = _normalize_scout_response(execution)
-    telemetry.info(
+    logger.info(
         "Returning Scout response",
         event="be.response.normalized",
         source="http",
@@ -50,10 +50,10 @@ async def scout(
 async def meridian(
     payload: MeridianRequest,
     engine: EngineDependency,
-    telemetry: TelemetryDependency,
+    logger: LoggerDependency,
 ):
     request_data = payload.model_dump(mode="json", exclude_none=True)
-    telemetry.info(
+    logger.info(
         "Received Meridian request",
         event="be.request.validated",
         source="http",
@@ -62,7 +62,7 @@ async def meridian(
     )
     execution = await engine.meridian(payload.trip_state.model_dump(), payload.message)
     response = _normalize_meridian_response(execution)
-    telemetry.info(
+    logger.info(
         "Returning Meridian response",
         event="be.response.normalized",
         source="http",

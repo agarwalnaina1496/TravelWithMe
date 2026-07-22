@@ -27,7 +27,7 @@ def test_application_lifespan_owns_and_closes_shared_http_client(monkeypatch) ->
     monkeypatch.setattr(
         main,
         "get_agent_engine",
-        lambda loaded, telemetry, transport: engine,
+        lambda loaded, logger, transport: engine,
     )
     app = FastAPI()
     app.state.telemetry = Mock()
@@ -62,7 +62,7 @@ def test_langgraph_lifespan_does_not_construct_n8n_transport(monkeypatch) -> Non
     monkeypatch.setattr(
         main,
         "get_agent_engine",
-        lambda loaded, telemetry, transport: engine if transport is None else None,
+        lambda loaded, logger, transport: engine if transport is None else None,
     )
     app = FastAPI()
     app.state.telemetry = Mock()
