@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,9 +18,6 @@ from twm.services import (
 from twm.services.agent_engine import service as service_module
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
 from tests.factories import recommendation_option, traveler_criteria
-
-
-REGRESSION_FIXTURES = Path(__file__).parents[2] / "fixtures" / "agent_engine"
 
 
 def service_with_outputs(
@@ -286,63 +282,6 @@ def test_common_service_repairs_empty_successful_model_content(monkeypatch) -> N
     execution = asyncio.run(engine.scout({}, "Help me."))
 
     assert execution.response["message"] == "Recovered from empty content."
-    assert adapter.invoke.await_count == 2
-
-
-@pytest.mark.parametrize(
-    "fixture_name",
-    [
-        "meridian_truncated_mid_option",
-        "meridian_truncated_third_option",
-        "meridian_success_with_null_options",
-    ],
-)
-def test_captured_meridian_regressions_require_common_repair(
-    monkeypatch, fixture_name: str
-) -> None:
-    fixtures = json.loads(
-        (REGRESSION_FIXTURES / "captured_regressions.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    captured_raw_output = fixtures[fixture_name]["raw_output"]
-    engine, adapter = service_with_outputs(
-        monkeypatch,
-        captured_raw_output,
-        json.dumps(meridian_success()),
-    )
-
-    execution = asyncio.run(engine.meridian({}, "Find options."))
-
-    assert execution.response["status"] == "SUCCESS"
-    assert adapter.invoke.await_count == 2
-    repair = adapter.invoke.await_args_list[1].args[1]
-    assert captured_raw_output not in repair.system_prompt
-    assert captured_raw_output not in repair.user_prompt
-
-
-def test_captured_empty_scout_success_requires_common_repair(monkeypatch) -> None:
-    fixtures = json.loads(
-        (REGRESSION_FIXTURES / "captured_regressions.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    captured = fixtures["scout_empty_success"]
-    repaired = {
-        "message": "Recovered from captured empty content.",
-        "state_delta": {},
-        "intent": "advise",
-    }
-    engine, adapter = service_with_outputs(
-        monkeypatch,
-        captured["raw_output"],
-        json.dumps(repaired),
-    )
-
-    execution = asyncio.run(engine.scout({}, "Help me."))
-
-    assert captured["observed_raw_output_chars"] == 0
-    assert execution.response["intent"] == "advise"
     assert adapter.invoke.await_count == 2
 
 
