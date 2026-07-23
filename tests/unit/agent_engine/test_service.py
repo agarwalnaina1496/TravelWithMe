@@ -124,25 +124,25 @@ def test_common_service_logs_engine_input_response_and_attempt_metadata(
 
     calling, validated = sink.events
     assert calling["message"] == (
-        'Scout called via test-engine with message "private traveler message"'
+        'Scout agent called via test-engine with message "private traveler message"'
     )
     assert calling["fields"] == {
         "agent": "scout",
         "engine": "test-engine",
         "attempt": 1,
         "prompt_version": "test-version",
-        "component": "test-engine",
-        "operation": "scout.invoke",
     }
+    assert set(calling["payload"]) == {"user_prompt"}
     assert "private traveler message" in calling["payload"]["user_prompt"]
     assert validated["message"].startswith(
-        "Scout response validated. Response - "
+        "Scout agent response received from test-engine. Response - "
     )
     assert "Private generated guidance" in validated["message"]
     assert "Private generated guidance" in validated["response"]["message"]
     assert validated["fields"]["finish_reason"] == "stop"
     assert validated["fields"]["input_tokens"] == 120
     assert validated["fields"]["provider_attempts"] == 1
+    assert "raw_output_chars" not in validated["fields"]
 
 
 def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
@@ -163,10 +163,10 @@ def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
     assert '"circuit_id"' in invocation.system_prompt
     assert [event["event"] for event in sink.events] == [
         "be.agent.invocation.started",
-        "be.agent.output.validated",
+        "be.agent.response.received",
     ]
     assert sink.events[1]["message"].startswith(
-        "Meridian response validated. Response - "
+        "Meridian agent response received from test-engine. Response - "
     )
 
 
@@ -192,7 +192,7 @@ def test_common_service_logs_distinguishable_invocation_failures(
 
     calling, failed = sink.events
     assert calling["message"] == (
-        'Scout called via test-engine with message "Help me."'
+        'Scout agent called via test-engine with message "Help me."'
     )
     assert failed["message"] == (
         f"Scout invocation via test-engine failed. Detail - "
@@ -255,10 +255,10 @@ def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
         "be.agent.output.validation_failed",
         "be.agent.repair.started",
         "be.agent.invocation.started",
-        "be.agent.output.validated",
+        "be.agent.response.received",
     ]
     assert sink.events[-1]["message"].startswith(
-        "Scout response validated. Response - "
+        "Scout agent response received from test-engine. Response - "
     )
     assert sink.events[-1]["fields"]["attempt"] == 2
 

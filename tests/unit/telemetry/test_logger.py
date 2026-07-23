@@ -235,8 +235,8 @@ def test_metadata_mode_describes_payload_and_response_without_content() -> None:
     sink = InMemorySink()
 
     TelemetryLogger(settings(), sink).info(
-        "Scout response validated",
-        event="be.agent.output.validated",
+        "Scout agent response received from n8n",
+        event="be.agent.response.received",
         payload={"private": "input"},
         response={"private": "output"},
     )

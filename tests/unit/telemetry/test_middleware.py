@@ -34,6 +34,10 @@ def telemetry_app(sink, request_id_factory=lambda: "generated-request") -> FastA
             "turn_id": context.turn_id,
         }
 
+    @app.post("/meridian")
+    async def meridian() -> None:
+        raise RuntimeError("unexpected route failure")
+
     return app
 
 
@@ -105,9 +109,32 @@ def test_concurrent_requests_do_not_leak_context() -> None:
         assert second.json()["trip_id"] == "trip-b"
 
     asyncio.run(exercise())
-    assert {event["request_id"] for event in sink.events} == {"request-a", "request-b"}
-    assert all(event["message"] for event in sink.events)
+    assert sink.events == []
     assert get_correlation_context() is None
+
+
+def test_middleware_logs_only_unexpected_request_failures() -> None:
+    sink = InMemorySink()
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(
+            app=telemetry_app(sink), raise_app_exceptions=False
+        )
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/meridian",
+                headers={"X-TWM-Request-ID": "request-failure"},
+            )
+        assert response.status_code == 500
+
+    asyncio.run(exercise())
+    assert len(sink.events) == 1
+    event = sink.events[0]
+    assert event["event"] == "be.http.request.failed"
+    assert event["request_id"] == "request-failure"
+    assert event["fields"]["component"] == "fastapi"
 
 
 def test_broken_sink_does_not_change_api_response() -> None:

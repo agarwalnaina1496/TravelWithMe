@@ -139,9 +139,10 @@ class AgentExecutionService:
                 raise AgentOutputError(agent, final_failure.failures) from None
 
         self._logger.info(
-            f"{agent.capitalize()} response validated. Response - "
+            f"{agent.capitalize()} agent response received from "
+            f"{_display_engine_name(self._engine_name)}. Response - "
             f"{self._logger.format_json(response)}",
-            event="be.agent.output.validated",
+            event="be.agent.response.received",
             source="agent_engine",
             fields=invocation_result.metadata,
             response=response,
@@ -164,17 +165,13 @@ class AgentExecutionService:
             "prompt_version": prompt_version,
         }
         self._logger.info(
-            f"{agent.capitalize()} called via {self._engine_name} with message "
+            f"{agent.capitalize()} agent called via "
+            f"{_display_engine_name(self._engine_name)} with message "
             f"{_quoted_message(traveler_message)}",
             event="be.agent.invocation.started",
             source="agent_engine",
-            fields={
-                **common_fields,
-                "component": self._engine_name,
-                "operation": f"{agent}.invoke",
-            },
+            fields=common_fields,
             payload={
-                "system_prompt": invocation.system_prompt,
                 "user_prompt": invocation.user_prompt,
             },
         )
@@ -215,7 +212,6 @@ class AgentExecutionService:
             **common_fields,
             "status": "success",
             "duration_ms": duration_ms,
-            "raw_output_chars": len(result.raw_output),
         }
         return AgentInvocationResult(
             raw_output=result.raw_output,
@@ -248,6 +244,10 @@ class AgentExecutionService:
 
 def _quoted_message(message: str | None) -> str:
     return json.dumps(_bounded_single_line(message or "", 1_024), ensure_ascii=False)
+
+
+def _display_engine_name(engine_name: str) -> str:
+    return "LangGraph" if engine_name == "langgraph" else engine_name
 
 
 def _bounded_single_line(value: str, max_characters: int = 512) -> str:
