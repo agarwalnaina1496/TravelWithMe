@@ -65,6 +65,7 @@ class AgentAdapterError(RuntimeError):
         error_type: str | None = None,
         detail: str | None = None,
         upstream_status_code: int | None = None,
+        upstream_response: Any = None,
     ) -> None:
         super().__init__(message)
         self.component = component
@@ -72,6 +73,7 @@ class AgentAdapterError(RuntimeError):
         self.error_type = error_type or type(self).__name__
         self.detail = detail or message
         self.upstream_status_code = upstream_status_code
+        self.upstream_response = upstream_response
 
 
 class AgentAdapterTimeoutError(AgentAdapterError):

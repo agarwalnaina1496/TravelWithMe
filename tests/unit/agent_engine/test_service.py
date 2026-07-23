@@ -10,6 +10,7 @@ from twm.prompts import PromptRelease
 from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
 from twm.security import UNTRUSTED_DATA_PREAMBLE
 from twm.services import (
+    AgentAdapterError,
     AgentAdapterTimeoutError,
     AgentExecutionService,
     AgentInvocationResult,
@@ -24,6 +25,7 @@ def service_with_outputs(
     monkeypatch,
     *outputs: str | AgentInvocationResult,
     telemetry_sink: InMemorySink | None = None,
+    payload_mode: PayloadMode = PayloadMode.FULL,
 ):
     adapter = AsyncMock()
     adapter.invoke = AsyncMock(
@@ -41,7 +43,7 @@ def service_with_outputs(
     )
     sink = telemetry_sink or InMemorySink()
     logger = TelemetryLogger(
-        TelemetrySettings(True, "test", PayloadMode.FULL, 16_384), sink
+        TelemetrySettings(True, "test", payload_mode, 16_384), sink
     )
     return AgentExecutionService(adapter, logger, "test-engine"), adapter
 
@@ -207,6 +209,9 @@ def test_common_service_logs_distinguishable_invocation_failures(
     assert failed["fields"]["failure_stage"] == "invocation"
     assert failed["fields"]["error_detail"] == str(error)
     assert failed["fields"]["status"] == "failed"
+    assert "Response -" not in failed["message"]
+    assert "response" not in failed
+    assert "response_metadata" not in failed
 
 
 def test_common_service_bounds_primary_message_but_preserves_diagnostic_detail(
@@ -224,6 +229,80 @@ def test_common_service_bounds_primary_message_but_preserves_diagnostic_detail(
     assert "...[TRUNCATED]" in calling["message"]
     assert "...[TRUNCATED]" in failed["message"]
     assert failed["fields"]["error_detail"] == long_detail
+
+
+@pytest.mark.parametrize("agent", ["scout", "meridian"])
+def test_common_service_logs_safe_upstream_response_on_invocation_failure(
+    monkeypatch, agent
+) -> None:
+    sink = InMemorySink()
+    engine, _ = service_with_outputs(monkeypatch, telemetry_sink=sink)
+    engine._adapter.invoke.side_effect = AgentAdapterError(
+        f"{agent} n8n returned invalid JSON",
+        component="n8n",
+        failure_stage="response_decode",
+        error_type="JSONDecodeError",
+        detail="n8n returned a response that was not valid JSON",
+        upstream_response=(
+            'invalid api_key="private-key" response from '
+            "https://private.test/webhook"
+        ),
+    )
+
+    with pytest.raises(AgentAdapterError):
+        asyncio.run(getattr(engine, agent)({}, "Help me."))
+
+    failed = sink.events[1]
+    assert failed["message"].startswith(
+        f"{agent.capitalize()} invocation via n8n failed. Detail - "
+        "JSONDecodeError: n8n returned a response that was not valid JSON. "
+        "Response - "
+    )
+    assert "private-key" not in failed["message"]
+    assert "private.test" not in failed["message"]
+    assert "[REDACTED]" in failed["message"]
+    assert "[REDACTED_URL]" in failed["message"]
+    assert failed["response"] == (
+        'invalid api_key="[REDACTED]" response from [REDACTED_URL]'
+    )
+    assert failed["fields"]["failure_stage"] == "response_decode"
+
+
+@pytest.mark.parametrize(
+    ("payload_mode", "preview", "diagnostic_key"),
+    [
+        (PayloadMode.METADATA, '{"type":"str","size_bytes":14}', "response_metadata"),
+        (PayloadMode.OFF, "[CONTENT_DISABLED]", None),
+    ],
+)
+def test_common_service_failure_response_respects_payload_mode(
+    monkeypatch, payload_mode, preview, diagnostic_key
+) -> None:
+    sink = InMemorySink()
+    engine, _ = service_with_outputs(
+        monkeypatch,
+        telemetry_sink=sink,
+        payload_mode=payload_mode,
+    )
+    engine._adapter.invoke.side_effect = AgentAdapterError(
+        "scout n8n returned invalid JSON",
+        component="n8n",
+        failure_stage="response_decode",
+        error_type="JSONDecodeError",
+        detail="n8n returned a response that was not valid JSON",
+        upstream_response="invalid-json",
+    )
+
+    with pytest.raises(AgentAdapterError):
+        asyncio.run(engine.scout({}, "Help me."))
+
+    failed = sink.events[1]
+    assert failed["message"].endswith(f"Response - {preview}")
+    assert "response" not in failed
+    if diagnostic_key:
+        assert failed[diagnostic_key] == {"type": "str", "size_bytes": 14}
+    else:
+        assert "response_metadata" not in failed
 
 
 def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
@@ -265,9 +344,12 @@ def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
     )
     assert sink.events[-1]["fields"]["attempt"] == 2
     assert sink.events[1]["fields"]["raw_output_chars"] == len("not-json")
+    assert sink.events[1]["message"].endswith('Response - "not-json"')
+    assert sink.events[1]["response"] == "not-json"
 
 
 def test_common_service_repairs_empty_successful_model_content(monkeypatch) -> None:
+    sink = InMemorySink()
     repaired = {
         "message": "Recovered from empty content.",
         "state_delta": {},
@@ -277,15 +359,19 @@ def test_common_service_repairs_empty_successful_model_content(monkeypatch) -> N
         monkeypatch,
         "",
         json.dumps(repaired),
+        telemetry_sink=sink,
     )
 
     execution = asyncio.run(engine.scout({}, "Help me."))
 
     assert execution.response["message"] == "Recovered from empty content."
     assert adapter.invoke.await_count == 2
+    assert sink.events[1]["message"].endswith('Response - ""')
+    assert sink.events[1]["response"] == ""
 
 
 def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> None:
+    sink = InMemorySink()
     invalid = {
         "status": "HARD_FAIL",
         "message": "Invalid because conversation context is missing.",
@@ -296,6 +382,7 @@ def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> N
         monkeypatch,
         json.dumps(invalid),
         json.dumps(invalid),
+        telemetry_sink=sink,
     )
 
     with pytest.raises(AgentOutputError) as captured:
@@ -304,6 +391,17 @@ def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> N
     assert adapter.invoke.await_count == 2
     assert captured.value.agent == "meridian"
     assert captured.value.failures
+    validation_failures = [
+        event
+        for event in sink.events
+        if event["event"] == "be.agent.output.validation_failed"
+    ]
+    assert len(validation_failures) == 2
+    assert all(
+        "HARD_FAIL" in event["message"]
+        and event["response"] == json.dumps(invalid)
+        for event in validation_failures
+    )
 
 
 def test_common_service_redacts_model_controlled_validation_locations(
