@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from .context import get_correlation_context
-from .sanitization import payload_metadata, sanitize
+from .sanitization import format_log_json, payload_metadata, sanitize
 from .settings import PayloadMode, TelemetrySettings
 from .sinks import TelemetrySink
 
@@ -61,6 +61,15 @@ class TelemetryLogger:
 
     def critical(self, message: str, **kwargs: Any) -> None:
         self._log(message, level="CRITICAL", **kwargs)
+
+    def format_json(self, value: Any) -> str:
+        """Format diagnostic JSON for a message under the payload policy."""
+
+        if self.settings.payload_mode is PayloadMode.OFF:
+            return "[CONTENT_DISABLED]"
+        if self.settings.payload_mode is PayloadMode.METADATA:
+            value = payload_metadata(value)
+        return format_log_json(value, self.settings.max_field_size)
 
     def _log(
         self,

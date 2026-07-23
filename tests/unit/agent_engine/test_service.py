@@ -122,7 +122,7 @@ def test_common_service_logs_engine_input_response_and_attempt_metadata(
 
     asyncio.run(engine.scout({}, "private traveler message"))
 
-    calling, received, validated = sink.events
+    calling, validated = sink.events
     assert calling["message"] == (
         'Scout called via test-engine with message "private traveler message"'
     )
@@ -135,12 +135,14 @@ def test_common_service_logs_engine_input_response_and_attempt_metadata(
         "operation": "scout.invoke",
     }
     assert "private traveler message" in calling["payload"]["user_prompt"]
-    assert received["message"] == "Scout response received"
-    assert "Private generated guidance" in received["response"]
-    assert received["fields"]["finish_reason"] == "stop"
-    assert received["fields"]["input_tokens"] == 120
-    assert received["fields"]["provider_attempts"] == 1
-    assert validated["message"] == "Scout response validated"
+    assert validated["message"].startswith(
+        "Scout response validated. Response - "
+    )
+    assert "Private generated guidance" in validated["message"]
+    assert "Private generated guidance" in validated["response"]["message"]
+    assert validated["fields"]["finish_reason"] == "stop"
+    assert validated["fields"]["input_tokens"] == 120
+    assert validated["fields"]["provider_attempts"] == 1
 
 
 def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
@@ -159,11 +161,13 @@ def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
     _, invocation = adapter.invoke.await_args.args
     assert '"destination_id"' in invocation.system_prompt
     assert '"circuit_id"' in invocation.system_prompt
-    assert [event["message"] for event in sink.events] == [
-        'Meridian called via test-engine with message "Find options."',
-        "Meridian response received",
-        "Meridian response validated",
+    assert [event["event"] for event in sink.events] == [
+        "be.agent.invocation.started",
+        "be.agent.output.validated",
     ]
+    assert sink.events[1]["message"].startswith(
+        "Meridian response validated. Response - "
+    )
 
 
 @pytest.mark.parametrize(
@@ -246,17 +250,17 @@ def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
     assert repair_invocation.user_prompt == original_invocation.user_prompt
     assert "not-json" not in repair_invocation.system_prompt
     assert '"type":"json_invalid"' in repair_invocation.system_prompt
-    assert [event["message"] for event in sink.events] == [
-        'Scout called via test-engine with message "Help me."',
-        "Scout response received",
-        "FastAPI rejected Scout response from test-engine. Detail - "
-        "AgentOutputValidationError: 1 contract violation(s).",
-        "Starting Scout repair attempt",
-        'Scout called via test-engine with message "Help me."',
-        "Scout response received",
-        "Scout response validated",
+    assert [event["event"] for event in sink.events] == [
+        "be.agent.invocation.started",
+        "be.agent.output.validation_failed",
+        "be.agent.repair.started",
+        "be.agent.invocation.started",
+        "be.agent.output.validated",
     ]
-    assert sink.events[4]["fields"]["attempt"] == 2
+    assert sink.events[-1]["message"].startswith(
+        "Scout response validated. Response - "
+    )
+    assert sink.events[-1]["fields"]["attempt"] == 2
 
 
 def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> None:
