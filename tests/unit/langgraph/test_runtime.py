@@ -56,12 +56,18 @@ def test_settings_validate_only_selected_engine(
     monkeypatch.setattr(
         settings_module.property_loader, "get_environment", lambda: "test"
     )
+    monkeypatch.setattr(
+        settings_module.property_loader,
+        "get_int_property_with_default",
+        lambda key, default: 185,
+    )
 
     settings = AgentEngineSettings.load()
 
     assert settings.engine == "n8n"
     assert settings.langgraph_api_key is None
     assert settings.langgraph_model_provider is None
+    assert settings.n8n_timeout_seconds == 185
 
 
 def test_langgraph_settings_are_provider_neutral(monkeypatch) -> None:

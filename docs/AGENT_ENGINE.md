@@ -20,7 +20,7 @@ validate request
 
 If the first completion is invalid, FastAPI makes exactly one compact regeneration invocation. The retry reuses the original trusted request plus sanitized failure categories and never copies the failed completion into the prompt. If the regenerated completion is still invalid, FastAPI returns a CORS-enabled `502`. Adapter timeouts return a CORS-enabled `504`. Parsing failures are infrastructure failures; they must never be represented as a successful Scout response or as Meridian `HARD_FAIL`.
 
-The adapters return raw model text plus content-free provider telemetry when the selected engine exposes it. They do not parse or normalize model content:
+FastAPI supplies the selected Pydantic output schema as structured invocation data. Each adapter uses its runtime's provider-neutral structured-output capability to constrain generation, then serializes the generated object for the common FastAPI JSON/Pydantic validation path. Runtime generation steering does not replace FastAPI's canonical business validation.
 
 - n8n: `Webhook -> Agent (+ configured model) -> Respond to Webhook`
 - LangGraph: `START -> invoke_<agent> -> END`
@@ -34,11 +34,11 @@ twm/services/
     service.py     shared preparation, parsing, validation, and repair
     settings.py    immutable selected-engine configuration
     factory.py     adapter selection and common-service assembly
-    n8n.py         raw n8n webhook transport
-    langgraph.py   raw LangGraph graph adapter
+    n8n.py         schema-aware n8n webhook transport
+    langgraph.py   schema-aware LangGraph graph adapter
   langgraph/
     runtime.py     generic chat-model initialization and graph compilation
-    state.py       messages-in/raw-output graph state
+    state.py       messages-and-schema-in/raw-output graph state
     nodes.py       reusable model invocation node
     scout/graph.py
     meridian/graph.py
@@ -59,16 +59,21 @@ FastAPI sends this private payload to the selected agent webhook:
 
 ```json
 {
-  "system_prompt": "<Backend prompt plus output schema>",
-  "user_prompt": "<framed traveler request>"
+  "system_prompt": "<Backend prompt>",
+  "user_prompt": "<framed traveler request>",
+  "output_schema": {"type":"object","properties":{}}
 }
 ```
 
 The workflow returns exactly:
 
 ```json
-{"raw_output":"<unparsed model completion>"}
+{"raw_output":"<serialized schema-constrained object>"}
 ```
+
+The Agent's supported `Require Specific Output Format` connection supplies the Backend schema as a formatting tool. It is an adapter-specific generation mechanism, not the canonical application parser. The workflow has three main nodes; the model and schema parser remain Agent subnodes.
+
+The workflow execution limit is 180 seconds and FastAPI's n8n read deadline is 185 seconds. This ordering lets n8n finish or fail before the caller deadline and prevents the previously observed 116-second successful execution from becoming a late orphan after a 60-second FastAPI timeout.
 
 Both live workflows must be active. The versioned `n8n/*.json` files are backups; editing them does not update the live workflows. See [Self-hosted n8n](SELF_HOSTED_N8N.md).
 
@@ -83,6 +88,8 @@ LANGGRAPH_API_KEY=<secret>
 LANGGRAPH_TEMPERATURE=0.7
 LANGGRAPH_TIMEOUT_SECONDS=60
 ```
+
+The single invocation node applies the supplied schema through the generic chat-model `with_structured_output` interface. There is no Groq-specific application gateway.
 
 Keep `LANGGRAPH_API_KEY` only in the deployment platform or local secret environment. Do not add it to property files, logs, prompts, graph state, tests, or responses.
 

@@ -32,6 +32,7 @@ class N8NAgentAdapter:
                 json={
                     "system_prompt": invocation.system_prompt,
                     "user_prompt": invocation.user_prompt,
+                    "output_schema": invocation.output_schema,
                 },
             )
             response.raise_for_status()
@@ -72,12 +73,12 @@ class N8NAgentAdapter:
             ) from error
 
         raw_output = payload.get("raw_output") if isinstance(payload, dict) else None
-        if not isinstance(raw_output, str) or not raw_output.strip():
+        if not isinstance(raw_output, str):
             raise AgentAdapterError(
                 f"{agent} n8n response did not contain raw_output",
                 component="n8n",
                 failure_stage="response_contract",
                 error_type="N8NResponseContractError",
-                detail="n8n response did not contain a non-empty raw_output",
+                detail="n8n response did not contain a string raw_output",
             )
         return AgentInvocationResult(raw_output=raw_output)

@@ -80,9 +80,9 @@ def test_common_service_prepares_and_validates_scout(monkeypatch) -> None:
     assert execution.prompt_release.version == "test-version"
     agent, invocation = adapter.invoke.await_args.args
     assert agent == "scout"
-    assert invocation.system_prompt.startswith("scout prompt")
-    assert "Return only one JSON object" in invocation.system_prompt
-    assert '"intent"' in invocation.system_prompt
+    assert invocation.system_prompt == "scout prompt"
+    assert invocation.output_schema == ScoutAgentOutput.model_json_schema()
+    assert "intent" in invocation.output_schema["properties"]
     assert invocation.user_prompt.startswith(UNTRUSTED_DATA_PREAMBLE)
     assert json.loads(
         invocation.user_prompt.removeprefix(UNTRUSTED_DATA_PREAMBLE)
@@ -142,7 +142,9 @@ def test_common_service_logs_engine_input_response_and_attempt_metadata(
     assert validated["fields"]["finish_reason"] == "stop"
     assert validated["fields"]["input_tokens"] == 120
     assert validated["fields"]["provider_attempts"] == 1
-    assert "raw_output_chars" not in validated["fields"]
+    assert validated["fields"]["raw_output_chars"] == len(
+        json.dumps(output)
+    )
 
 
 def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
@@ -159,8 +161,8 @@ def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
     ).model_dump(mode="json", exclude_none=True)
     assert adapter.invoke.await_count == 1
     _, invocation = adapter.invoke.await_args.args
-    assert '"destination_id"' in invocation.system_prompt
-    assert '"circuit_id"' in invocation.system_prompt
+    assert invocation.output_schema == MeridianAgentOutput.model_json_schema()
+    assert "options" in invocation.output_schema["properties"]
     assert [event["event"] for event in sink.events] == [
         "be.agent.invocation.started",
         "be.agent.response.received",
@@ -248,6 +250,7 @@ def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
     assert "previous completion failed" in repair_invocation.system_prompt
     original_invocation = adapter.invoke.await_args_list[0].args[1]
     assert repair_invocation.user_prompt == original_invocation.user_prompt
+    assert repair_invocation.output_schema == original_invocation.output_schema
     assert "not-json" not in repair_invocation.system_prompt
     assert '"type":"json_invalid"' in repair_invocation.system_prompt
     assert [event["event"] for event in sink.events] == [
@@ -261,6 +264,25 @@ def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
         "Scout agent response received from test-engine. Response - "
     )
     assert sink.events[-1]["fields"]["attempt"] == 2
+    assert sink.events[1]["fields"]["raw_output_chars"] == len("not-json")
+
+
+def test_common_service_repairs_empty_successful_model_content(monkeypatch) -> None:
+    repaired = {
+        "message": "Recovered from empty content.",
+        "state_delta": {},
+        "intent": "advise",
+    }
+    engine, adapter = service_with_outputs(
+        monkeypatch,
+        "",
+        json.dumps(repaired),
+    )
+
+    execution = asyncio.run(engine.scout({}, "Help me."))
+
+    assert execution.response["message"] == "Recovered from empty content."
+    assert adapter.invoke.await_count == 2
 
 
 def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> None:
