@@ -135,6 +135,10 @@ def _flatten_attributes(
 ) -> dict[str, Any]:
     flattened: dict[str, Any] = {}
     for key, item in value.items():
+        if not prefix and key == "message":
+            # OTLP body owns the human-readable message. Duplicating it as an
+            # attribute makes log explorers prefer the raw attribute envelope.
+            continue
         path = f"{prefix}.{key}" if prefix else str(key)
         _flatten_attribute_value(flattened, path, item)
     return flattened

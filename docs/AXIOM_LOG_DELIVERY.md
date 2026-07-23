@@ -61,10 +61,33 @@ Each OTLP record carries:
 - the concise human-readable `message` as the primary log body shown in Axiom;
 - standard OTLP severity derived from `level`;
 - the application timestamp as the log timestamp;
-- the complete sanitized envelope as flattened query attributes such as `request_id`, `trip_id`, `turn_id`, `event`, `fields.agent`, `fields.attempt`, `payload.*`, and `response.*`;
+- the sanitized structured envelope, except for the duplicate `message`, as flattened query attributes such as `request_id`, `trip_id`, `turn_id`, `event`, `fields.agent`, `fields.attempt`, `payload.*`, and `response.*`;
 - `service.name=travelwithme-backend` as the OpenTelemetry resource.
 
 Stdout remains one-line JSON and contains both `message` and the structured fields. Structured data must be queryable in Axiom; an escaped JSON-only message does not satisfy verification.
+
+## Configure the readable Stream view
+
+This is a one-time Axiom explorer setup, not a query investigators must rewrite:
+
+1. Open **Stream** and select `twm-production`.
+2. Open the Stream view settings.
+3. Turn off **Show the raw event details** so the native OTLP log body is the primary row text.
+4. Turn on **Highlight severity** and **Wrap lines**.
+5. Keep structured attributes available in the event details panel for filtering and expansion.
+
+The supported production explorer must show messages such as `Scout called via n8n with message "..."` and `Scout invocation via n8n failed. Detail - ConnectError: ...` without adding an APL `project` clause or selecting `attributes.message`. The OTLP body is the single source of the primary message; `attributes.message` is intentionally not emitted.
+
+Failure rows also expose a stable taxonomy through structured fields:
+
+| Field | Purpose | Example |
+| --- | --- | --- |
+| `component` | Boundary that failed | `fastapi`, `n8n`, `langgraph` |
+| `operation` | Operation being performed | `scout.invoke` |
+| `failure_stage` | Stage within the boundary | `upstream_connection`, `response_contract` |
+| `error_type` | Actionable normalized or underlying type | `ConnectError` |
+| `error_detail` | Sanitized and bounded diagnostic detail | `all connection attempts failed` |
+| `upstream_status_code` | n8n HTTP status when available | `503` |
 
 ## Production smoke test
 
@@ -78,9 +101,9 @@ curl.exe -X POST "https://travelwithme-zf9f.onrender.com/scout" `
   --data "{}"
 ```
 
-A `422` response is expected and proves middleware coverage without invoking an agent. In Axiom Stream, confirm the readable HTTP receipt/response messages arrive with the same request ID.
+A `422` response is expected and proves middleware and FastAPI validation coverage without invoking an agent. In Axiom Stream, confirm the primary row says `FastAPI rejected Scout request. Detail - RequestValidationError: ...` and the event details include the same request ID, `component=fastapi`, and `failure_stage=request_validation`.
 
-Then submit one valid Scout turn and one valid Meridian turn from the production UI with a unique trip ID. Verify the ordered messages include `Received ... request`, `Calling ...`, `... response received`, `... response validated`, and `Returning ... response`. Inspect the records and confirm severity, resource service name, readable body, correlation fields, engine, attempt, sanitized payload, and sanitized response are independently queryable.
+Then submit one valid Scout turn and one valid Meridian turn from the production UI with a unique trip ID. Verify the ordered messages include `Received ... request`, `... called via <engine> with message ...`, `... response received`, `... response validated`, and `Returning ... response`. Trigger one safe failure and confirm its primary row identifies FastAPI, n8n, or LangGraph plus the operation, error type, and sanitized detail. Inspect the records and confirm severity, resource service name, readable body, correlation fields, engine, attempt, sanitized payload, and sanitized response are independently queryable.
 
 ## APL query templates
 

@@ -26,6 +26,7 @@ _SENSITIVE_TEXT_VALUE = re.compile(
     r"db[_-]?url|connection[_-]?string|webhook[_-]?url)[\"']?\s*[:=]\s*)"
     r"(Bearer\s+[^\s,;}]+|\"[^\"]*\"|'[^']*'|[^\s,;}]+)"
 )
+_URL_VALUE = re.compile(r"(?i)https?://[^\s,;}]+")
 
 
 def sanitize(value: Any, max_field_size: int, key: str | None = None) -> Any:
@@ -64,6 +65,12 @@ def payload_metadata(payload: Any) -> dict[str, Any]:
     except Exception:
         metadata["size_bytes"] = None
     return metadata
+
+
+def redact_error_detail(value: str) -> str:
+    """Remove credentials and endpoint URLs from exception-derived text."""
+
+    return _URL_VALUE.sub("[REDACTED_URL]", _redact_sensitive_text(value))
 
 
 def _truncate(value: str, max_field_size: int) -> str:

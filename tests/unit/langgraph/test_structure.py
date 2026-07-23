@@ -115,10 +115,18 @@ def test_langgraph_adapter_maps_provider_failures(error, expected) -> None:
         runtime=LangGraphRuntime(model=FakeChatModel([error]))
     )
 
-    with pytest.raises(expected):
+    with pytest.raises(expected) as captured:
         asyncio.run(
             adapter.invoke("scout", AgentInvocation("system", "user"))
         )
+
+    mapped = captured.value
+    assert mapped.component == "langgraph"
+    assert mapped.detail == str(error)
+    assert mapped.error_type == type(error).__name__
+    assert mapped.failure_stage == (
+        "invocation" if expected is AgentAdapterTimeoutError else "provider_runtime"
+    )
 
 
 @pytest.mark.parametrize("result", [None, [], "raw output"])
@@ -129,10 +137,15 @@ def test_langgraph_adapter_rejects_non_mapping_graph_result(result) -> None:
     adapter._scout_graph = AsyncMock()
     adapter._scout_graph.ainvoke.return_value = result
 
-    with pytest.raises(AgentAdapterError):
+    with pytest.raises(AgentAdapterError) as captured:
         asyncio.run(
             adapter.invoke("scout", AgentInvocation("system", "user"))
         )
+
+    error = captured.value
+    assert error.component == "langgraph"
+    assert error.failure_stage == "response_contract"
+    assert error.error_type == "LangGraphResponseContractError"
 
 
 def test_langgraph_adapter_construction_uses_generic_runtime_settings(

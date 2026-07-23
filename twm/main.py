@@ -3,6 +3,8 @@ from contextlib import AsyncExitStack, asynccontextmanager
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -86,16 +88,6 @@ def initialize_app() -> FastAPI:
 
     @app.exception_handler(AgentOutputError)
     async def handle_invalid_agent_output(request: Request, error: AgentOutputError):
-        logger = request.app.state.telemetry
-        logger.error(
-            f"{error.agent.capitalize()} request failed after repair",
-            event="be.http.request.failed",
-            source="http",
-            agent=error.agent,
-            status_code=502,
-            error_type=type(error).__name__,
-            validation_failures=error.failures,
-        )
         return JSONResponse(
             status_code=502,
             content={"detail": "The travel assistant returned an invalid response."},
@@ -103,14 +95,6 @@ def initialize_app() -> FastAPI:
 
     @app.exception_handler(AgentAdapterTimeoutError)
     async def handle_agent_timeout(request: Request, error: AgentAdapterTimeoutError):
-        logger = request.app.state.telemetry
-        logger.error(
-            "Agent request timed out",
-            event="be.http.request.failed",
-            source="http",
-            status_code=504,
-            error_type=type(error).__name__,
-        )
         return JSONResponse(
             status_code=504,
             content={"detail": "The travel assistant timed out."},
@@ -118,14 +102,6 @@ def initialize_app() -> FastAPI:
 
     @app.exception_handler(AgentAdapterError)
     async def handle_agent_adapter_error(request: Request, error: AgentAdapterError):
-        logger = request.app.state.telemetry
-        logger.error(
-            "Agent request failed",
-            event="be.http.request.failed",
-            source="http",
-            status_code=502,
-            error_type=type(error).__name__,
-        )
         return JSONResponse(
             status_code=502,
             content={"detail": "The travel assistant is temporarily unavailable."},
@@ -140,16 +116,44 @@ def initialize_app() -> FastAPI:
         ]
         logger = request.app.state.telemetry
         logger.error(
-            "Agent response normalization failed",
+            "FastAPI failed to normalize agent response. Detail - "
+            f"ResponseValidationError: {len(failure_types)} contract violation(s).",
             event="be.response.normalization_failed",
             source="http",
+            component="fastapi",
+            operation="agent.response.normalize",
+            failure_stage="response_normalization",
             status_code=502,
+            error_type="ResponseValidationError",
             validation_failure_types=failure_types,
         )
         return JSONResponse(
             status_code=502,
             content={"detail": "The travel assistant returned an invalid response."},
         )
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation(
+        request: Request, error: RequestValidationError
+    ):
+        path = request.scope.get("path", "")
+        agent = path.removeprefix("/") if path in {"/scout", "/meridian"} else "agent"
+        failure_types = [
+            item["type"] for item in error.errors()
+        ]
+        request.app.state.telemetry.warning(
+            f"FastAPI rejected {agent.capitalize()} request. Detail - "
+            f"RequestValidationError: {len(failure_types)} validation failure(s).",
+            event="be.http.request.validation_failed",
+            source="http",
+            component="fastapi",
+            operation=f"{agent}.request.validate",
+            failure_stage="request_validation",
+            error_type="RequestValidationError",
+            status_code=422,
+            validation_failure_types=failure_types,
+        )
+        return await request_validation_exception_handler(request, error)
 
     app.include_router(health_api)
     app.include_router(trip_matcher_api)

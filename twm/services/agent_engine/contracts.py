@@ -55,6 +55,23 @@ class AgentEngine(Protocol):
 class AgentAdapterError(RuntimeError):
     """The selected engine failed before yielding a usable completion."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        component: str = "agent_engine",
+        failure_stage: str = "invocation",
+        error_type: str | None = None,
+        detail: str | None = None,
+        upstream_status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.component = component
+        self.failure_stage = failure_stage
+        self.error_type = error_type or type(self).__name__
+        self.detail = detail or message
+        self.upstream_status_code = upstream_status_code
+
 
 class AgentAdapterTimeoutError(AgentAdapterError):
     """The selected engine exceeded its configured invocation timeout."""

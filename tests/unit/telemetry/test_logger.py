@@ -15,6 +15,7 @@ from twm.telemetry import (
     reset_correlation_context,
     set_correlation_context,
 )
+from twm.telemetry.sanitization import redact_error_detail
 from twm.telemetry.sanitization import REDACTED
 
 
@@ -111,6 +112,29 @@ def test_serialized_diagnostic_strings_redact_credential_values() -> None:
     assert '"input_tokens":120' in event["payload"]["user_prompt"]
     assert "private-token" not in event["response"]
     assert REDACTED in event["payload"]["user_prompt"]
+
+
+def test_human_readable_error_message_redacts_private_urls() -> None:
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        settings(payload_mode=PayloadMode.FULL, max_field_size=1024), sink
+    )
+
+    logger.error(
+        "Scout invocation via n8n failed. Detail - ConnectError: "
+        + redact_error_detail(
+            "failed to reach https://private.test/webhook/scout"
+        ),
+        event="be.agent.invocation.failed",
+        error_detail=redact_error_detail(
+            "failed to reach https://private.test/webhook/scout"
+        ),
+    )
+
+    event = sink.events[0]
+    assert "private.test" not in event["message"]
+    assert "private.test" not in event["fields"]["error_detail"]
+    assert "[REDACTED_URL]" in event["message"]
 
 
 @pytest.mark.parametrize(

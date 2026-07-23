@@ -11,8 +11,10 @@ from ...prompts import PromptRelease, load_prompt_release
 from ...schemas import MeridianAgentOutput, ScoutAgentOutput
 from ...security import frame_untrusted_payload
 from ...telemetry import TelemetryLogger
+from ...telemetry.sanitization import redact_error_detail
 from .contracts import (
     AgentAdapter,
+    AgentAdapterError,
     AgentExecution,
     AgentInvocation,
     AgentName,
@@ -84,7 +86,11 @@ class AgentExecutionService:
             release, definition.output_model, trip_state, message
         )
         raw_output = await self._invoke(
-            agent, invocation, attempt=1, prompt_version=release.version
+            agent,
+            invocation,
+            attempt=1,
+            prompt_version=release.version,
+            traveler_message=message,
         )
         validated_attempt = 1
 
@@ -106,6 +112,7 @@ class AgentExecutionService:
                 _build_regeneration_invocation(invocation, first_failure.failures),
                 attempt=2,
                 prompt_version=release.version,
+                traveler_message=message,
             )
             validated_attempt = 2
             try:
@@ -113,11 +120,18 @@ class AgentExecutionService:
             except _OutputValidationFailure as final_failure:
                 self._log_validation_failure(agent, 2, final_failure.failures)
                 self._logger.error(
-                    f"{agent.capitalize()} response remained invalid",
+                    f"FastAPI could not validate {agent.capitalize()} response "
+                    f"from {self._engine_name} after repair. Detail - "
+                    f"AgentOutputValidationError: "
+                    f"{len(final_failure.failures)} contract violation(s).",
                     event="be.agent.output.invalid",
                     source="agent_engine",
                     agent=agent,
                     engine=self._engine_name,
+                    component="fastapi",
+                    operation=f"{agent}.response.validate",
+                    failure_stage="agent_output_validation",
+                    error_type="AgentOutputValidationError",
                     attempt=2,
                     status="failed",
                     validation_failures=final_failure.failures,
@@ -142,6 +156,7 @@ class AgentExecutionService:
         invocation: AgentInvocation,
         attempt: int,
         prompt_version: str,
+        traveler_message: str | None,
     ) -> str:
         common_fields = {
             "agent": agent,
@@ -150,10 +165,15 @@ class AgentExecutionService:
             "prompt_version": prompt_version,
         }
         self._logger.info(
-            f"Calling {agent.capitalize()}",
+            f"{agent.capitalize()} called via {self._engine_name} with message "
+            f"{_quoted_message(traveler_message)}",
             event="be.agent.invocation.started",
             source="agent_engine",
-            fields=common_fields,
+            fields={
+                **common_fields,
+                "component": self._engine_name,
+                "operation": f"{agent}.invoke",
+            },
             payload={
                 "system_prompt": invocation.system_prompt,
                 "user_prompt": invocation.user_prompt,
@@ -164,16 +184,30 @@ class AgentExecutionService:
             result = await self._adapter.invoke(agent, invocation)
         except Exception as error:
             duration_ms = round((time.perf_counter() - started_at) * 1000)
+            component, failure_stage, error_type, detail = _error_diagnostics(
+                error, self._engine_name
+            )
+            display_detail = _bounded_single_line(detail)
+            failure_fields = {
+                **common_fields,
+                "component": component,
+                "operation": f"{agent}.invoke",
+                "failure_stage": failure_stage,
+                "error_type": error_type,
+                "adapter_error_type": type(error).__name__,
+                "error_detail": detail,
+                "status": "failed",
+                "duration_ms": duration_ms,
+            }
+            upstream_status_code = getattr(error, "upstream_status_code", None)
+            if upstream_status_code is not None:
+                failure_fields["upstream_status_code"] = upstream_status_code
             self._logger.error(
-                f"{agent.capitalize()} invocation failed",
+                f"{agent.capitalize()} invocation via {component} failed. "
+                f"Detail - {error_type}: {display_detail}",
                 event="be.agent.invocation.failed",
                 source="agent_engine",
-                fields={
-                    **common_fields,
-                    "status": "failed",
-                    "duration_ms": duration_ms,
-                    "error_type": type(error).__name__,
-                },
+                fields=failure_fields,
             )
             raise
         duration_ms = round((time.perf_counter() - started_at) * 1000)
@@ -200,15 +234,51 @@ class AgentExecutionService:
         failures: list[dict[str, Any]],
     ) -> None:
         self._logger.warning(
-            f"{agent.capitalize()} response failed validation",
+            f"FastAPI rejected {agent.capitalize()} response from "
+            f"{self._engine_name}. Detail - AgentOutputValidationError: "
+            f"{len(failures)} contract violation(s).",
             event="be.agent.output.validation_failed",
             source="agent_engine",
             agent=agent,
             engine=self._engine_name,
+            component="fastapi",
+            operation=f"{agent}.response.validate",
+            failure_stage="agent_output_validation",
+            error_type="AgentOutputValidationError",
             attempt=attempt,
             status="failed",
             validation_failures=failures,
         )
+
+
+def _quoted_message(message: str | None) -> str:
+    return json.dumps(_bounded_single_line(message or "", 1_024), ensure_ascii=False)
+
+
+def _bounded_single_line(value: str, max_characters: int = 512) -> str:
+    compact = " ".join(value.split())
+    if len(compact) <= max_characters:
+        return compact
+    return f"{compact[: max_characters - 14]}...[TRUNCATED]"
+
+
+def _error_diagnostics(
+    error: Exception, engine_name: str
+) -> tuple[str, str, str, str]:
+    if isinstance(error, AgentAdapterError):
+        component = (
+            engine_name if error.component == "agent_engine" else error.component
+        )
+        return (
+            component,
+            error.failure_stage,
+            error.error_type,
+            redact_error_detail(error.detail),
+        )
+    detail = redact_error_detail(
+        str(error).strip() or "unexpected engine failure"
+    )
+    return engine_name, "invocation", type(error).__name__, detail
 
 
 def _build_invocation(
