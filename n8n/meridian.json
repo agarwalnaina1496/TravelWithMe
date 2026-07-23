@@ -21,7 +21,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { raw_output: $json.output } }}",
+        "responseBody": "={{ { raw_output: JSON.stringify($json.output) } }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
@@ -37,6 +37,7 @@
       "parameters": {
         "promptType": "define",
         "text": "={{ $('Webhook').item.json.body.user_prompt }}",
+        "hasOutputParser": true,
         "options": {
           "systemMessage": "={{ $('Webhook').item.json.body.system_prompt }}"
         }
@@ -49,6 +50,20 @@
       ],
       "id": "d8d4a246-e995-4031-ab74-4d394f3bd976",
       "name": "Meridian"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "={{ JSON.stringify($('Webhook').item.json.body.output_schema) }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        420,
+        220
+      ],
+      "id": "f44d9102-4dd3-4f89-bd6f-59ebc12369c7",
+      "name": "Meridian output schema"
     },
     {
       "parameters": {
@@ -105,11 +120,23 @@
           }
         ]
       ]
+    },
+    "Meridian output schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Meridian",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "executionTimeout": 180
   },
   "versionId": "dfca042a-a37f-4f9a-a1c3-2d93e8292d80",
   "meta": {

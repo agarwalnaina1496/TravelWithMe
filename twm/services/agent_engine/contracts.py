@@ -15,11 +15,12 @@ class AgentInvocation:
 
     system_prompt: str
     user_prompt: str
+    output_schema: dict[str, Any]
 
 
 @dataclass(frozen=True)
 class AgentInvocationResult:
-    """Raw completion plus provider telemetry exposed by the selected engine."""
+    """Serialized generated output plus telemetry exposed by the selected engine."""
 
     raw_output: str
     metadata: dict[str, str | int | float] = field(default_factory=dict)
@@ -32,7 +33,7 @@ class AgentExecution:
 
 
 class AgentAdapter(Protocol):
-    """Invoke one engine and return its unparsed model completion."""
+    """Invoke one engine and return generated output for common validation."""
 
     async def invoke(
         self, agent: AgentName, invocation: AgentInvocation

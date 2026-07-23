@@ -21,8 +21,17 @@ def test_application_lifespan_owns_and_closes_shared_http_client(monkeypatch) ->
 
     client = FakeAsyncClient()
     engine = Mock()
-    settings = AgentEngineSettings(engine="n8n", environment="test")
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda timeout: client)
+    settings = AgentEngineSettings(
+        engine="n8n", environment="test", n8n_timeout_seconds=185
+    )
+    captured_timeout = None
+
+    def build_client(timeout):
+        nonlocal captured_timeout
+        captured_timeout = timeout
+        return client
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", build_client)
     monkeypatch.setattr(main.AgentEngineSettings, "load", lambda: settings)
     monkeypatch.setattr(
         main,
@@ -40,6 +49,7 @@ def test_application_lifespan_owns_and_closes_shared_http_client(monkeypatch) ->
     asyncio.run(exercise_lifespan())
 
     assert client.closed is True
+    assert captured_timeout == 185.0
     app.state.telemetry.shutdown.assert_called_once_with()
 
 

@@ -16,7 +16,9 @@ Each agent workflow has three logical nodes:
 Webhook -> Agent (+ model connection) -> Respond to Webhook
 ```
 
-There is no n8n structured-output parser node. The response is `{"raw_output":"<unparsed model completion>"}`.
+Each Agent has a Structured Output Parser subnode fed by `body.output_schema`. On n8n 1.84.3 the Tools Agent exposes that schema to the model as the supported final-format tool. FastAPI still owns canonical JSON parsing, Pydantic semantic validation, repair policy, and public normalization. The response is `{"raw_output":"<serialized schema-constrained object>"}`.
+
+Both workflows set a 180-second execution timeout. FastAPI waits 185 seconds for n8n, so the workflow terminates before the caller deadline instead of completing after FastAPI has already returned a timeout.
 
 Current workflows:
 
@@ -103,9 +105,10 @@ n8n reads:
 ```text
 Webhook body.system_prompt
 Webhook body.user_prompt
+Webhook body.output_schema
 ```
 
-The agent uses these as its system and user messages, then returns its raw completion to FastAPI.
+The agent uses these as its system and user messages and constrains generation with the supplied schema. Respond to Webhook serializes that object as `raw_output` for FastAPI's common parser and semantic validator.
 
 ## Updating n8n Workflows
 

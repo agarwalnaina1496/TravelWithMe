@@ -41,7 +41,8 @@ class LangGraphAgentAdapter:
                     "messages": [
                         SystemMessage(content=invocation.system_prompt),
                         HumanMessage(content=invocation.user_prompt),
-                    ]
+                    ],
+                    "output_schema": invocation.output_schema,
                 }
             )
         except Exception as error:
@@ -71,13 +72,13 @@ class LangGraphAgentAdapter:
                 detail="LangGraph response was not an object",
             )
         raw_output = result.get("raw_output")
-        if not isinstance(raw_output, str) or not raw_output.strip():
+        if not isinstance(raw_output, str):
             raise AgentAdapterError(
                 f"{agent} LangGraph response did not contain raw_output",
                 component="langgraph",
                 failure_stage="response_contract",
                 error_type="LangGraphResponseContractError",
-                detail="LangGraph response did not contain a non-empty raw_output",
+                detail="LangGraph response did not contain a string raw_output",
             )
         metadata = result.get("provider_metadata")
         if not isinstance(metadata, Mapping):

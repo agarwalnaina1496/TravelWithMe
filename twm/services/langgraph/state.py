@@ -7,6 +7,7 @@ from langchain_core.messages import BaseMessage
 
 class AgentGraphInput(TypedDict):
     messages: list[BaseMessage]
+    output_schema: dict[str, Any]
 
 
 class AgentGraphState(AgentGraphInput, total=False):

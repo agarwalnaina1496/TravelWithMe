@@ -22,10 +22,6 @@ from .contracts import (
     AgentOutputError,
 )
 
-OUTPUT_CONTRACT_INSTRUCTION = (
-    "Return only one JSON object matching the JSON Schema below. "
-    "Do not wrap it in Markdown or add explanatory text.\n"
-)
 REGENERATION_SYSTEM_INSTRUCTION = (
     "The previous completion failed the required output contract. Repair that "
     "response by generating a fresh answer from the original traveler request. "
@@ -96,7 +92,12 @@ class AgentExecutionService:
         try:
             response = _parse_and_validate(invocation_result.raw_output, definition)
         except _OutputValidationFailure as first_failure:
-            self._log_validation_failure(agent, 1, first_failure.failures)
+            self._log_validation_failure(
+                agent,
+                1,
+                first_failure.failures,
+                invocation_result.raw_output,
+            )
             self._logger.warning(
                 f"Starting {agent.capitalize()} repair attempt",
                 event="be.agent.repair.started",
@@ -118,7 +119,12 @@ class AgentExecutionService:
                     invocation_result.raw_output, definition
                 )
             except _OutputValidationFailure as final_failure:
-                self._log_validation_failure(agent, 2, final_failure.failures)
+                self._log_validation_failure(
+                    agent,
+                    2,
+                    final_failure.failures,
+                    invocation_result.raw_output,
+                )
                 self._logger.error(
                     f"FastAPI could not validate {agent.capitalize()} response "
                     f"from {self._engine_name} after repair. Detail - "
@@ -212,6 +218,7 @@ class AgentExecutionService:
             **common_fields,
             "status": "success",
             "duration_ms": duration_ms,
+            "raw_output_chars": len(result.raw_output),
         }
         return AgentInvocationResult(
             raw_output=result.raw_output,
@@ -223,6 +230,7 @@ class AgentExecutionService:
         agent: AgentName,
         attempt: int,
         failures: list[dict[str, Any]],
+        raw_output: str,
     ) -> None:
         self._logger.warning(
             f"FastAPI rejected {agent.capitalize()} response from "
@@ -238,6 +246,7 @@ class AgentExecutionService:
             error_type="AgentOutputValidationError",
             attempt=attempt,
             status="failed",
+            raw_output_chars=len(raw_output),
             validation_failures=failures,
         )
 
@@ -282,14 +291,10 @@ def _build_invocation(
     trip_state: dict[str, Any],
     message: str | None,
 ) -> AgentInvocation:
-    schema = json.dumps(
-        output_model.model_json_schema(), ensure_ascii=False, separators=(",", ":")
-    )
     return AgentInvocation(
-        system_prompt=(
-            f"{release.content}\n\n{OUTPUT_CONTRACT_INSTRUCTION}{schema}"
-        ),
+        system_prompt=release.content,
         user_prompt=frame_untrusted_payload(trip_state, message),
+        output_schema=output_model.model_json_schema(),
     )
 
 
@@ -306,6 +311,7 @@ def _build_regeneration_invocation(
             f"{failure_summary}"
         ),
         user_prompt=original.user_prompt,
+        output_schema=original.output_schema,
     )
 
 

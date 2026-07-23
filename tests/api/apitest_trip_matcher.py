@@ -366,8 +366,8 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     release = load_prompt_release("meridian")
     agent, invocation = adapter.invoke.await_args.args
     assert agent == "meridian"
-    assert invocation.system_prompt.startswith(release.content)
-    assert '"traveler_criteria"' in invocation.system_prompt
+    assert invocation.system_prompt == release.content
+    assert "traveler_criteria" in invocation.output_schema["properties"]
     assert "Keep it mid-range." in invocation.user_prompt
 
 

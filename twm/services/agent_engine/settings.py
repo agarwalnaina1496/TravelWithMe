@@ -10,6 +10,7 @@ class AgentEngineSettings:
     environment: str
     n8n_scout_webhook_url: str | None = None
     n8n_meridian_webhook_url: str | None = None
+    n8n_timeout_seconds: int = 185
     langgraph_model_provider: str | None = None
     langgraph_api_key: str | None = None
     langgraph_model: str = "openai/gpt-oss-120b"
@@ -29,6 +30,7 @@ class AgentEngineSettings:
                 environment=environment,
                 n8n_scout_webhook_url=_required("n8n_scout_webhook_url"),
                 n8n_meridian_webhook_url=_required("n8n_meridian_webhook_url"),
+                n8n_timeout_seconds=_positive_int("n8n_timeout_seconds", 185),
             )
 
         if engine == "langgraph":

@@ -25,6 +25,10 @@ def settings() -> AgentEngineSettings:
     )
 
 
+def invocation() -> AgentInvocation:
+    return AgentInvocation("system", "user", {"type": "object"})
+
+
 def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> None:
     captured: list[httpx.Request] = []
 
@@ -40,8 +44,9 @@ def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> No
             adapter.invoke(
                 "scout",
                 AgentInvocation(
-                    system_prompt="system with schema",
+                    system_prompt="system",
                     user_prompt="untrusted traveler data",
+                    output_schema={"type": "object"},
                 ),
             )
         )
@@ -52,8 +57,9 @@ def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> No
     assert result.metadata == {}
     assert captured[0].url == "http://agents.example/webhook/scout"
     assert json.loads(captured[0].content) == {
-        "system_prompt": "system with schema",
+        "system_prompt": "system",
         "user_prompt": "untrusted traveler data",
+        "output_schema": {"type": "object"},
     }
     assert "X-TWM-Webhook-Token" not in captured[0].headers
 
@@ -68,7 +74,7 @@ def test_n8n_adapter_maps_timeout() -> None:
     try:
         with pytest.raises(AgentAdapterTimeoutError) as captured:
             asyncio.run(
-                adapter.invoke("scout", AgentInvocation("system", "user"))
+                adapter.invoke("scout", invocation())
             )
     finally:
         asyncio.run(client.aclose())
@@ -78,6 +84,22 @@ def test_n8n_adapter_maps_timeout() -> None:
     assert error.failure_stage == "invocation"
     assert error.error_type == "ReadTimeout"
     assert error.detail == "slow"
+
+
+def test_n8n_adapter_returns_empty_model_content_for_common_repair() -> None:
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"raw_output": ""})
+        )
+    )
+    adapter = N8NAgentAdapter(settings(), client)
+
+    try:
+        result = asyncio.run(adapter.invoke("scout", invocation()))
+    finally:
+        asyncio.run(client.aclose())
+
+    assert result.raw_output == ""
 
 
 def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> None:
@@ -90,7 +112,7 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
     try:
         with pytest.raises(AgentAdapterError) as captured:
             asyncio.run(
-                adapter.invoke("scout", AgentInvocation("system", "user"))
+                adapter.invoke("scout", invocation())
             )
     finally:
         asyncio.run(client.aclose())
@@ -116,7 +138,7 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
             httpx.Response(200, json={"output": "legacy-wrapper"}),
             "response_contract",
             "N8NResponseContractError",
-            "n8n response did not contain a non-empty raw_output",
+            "n8n response did not contain a string raw_output",
             None,
         ),
         (
@@ -144,7 +166,7 @@ def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
     try:
         with pytest.raises(AgentAdapterError) as captured:
             asyncio.run(
-                adapter.invoke("meridian", AgentInvocation("system", "user"))
+                adapter.invoke("meridian", invocation())
             )
     finally:
         asyncio.run(client.aclose())
@@ -157,24 +179,38 @@ def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
     assert error.upstream_status_code == status_code
 
 
-def _assert_workflow_is_thin_raw_adapter(
+def _assert_workflow_uses_schema_constrained_generation(
     workflow_name: str, agent_name: str
 ) -> None:
     workflow_path = Path(__file__).parents[3] / "n8n" / workflow_name
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
     nodes = {node["name"]: node for node in workflow["nodes"]}
 
-    assert {"Webhook", agent_name, "Groq Chat Model", "Respond to Webhook"} == set(
-        nodes
-    )
+    parser_name = f"{agent_name} output schema"
+    assert {
+        "Webhook",
+        agent_name,
+        parser_name,
+        "Groq Chat Model",
+        "Respond to Webhook",
+    } == set(nodes)
     main_nodes = [
         node
         for node in workflow["nodes"]
-        if node["type"] != "@n8n/n8n-nodes-langchain.lmChatGroq"
+        if node["type"]
+        not in {
+            "@n8n/n8n-nodes-langchain.lmChatGroq",
+            "@n8n/n8n-nodes-langchain.outputParserStructured",
+        }
     ]
     assert len(main_nodes) == 3
-    assert not any("outputParser" in node["type"] for node in workflow["nodes"])
-    assert "hasOutputParser" not in nodes[agent_name]["parameters"]
+    assert nodes[agent_name]["parameters"]["hasOutputParser"] is True
+    assert nodes[parser_name]["parameters"] == {
+        "schemaType": "manual",
+        "inputSchema": (
+            "={{ JSON.stringify($('Webhook').item.json.body.output_schema) }}"
+        ),
+    }
     assert (
         nodes[agent_name]["parameters"]["text"]
         == "={{ $('Webhook').item.json.body.user_prompt }}"
@@ -185,22 +221,26 @@ def _assert_workflow_is_thin_raw_adapter(
     )
     assert (
         nodes["Respond to Webhook"]["parameters"]["responseBody"]
-        == "={{ { raw_output: $json.output } }}"
+        == "={{ { raw_output: JSON.stringify($json.output) } }}"
     )
     assert "authentication" not in nodes["Webhook"]["parameters"]
     assert "credentials" not in nodes["Webhook"]
     assert workflow["connections"][agent_name]["main"][0][0]["node"] == (
         "Respond to Webhook"
     )
-    assert not any(
-        "ai_outputParser" in connection
-        for connection in workflow["connections"].values()
-    )
+    assert workflow["connections"][parser_name]["ai_outputParser"][0][0] == {
+        "node": agent_name,
+        "type": "ai_outputParser",
+        "index": 0,
+    }
+    assert workflow["settings"]["executionTimeout"] == 180
 
 
 def test_scout_workflow_is_thin_raw_adapter() -> None:
-    _assert_workflow_is_thin_raw_adapter("scout.json", "Scout")
+    _assert_workflow_uses_schema_constrained_generation("scout.json", "Scout")
 
 
 def test_meridian_workflow_is_thin_raw_adapter() -> None:
-    _assert_workflow_is_thin_raw_adapter("meridian.json", "Meridian")
+    _assert_workflow_uses_schema_constrained_generation(
+        "meridian.json", "Meridian"
+    )
