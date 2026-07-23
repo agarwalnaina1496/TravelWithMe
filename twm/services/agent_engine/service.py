@@ -20,8 +20,14 @@ from .contracts import (
     AgentInvocationResult,
     AgentName,
     AgentOutputError,
+    GenerationConfig,
 )
 
+OUTPUT_CONTRACT_INSTRUCTION = (
+    "\n\nOUTPUT CONTRACT:\n"
+    "Return exactly one complete JSON object and no markdown, commentary, or "
+    "code fences. The object must match this JSON Schema:\n"
+)
 REGENERATION_SYSTEM_INSTRUCTION = (
     "The previous completion failed the required output contract. Repair that "
     "response by generating a fresh answer from the original traveler request. "
@@ -56,10 +62,12 @@ class AgentExecutionService:
         adapter: AgentAdapter,
         logger: TelemetryLogger,
         engine_name: str,
+        generation: GenerationConfig | None = None,
     ) -> None:
         self._adapter = adapter
         self._logger = logger
         self._engine_name = engine_name
+        self._generation = generation or GenerationConfig()
 
     async def scout(
         self, trip_state: dict[str, Any], message: str | None
@@ -80,7 +88,11 @@ class AgentExecutionService:
         release = load_prompt_release(agent)
         definition = AGENT_DEFINITIONS[agent]
         invocation = _build_invocation(
-            release, definition.output_model, trip_state, message
+            release,
+            definition.output_model,
+            trip_state,
+            message,
+            self._generation,
         )
         invocation_result = await self._invoke(
             agent,
@@ -302,11 +314,18 @@ def _build_invocation(
     output_model: type[BaseModel],
     trip_state: dict[str, Any],
     message: str | None,
+    generation: GenerationConfig,
 ) -> AgentInvocation:
+    output_schema = output_model.model_json_schema()
+    schema_json = json.dumps(
+        output_schema, ensure_ascii=False, separators=(",", ":")
+    )
     return AgentInvocation(
-        system_prompt=release.content,
+        system_prompt=(
+            f"{release.content}{OUTPUT_CONTRACT_INSTRUCTION}{schema_json}"
+        ),
         user_prompt=frame_untrusted_payload(trip_state, message),
-        output_schema=output_model.model_json_schema(),
+        generation=generation,
     )
 
 
@@ -323,7 +342,7 @@ def _build_regeneration_invocation(
             f"{failure_summary}"
         ),
         user_prompt=original.user_prompt,
-        output_schema=original.output_schema,
+        generation=original.generation,
     )
 
 

@@ -12,6 +12,7 @@ from twm.services import (
     AgentAdapterTimeoutError,
     AgentEngineSettings,
     AgentInvocation,
+    GenerationConfig,
     N8NAgentAdapter,
 )
 
@@ -26,7 +27,7 @@ def settings() -> AgentEngineSettings:
 
 
 def invocation() -> AgentInvocation:
-    return AgentInvocation("system", "user", {"type": "object"})
+    return AgentInvocation("system", "user")
 
 
 def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> None:
@@ -46,7 +47,11 @@ def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> No
                 AgentInvocation(
                     system_prompt="system",
                     user_prompt="untrusted traveler data",
-                    output_schema={"type": "object"},
+                    generation=GenerationConfig(
+                        max_output_tokens=8_192,
+                        temperature=0.1,
+                        timeout_seconds=120,
+                    ),
                 ),
             )
         )
@@ -59,7 +64,11 @@ def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> No
     assert json.loads(captured[0].content) == {
         "system_prompt": "system",
         "user_prompt": "untrusted traveler data",
-        "output_schema": {"type": "object"},
+        "generation": {
+            "max_output_tokens": 8_192,
+            "temperature": 0.1,
+            "timeout_seconds": 120,
+        },
     }
     assert "X-TWM-Webhook-Token" not in captured[0].headers
 
@@ -195,18 +204,16 @@ def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
     assert error.upstream_response == upstream_response
 
 
-def _assert_workflow_uses_schema_constrained_generation(
+def _assert_workflow_is_thin_raw_adapter(
     workflow_name: str, agent_name: str
 ) -> None:
     workflow_path = Path(__file__).parents[3] / "n8n" / workflow_name
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
     nodes = {node["name"]: node for node in workflow["nodes"]}
 
-    parser_name = f"{agent_name} output schema"
     assert {
         "Webhook",
         agent_name,
-        parser_name,
         "Groq Chat Model",
         "Respond to Webhook",
     } == set(nodes)
@@ -216,17 +223,10 @@ def _assert_workflow_uses_schema_constrained_generation(
         if node["type"]
         not in {
             "@n8n/n8n-nodes-langchain.lmChatGroq",
-            "@n8n/n8n-nodes-langchain.outputParserStructured",
         }
     ]
     assert len(main_nodes) == 3
-    assert nodes[agent_name]["parameters"]["hasOutputParser"] is True
-    assert nodes[parser_name]["parameters"] == {
-        "schemaType": "manual",
-        "inputSchema": (
-            "={{ JSON.stringify($('Webhook').item.json.body.output_schema) }}"
-        ),
-    }
+    assert "hasOutputParser" not in nodes[agent_name]["parameters"]
     assert (
         nodes[agent_name]["parameters"]["text"]
         == "={{ $('Webhook').item.json.body.user_prompt }}"
@@ -237,26 +237,31 @@ def _assert_workflow_uses_schema_constrained_generation(
     )
     assert (
         nodes["Respond to Webhook"]["parameters"]["responseBody"]
-        == "={{ { raw_output: JSON.stringify($json.output) } }}"
+        == "={{ { raw_output: $json.output } }}"
     )
+    assert nodes["Groq Chat Model"]["parameters"]["options"] == {
+        "maxTokensToSample": (
+            "={{ $('Webhook').item.json.body.generation.max_output_tokens }}"
+        ),
+        "temperature": (
+            "={{ $('Webhook').item.json.body.generation.temperature }}"
+        ),
+    }
     assert "authentication" not in nodes["Webhook"]["parameters"]
     assert "credentials" not in nodes["Webhook"]
     assert workflow["connections"][agent_name]["main"][0][0]["node"] == (
         "Respond to Webhook"
     )
-    assert workflow["connections"][parser_name]["ai_outputParser"][0][0] == {
-        "node": agent_name,
-        "type": "ai_outputParser",
-        "index": 0,
-    }
+    assert all(
+        "ai_outputParser" not in connections
+        for connections in workflow["connections"].values()
+    )
     assert workflow["settings"]["executionTimeout"] == 180
 
 
 def test_scout_workflow_is_thin_raw_adapter() -> None:
-    _assert_workflow_uses_schema_constrained_generation("scout.json", "Scout")
+    _assert_workflow_is_thin_raw_adapter("scout.json", "Scout")
 
 
 def test_meridian_workflow_is_thin_raw_adapter() -> None:
-    _assert_workflow_uses_schema_constrained_generation(
-        "meridian.json", "Meridian"
-    )
+    _assert_workflow_is_thin_raw_adapter("meridian.json", "Meridian")

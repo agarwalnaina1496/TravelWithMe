@@ -30,6 +30,9 @@ def get_agent_engine(
         engine=settings.engine,
     )
     engine: AgentEngine = AgentExecutionService(
-        adapter, logger=logger, engine_name=settings.engine
+        adapter,
+        logger=logger,
+        engine_name=settings.engine,
+        generation=settings.generation_config,
     )
     return engine

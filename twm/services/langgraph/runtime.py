@@ -43,13 +43,14 @@ class LangGraphRuntime:
             "timeout_seconds=%s",
             settings.langgraph_model_provider,
             settings.langgraph_model,
-            settings.langgraph_timeout_seconds,
+            settings.generation_timeout_seconds,
         )
         return init_chat_model(
             model=settings.langgraph_model,
             model_provider=settings.langgraph_model_provider,
             api_key=settings.langgraph_api_key,
-            temperature=settings.langgraph_temperature,
-            timeout=float(settings.langgraph_timeout_seconds),
+            temperature=settings.generation_temperature,
+            max_tokens=settings.generation_max_output_tokens,
+            timeout=float(settings.generation_timeout_seconds),
             max_retries=0,
         )

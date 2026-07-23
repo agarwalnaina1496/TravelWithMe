@@ -1,10 +1,7 @@
 """Single provider-neutral invocation node shared by every graph."""
 
-import json
 from collections.abc import Mapping
 from typing import Any
-
-from pydantic import BaseModel
 
 from .state import AgentGraphState
 
@@ -16,24 +13,9 @@ class InvokeModelNode:
         self._model = model
 
     async def __call__(self, state: AgentGraphState) -> dict[str, Any]:
-        structured_model = self._model.with_structured_output(
-            state["output_schema"], include_raw=True
-        )
-        result = await structured_model.ainvoke(state["messages"])
-        if not isinstance(result, Mapping):
-            raise ValueError("structured model response must be a mapping")
-
-        response = result.get("raw")
-        parsed = result.get("parsed")
-        if isinstance(parsed, BaseModel):
-            parsed = parsed.model_dump(mode="json", exclude_none=True)
-        if isinstance(parsed, Mapping):
-            raw_output = json.dumps(
-                dict(parsed), ensure_ascii=False, separators=(",", ":")
-            )
-        else:
-            content = getattr(response, "content", "")
-            raw_output = content if isinstance(content, str) else ""
+        response = await self._model.ainvoke(state["messages"])
+        content = getattr(response, "content", "")
+        raw_output = content if isinstance(content, str) else ""
         return {
             "raw_output": raw_output,
             "provider_metadata": _extract_provider_metadata(response),

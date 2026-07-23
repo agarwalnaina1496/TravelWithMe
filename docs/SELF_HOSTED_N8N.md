@@ -16,7 +16,9 @@ Each agent workflow has three logical nodes:
 Webhook -> Agent (+ model connection) -> Respond to Webhook
 ```
 
-Each Agent has a Structured Output Parser subnode fed by `body.output_schema`. On n8n 1.84.3 the Tools Agent exposes that schema to the model as the supported final-format tool. FastAPI still owns canonical JSON parsing, Pydantic semantic validation, repair policy, and public normalization. The response is `{"raw_output":"<serialized schema-constrained object>"}`.
+Neither Agent has a Structured Output Parser. On pinned n8n 1.84.3 that subnode can reject generated content and terminate the Agent before Respond to Webhook, which prevents FastAPI from observing and repairing the raw completion. FastAPI therefore supplies the output contract in the system prompt, and n8n returns the exact Agent text as `{"raw_output":"<exact model text>"}`.
+
+Both model subnodes read the same explicit Backend generation settings for maximum output tokens and temperature. The 180-second workflow timeout matches the common generation deadline.
 
 Both workflows set a 180-second execution timeout. FastAPI waits 185 seconds for n8n, so the workflow terminates before the caller deadline instead of completing after FastAPI has already returned a timeout.
 
@@ -49,7 +51,7 @@ N8N_DB_PASSWORD=long-random-secret
 API_BASE_URL=https://<render-service-host>
 ```
 
-FastAPI-specific config belongs in `twm/shared/properties/properties.ini` / `twm/shared/properties/properties-{ENVIRONMENT}.ini`. `agent_engine`, `n8n_scout_webhook_url`, and `n8n_meridian_webhook_url` are FastAPI settings, not EC2 n8n settings.
+FastAPI-specific config belongs in `twm/shared/properties/properties.ini` / `twm/shared/properties/properties-{ENVIRONMENT}.ini`. `agent_engine`, `n8n_scout_webhook_url`, `n8n_meridian_webhook_url`, and the common `generation_*` settings are FastAPI settings, not EC2 n8n settings.
 
 Generate the encryption key:
 
@@ -105,10 +107,12 @@ n8n reads:
 ```text
 Webhook body.system_prompt
 Webhook body.user_prompt
-Webhook body.output_schema
+Webhook body.generation.max_output_tokens
+Webhook body.generation.temperature
+Webhook body.generation.timeout_seconds
 ```
 
-The agent uses these as its system and user messages and constrains generation with the supplied schema. Respond to Webhook serializes that object as `raw_output` for FastAPI's common parser and semantic validator.
+The Agent uses the prepared system and user messages. The model subnode applies the explicit output-token and temperature settings. Respond to Webhook returns `$json.output` directly as the string `raw_output`; it must not parse the completion or wrap an already-string value with `JSON.stringify`.
 
 ## Updating n8n Workflows
 

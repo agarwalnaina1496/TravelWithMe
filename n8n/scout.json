@@ -21,7 +21,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { raw_output: JSON.stringify($json.output) } }}",
+        "responseBody": "={{ { raw_output: $json.output } }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
@@ -37,7 +37,6 @@
       "parameters": {
         "promptType": "define",
         "text": "={{ $('Webhook').item.json.body.user_prompt }}",
-        "hasOutputParser": true,
         "options": {
           "systemMessage": "={{ $('Webhook').item.json.body.system_prompt }}"
         }
@@ -53,22 +52,11 @@
     },
     {
       "parameters": {
-        "schemaType": "manual",
-        "inputSchema": "={{ JSON.stringify($('Webhook').item.json.body.output_schema) }}"
-      },
-      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
-      "typeVersion": 1.2,
-      "position": [
-        420,
-        220
-      ],
-      "id": "35f26c32-8cca-443d-8a7c-5784048b49ab",
-      "name": "Scout output schema"
-    },
-    {
-      "parameters": {
         "model": "openai/gpt-oss-120b",
-        "options": {}
+        "options": {
+          "maxTokensToSample": "={{ $('Webhook').item.json.body.generation.max_output_tokens }}",
+          "temperature": "={{ $('Webhook').item.json.body.generation.temperature }}"
+        }
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
       "typeVersion": 1,
@@ -116,17 +104,6 @@
           {
             "node": "Scout",
             "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Scout output schema": {
-      "ai_outputParser": [
-        [
-          {
-            "node": "Scout",
-            "type": "ai_outputParser",
             "index": 0
           }
         ]
