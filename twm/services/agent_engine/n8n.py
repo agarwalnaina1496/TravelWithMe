@@ -32,7 +32,13 @@ class N8NAgentAdapter:
                 json={
                     "system_prompt": invocation.system_prompt,
                     "user_prompt": invocation.user_prompt,
-                    "output_schema": invocation.output_schema,
+                    "generation": {
+                        "max_output_tokens": (
+                            invocation.generation.max_output_tokens
+                        ),
+                        "temperature": invocation.generation.temperature,
+                        "timeout_seconds": invocation.generation.timeout_seconds,
+                    },
                 },
             )
             response.raise_for_status()

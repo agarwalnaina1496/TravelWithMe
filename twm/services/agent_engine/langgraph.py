@@ -42,7 +42,6 @@ class LangGraphAgentAdapter:
                         SystemMessage(content=invocation.system_prompt),
                         HumanMessage(content=invocation.user_prompt),
                     ],
-                    "output_schema": invocation.output_schema,
                 }
             )
         except Exception as error:

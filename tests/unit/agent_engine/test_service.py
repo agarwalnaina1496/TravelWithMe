@@ -15,6 +15,7 @@ from twm.services import (
     AgentExecutionService,
     AgentInvocationResult,
     AgentOutputError,
+    GenerationConfig,
 )
 from twm.services.agent_engine import service as service_module
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
@@ -82,9 +83,16 @@ def test_common_service_prepares_and_validates_scout(monkeypatch) -> None:
     assert execution.prompt_release.version == "test-version"
     agent, invocation = adapter.invoke.await_args.args
     assert agent == "scout"
-    assert invocation.system_prompt == "scout prompt"
-    assert invocation.output_schema == ScoutAgentOutput.model_json_schema()
-    assert "intent" in invocation.output_schema["properties"]
+    assert invocation.system_prompt.startswith(
+        "scout prompt\n\nOUTPUT CONTRACT:\n"
+    )
+    schema_json = json.dumps(
+        ScoutAgentOutput.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    assert invocation.system_prompt.endswith(schema_json)
+    assert invocation.generation == GenerationConfig()
     assert invocation.user_prompt.startswith(UNTRUSTED_DATA_PREAMBLE)
     assert json.loads(
         invocation.user_prompt.removeprefix(UNTRUSTED_DATA_PREAMBLE)
@@ -163,8 +171,13 @@ def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
     ).model_dump(mode="json", exclude_none=True)
     assert adapter.invoke.await_count == 1
     _, invocation = adapter.invoke.await_args.args
-    assert invocation.output_schema == MeridianAgentOutput.model_json_schema()
-    assert "options" in invocation.output_schema["properties"]
+    schema_json = json.dumps(
+        MeridianAgentOutput.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    assert invocation.system_prompt.endswith(schema_json)
+    assert invocation.generation == GenerationConfig()
     assert [event["event"] for event in sink.events] == [
         "be.agent.invocation.started",
         "be.agent.response.received",
@@ -329,7 +342,8 @@ def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
     assert "previous completion failed" in repair_invocation.system_prompt
     original_invocation = adapter.invoke.await_args_list[0].args[1]
     assert repair_invocation.user_prompt == original_invocation.user_prompt
-    assert repair_invocation.output_schema == original_invocation.output_schema
+    assert repair_invocation.generation == original_invocation.generation
+    assert "OUTPUT CONTRACT:" in repair_invocation.system_prompt
     assert "not-json" not in repair_invocation.system_prompt
     assert '"type":"json_invalid"' in repair_invocation.system_prompt
     assert [event["event"] for event in sink.events] == [
@@ -368,6 +382,28 @@ def test_common_service_repairs_empty_successful_model_content(monkeypatch) -> N
     assert adapter.invoke.await_count == 2
     assert sink.events[1]["message"].endswith('Response - ""')
     assert sink.events[1]["response"] == ""
+
+
+def test_common_service_rejects_double_encoded_output_before_repair(
+    monkeypatch,
+) -> None:
+    repaired = {
+        "message": "Recovered from a double-encoded completion.",
+        "state_delta": {},
+        "intent": "advise",
+    }
+    engine, adapter = service_with_outputs(
+        monkeypatch,
+        json.dumps(json.dumps(repaired)),
+        json.dumps(repaired),
+    )
+
+    execution = asyncio.run(engine.scout({}, "Help me."))
+
+    assert execution.response["message"] == (
+        "Recovered from a double-encoded completion."
+    )
+    assert adapter.invoke.await_count == 2
 
 
 def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> None:

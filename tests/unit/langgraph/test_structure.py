@@ -19,9 +19,6 @@ from twm.services.langgraph import build_meridian_graph, build_scout_graph
 from .fakes import FakeChatModel
 
 
-OUTPUT_SCHEMA = {"type": "object", "properties": {"message": {"type": "string"}}}
-
-
 @pytest.mark.parametrize(
     ("build_graph", "invocation_node"),
     [
@@ -45,19 +42,18 @@ def test_langgraph_adapter_returns_raw_content_for_both_agents() -> None:
     scout = asyncio.run(
         adapter.invoke(
             "scout",
-            AgentInvocation("scout system", "scout user", OUTPUT_SCHEMA),
+            AgentInvocation("scout system", "scout user"),
         )
     )
     meridian = asyncio.run(
         adapter.invoke(
             "meridian",
-            AgentInvocation("meridian system", "meridian user", OUTPUT_SCHEMA),
+            AgentInvocation("meridian system", "meridian user"),
         )
     )
 
     assert scout.raw_output == '{"message":"scout"}'
     assert meridian.raw_output == '{"message":"meridian"}'
-    assert model.schemas == [OUTPUT_SCHEMA, OUTPUT_SCHEMA]
     assert isinstance(model.calls[0][0], SystemMessage)
     assert model.calls[0][0].content == "scout system"
     assert isinstance(model.calls[0][1], HumanMessage)
@@ -91,7 +87,7 @@ def test_langgraph_adapter_preserves_provider_telemetry() -> None:
     )
 
     result = asyncio.run(
-        adapter.invoke("scout", AgentInvocation("system", "user", OUTPUT_SCHEMA))
+        adapter.invoke("scout", AgentInvocation("system", "user"))
     )
 
     assert result.metadata == {
@@ -113,7 +109,7 @@ def test_langgraph_adapter_returns_malformed_content_for_common_repair() -> None
     )
 
     result = asyncio.run(
-        adapter.invoke("scout", AgentInvocation("system", "user", OUTPUT_SCHEMA))
+        adapter.invoke("scout", AgentInvocation("system", "user"))
     )
 
     assert result.raw_output == "not-json"
@@ -138,7 +134,7 @@ def test_langgraph_adapter_maps_provider_failures(error, expected) -> None:
     with pytest.raises(expected) as captured:
         asyncio.run(
             adapter.invoke(
-                "scout", AgentInvocation("system", "user", OUTPUT_SCHEMA)
+                "scout", AgentInvocation("system", "user")
             )
         )
 
@@ -162,7 +158,7 @@ def test_langgraph_adapter_rejects_non_mapping_graph_result(result) -> None:
     with pytest.raises(AgentAdapterError) as captured:
         asyncio.run(
             adapter.invoke(
-                "scout", AgentInvocation("system", "user", OUTPUT_SCHEMA)
+                "scout", AgentInvocation("system", "user")
             )
         )
 

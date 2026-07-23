@@ -10,12 +10,21 @@ AgentName = Literal["scout", "meridian"]
 
 
 @dataclass(frozen=True)
+class GenerationConfig:
+    """Provider-neutral limits applied to every agent invocation."""
+
+    max_output_tokens: int = 16_384
+    temperature: float = 0.2
+    timeout_seconds: int = 180
+
+
+@dataclass(frozen=True)
 class AgentInvocation:
     """Provider-neutral model input prepared by the common Backend pipeline."""
 
     system_prompt: str
     user_prompt: str
-    output_schema: dict[str, Any]
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
 
 
 @dataclass(frozen=True)
