@@ -123,12 +123,16 @@ def test_common_service_logs_engine_input_response_and_attempt_metadata(
     asyncio.run(engine.scout({}, "private traveler message"))
 
     calling, received, validated = sink.events
-    assert calling["message"] == "Calling Scout"
+    assert calling["message"] == (
+        'Scout called via test-engine with message "private traveler message"'
+    )
     assert calling["fields"] == {
         "agent": "scout",
         "engine": "test-engine",
         "attempt": 1,
         "prompt_version": "test-version",
+        "component": "test-engine",
+        "operation": "scout.invoke",
     }
     assert "private traveler message" in calling["payload"]["user_prompt"]
     assert received["message"] == "Scout response received"
@@ -156,7 +160,7 @@ def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
     assert '"destination_id"' in invocation.system_prompt
     assert '"circuit_id"' in invocation.system_prompt
     assert [event["message"] for event in sink.events] == [
-        "Calling Meridian",
+        'Meridian called via test-engine with message "Find options."',
         "Meridian response received",
         "Meridian response validated",
     ]
@@ -183,11 +187,37 @@ def test_common_service_logs_distinguishable_invocation_failures(
         asyncio.run(engine.scout({}, "Help me."))
 
     calling, failed = sink.events
-    assert calling["message"] == "Calling Scout"
-    assert failed["message"] == "Scout invocation failed"
+    assert calling["message"] == (
+        'Scout called via test-engine with message "Help me."'
+    )
+    assert failed["message"] == (
+        f"Scout invocation via test-engine failed. Detail - "
+        f"{error_type}: {error}"
+    )
     assert failed["level"] == "ERROR"
     assert failed["fields"]["error_type"] == error_type
+    assert failed["fields"]["component"] == "test-engine"
+    assert failed["fields"]["operation"] == "scout.invoke"
+    assert failed["fields"]["failure_stage"] == "invocation"
+    assert failed["fields"]["error_detail"] == str(error)
     assert failed["fields"]["status"] == "failed"
+
+
+def test_common_service_bounds_primary_message_but_preserves_diagnostic_detail(
+    monkeypatch,
+) -> None:
+    sink = InMemorySink()
+    engine, _ = service_with_outputs(monkeypatch, telemetry_sink=sink)
+    long_detail = "provider failure " + ("x" * 1_000)
+    engine._adapter.invoke.side_effect = RuntimeError(long_detail)
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(engine.scout({}, "y" * 2_000))
+
+    calling, failed = sink.events
+    assert "...[TRUNCATED]" in calling["message"]
+    assert "...[TRUNCATED]" in failed["message"]
+    assert failed["fields"]["error_detail"] == long_detail
 
 
 def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
@@ -217,11 +247,12 @@ def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
     assert "not-json" not in repair_invocation.system_prompt
     assert '"type":"json_invalid"' in repair_invocation.system_prompt
     assert [event["message"] for event in sink.events] == [
-        "Calling Scout",
+        'Scout called via test-engine with message "Help me."',
         "Scout response received",
-        "Scout response failed validation",
+        "FastAPI rejected Scout response from test-engine. Detail - "
+        "AgentOutputValidationError: 1 contract violation(s).",
         "Starting Scout repair attempt",
-        "Calling Scout",
+        'Scout called via test-engine with message "Help me."',
         "Scout response received",
         "Scout response validated",
     ]

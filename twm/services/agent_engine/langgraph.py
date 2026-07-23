@@ -47,20 +47,37 @@ class LangGraphAgentAdapter:
         except Exception as error:
             if _is_timeout_error(error):
                 raise AgentAdapterTimeoutError(
-                    f"{agent} LangGraph invocation timed out"
+                    f"{agent} LangGraph invocation timed out",
+                    component="langgraph",
+                    failure_stage="invocation",
+                    error_type=type(error).__name__,
+                    detail=str(error).strip()
+                    or "LangGraph did not complete before the timeout",
                 ) from error
             raise AgentAdapterError(
-                f"{agent} LangGraph invocation failed"
+                f"{agent} LangGraph invocation failed",
+                component="langgraph",
+                failure_stage="provider_runtime",
+                error_type=type(error).__name__,
+                detail=str(error).strip() or "LangGraph provider execution failed",
             ) from error
 
         if not isinstance(result, Mapping):
             raise AgentAdapterError(
-                f"{agent} LangGraph response was not a mapping"
+                f"{agent} LangGraph response was not a mapping",
+                component="langgraph",
+                failure_stage="response_contract",
+                error_type="LangGraphResponseContractError",
+                detail="LangGraph response was not an object",
             )
         raw_output = result.get("raw_output")
         if not isinstance(raw_output, str) or not raw_output.strip():
             raise AgentAdapterError(
-                f"{agent} LangGraph response did not contain raw_output"
+                f"{agent} LangGraph response did not contain raw_output",
+                component="langgraph",
+                failure_stage="response_contract",
+                error_type="LangGraphResponseContractError",
+                detail="LangGraph response did not contain a non-empty raw_output",
             )
         metadata = result.get("provider_metadata")
         if not isinstance(metadata, Mapping):

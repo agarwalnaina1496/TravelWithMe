@@ -15,6 +15,7 @@ from .context import (
     set_correlation_context,
 )
 from .logger import TelemetryLogger
+from .sanitization import redact_error_detail
 
 
 REQUEST_ID_HEADER = "X-TWM-Request-ID"
@@ -85,14 +86,22 @@ class TelemetryContextMiddleware:
         try:
             await self.app(scope, receive, correlated_send)
         except Exception as exc:
+            detail = redact_error_detail(
+                str(exc).strip() or "unexpected request failure"
+            )
             self.logger.error(
-                f"{agent} HTTP request failed",
+                f"FastAPI failed while handling {agent} request. Detail - "
+                f"{type(exc).__name__}: {detail}",
                 event="be.http.request.failed",
                 source="http",
                 fields={
                     "method": scope["method"],
                     "path": scope["path"],
+                    "component": "fastapi",
+                    "operation": f"{agent.lower()}.http",
+                    "failure_stage": "request_handling",
                     "error_type": type(exc).__name__,
+                    "error_detail": detail,
                     "duration_ms": round((self.clock() - started_at) * 1000, 3),
                 },
             )

@@ -132,7 +132,7 @@ def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
     assert exported.body == "Sent Scout HTTP response"
     assert exported.severity_text == "WARNING"
     assert exported.attributes["request_id"] == "request-1"
-    assert exported.attributes["message"] == "Sent Scout HTTP response"
+    assert "message" not in exported.attributes
     assert exported.attributes["fields.status_code"] == 502
     assert exported.attributes["fields.validation_failures.0.type"] == "missing"
     assert exported.attributes["fields.validation_failures.0.loc.0"] == "options"

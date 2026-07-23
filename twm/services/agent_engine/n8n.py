@@ -38,14 +38,46 @@ class N8NAgentAdapter:
             payload = response.json()
         except httpx.TimeoutException as error:
             raise AgentAdapterTimeoutError(
-                f"{agent} n8n invocation timed out"
+                f"{agent} n8n invocation timed out",
+                component="n8n",
+                failure_stage="invocation",
+                error_type=type(error).__name__,
+                detail=str(error).strip() or "n8n did not respond before the timeout",
             ) from error
-        except (httpx.HTTPError, ValueError) as error:
-            raise AgentAdapterError(f"{agent} n8n invocation failed") from error
+        except httpx.HTTPStatusError as error:
+            status_code = error.response.status_code
+            raise AgentAdapterError(
+                f"{agent} n8n invocation failed",
+                component="n8n",
+                failure_stage="upstream_http",
+                error_type=type(error).__name__,
+                detail=f"n8n returned HTTP {status_code}",
+                upstream_status_code=status_code,
+            ) from error
+        except httpx.RequestError as error:
+            raise AgentAdapterError(
+                f"{agent} n8n invocation failed",
+                component="n8n",
+                failure_stage="upstream_connection",
+                error_type=type(error).__name__,
+                detail=str(error).strip() or "n8n connection failed",
+            ) from error
+        except ValueError as error:
+            raise AgentAdapterError(
+                f"{agent} n8n returned invalid JSON",
+                component="n8n",
+                failure_stage="response_decode",
+                error_type=type(error).__name__,
+                detail="n8n returned a response that was not valid JSON",
+            ) from error
 
         raw_output = payload.get("raw_output") if isinstance(payload, dict) else None
         if not isinstance(raw_output, str) or not raw_output.strip():
             raise AgentAdapterError(
-                f"{agent} n8n response did not contain raw_output"
+                f"{agent} n8n response did not contain raw_output",
+                component="n8n",
+                failure_stage="response_contract",
+                error_type="N8NResponseContractError",
+                detail="n8n response did not contain a non-empty raw_output",
             )
         return AgentInvocationResult(raw_output=raw_output)

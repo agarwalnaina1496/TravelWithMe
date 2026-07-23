@@ -16,6 +16,7 @@ from twm.prompts import (
 )
 from twm.routers import trip_matcher
 from twm.services import (
+    AgentAdapterError,
     AgentAdapterTimeoutError,
     AgentExecution,
     AgentExecutionService,
@@ -723,6 +724,120 @@ def test_adapter_timeout_returns_cors_enabled_504(api_client: TestClient) -> Non
     assert response.status_code == 504
     assert response.json() == {"detail": "The travel assistant timed out."}
     assert response.headers["access-control-allow-origin"] == "https://ui.test"
+
+
+def test_adapter_failure_logs_one_actionable_engine_error(
+    api_client: TestClient,
+) -> None:
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 16_384), sink
+    )
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        side_effect=AgentAdapterError(
+            "scout n8n invocation failed",
+            component="n8n",
+            failure_stage="upstream_connection",
+            error_type="ConnectError",
+            detail="all connection attempts failed",
+        )
+    )
+    set_engine(
+        api_client,
+        AgentExecutionService(adapter, logger, "n8n"),
+    )
+
+    response = api_client.post(
+        "/scout",
+        json={"trip_state": {}, "message": "Help me plan."},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "The travel assistant is temporarily unavailable."
+    }
+    errors = [event for event in sink.events if event["level"] == "ERROR"]
+    assert len(errors) == 1
+    assert errors[0]["message"] == (
+        "Scout invocation via n8n failed. Detail - ConnectError: "
+        "all connection attempts failed"
+    )
+    assert errors[0]["fields"]["component"] == "n8n"
+    assert errors[0]["fields"]["failure_stage"] == "upstream_connection"
+
+
+def test_fastapi_request_validation_logs_component_and_stage(
+    api_client: TestClient,
+) -> None:
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 16_384), sink
+    )
+    original_logger = api_client.app.state.telemetry
+    api_client.app.state.telemetry = logger
+    try:
+        response = api_client.post(
+            "/scout",
+            json={"trip_state": {}, "message": 123},
+        )
+    finally:
+        api_client.app.state.telemetry = original_logger
+
+    assert response.status_code == 422
+    event = sink.events[0]
+    assert event["message"] == (
+        "FastAPI rejected Scout request. Detail - RequestValidationError: "
+        "1 validation failure(s)."
+    )
+    assert event["fields"]["component"] == "fastapi"
+    assert event["fields"]["operation"] == "scout.request.validate"
+    assert event["fields"]["failure_stage"] == "request_validation"
+    assert event["fields"]["error_type"] == "RequestValidationError"
+
+
+def test_fastapi_response_normalization_logs_component_and_stage(
+    api_client: TestClient,
+) -> None:
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(True, "test", PayloadMode.FULL, 16_384), sink
+    )
+    engine = async_engine()
+    engine.scout.return_value = AgentExecution(
+        response={
+            "message": "invalid state ownership",
+            "state_delta": {
+                "matcher_state": {"conversation_context": {"awaiting": "budget"}}
+            },
+            "intent": "advise",
+        },
+        prompt_release=PromptRelease("scout", "1.0.0", "prompt"),
+    )
+    set_engine(api_client, engine)
+    set_logger(api_client, logger)
+    original_logger = api_client.app.state.telemetry
+    api_client.app.state.telemetry = logger
+    try:
+        response = api_client.post(
+            "/scout",
+            json={"trip_state": {}, "message": "Help me plan."},
+        )
+    finally:
+        api_client.app.state.telemetry = original_logger
+
+    assert response.status_code == 502
+    event = next(
+        item
+        for item in sink.events
+        if item["event"] == "be.response.normalization_failed"
+    )
+    assert event["message"].startswith(
+        "FastAPI failed to normalize agent response. Detail - "
+        "ResponseValidationError:"
+    )
+    assert event["fields"]["component"] == "fastapi"
+    assert event["fields"]["failure_stage"] == "response_normalization"
 
 
 @pytest.mark.parametrize(

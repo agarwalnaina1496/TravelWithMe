@@ -6,7 +6,7 @@ The Backend emits provider-neutral, one-line JSON to stdout. Deployment configur
 
 Every event uses schema version `1.0` and contains `schema_version`, `timestamp`, `level`, `environment`, `service`, `source`, a concise human-readable `message`, application-owned `event`, and required `request_id`. Valid caller-provided `trip_id` and `turn_id` are optional. Sanitized `fields`, `payload_metadata`, `response_metadata`, `payload`, or `response` may be present.
 
-Scout and Meridian emit readable checkpoints for HTTP receipt/response, validated input, agent invocation, raw adapter response, validation failure, repair, validated output, normalized public response, and failures. `attempt=1` identifies the initial invocation and `attempt=2` the single bounded repair invocation.
+Scout and Meridian emit readable checkpoints for HTTP receipt/response, validated input, agent invocation, raw adapter response, validation failure, repair, validated output, normalized public response, and failures. Invocation messages identify the selected engine and bounded traveler message. Failure messages identify the component, operation, stage, error type, and sanitized detail so FastAPI, n8n, and LangGraph failures are distinguishable without expanding the event. `attempt=1` identifies the initial invocation and `attempt=2` the single bounded repair invocation.
 
 ## Correlation contract
 
@@ -38,7 +38,7 @@ Conversation call sites use `TelemetryLogger.debug/info/warning/error/critical` 
 
 ```python
 logger.info(
-    "Calling Scout",
+    'Scout called via n8n with message "3 travelers, Bengaluru"',
     event="be.agent.invocation.started",
     agent="scout",
     engine="n8n",
@@ -46,6 +46,8 @@ logger.info(
     payload=sanitized_engine_input,
 )
 ```
+
+OTLP uses the human-readable message only as the native log body. It is not duplicated into `attributes.message`; correlation and diagnostic metadata remain flattened queryable attributes. In Axiom Stream, disable **Show the raw event details** once for the readable explorer view. Investigators do not need an APL projection to see the message.
 
 Production keeps stdout and may add standard OTLP/HTTP delivery when the production logs endpoint is configured. See [Production Axiom log delivery](AXIOM_LOG_DELIVERY.md) for sink selection, Render secrets, verification queries, credential rotation, usage checks, and provider-independent rollback.
 

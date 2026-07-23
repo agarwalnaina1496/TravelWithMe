@@ -66,24 +66,74 @@ def test_n8n_adapter_maps_timeout() -> None:
     adapter = N8NAgentAdapter(settings(), client)
 
     try:
-        with pytest.raises(AgentAdapterTimeoutError):
+        with pytest.raises(AgentAdapterTimeoutError) as captured:
             asyncio.run(
                 adapter.invoke("scout", AgentInvocation("system", "user"))
             )
     finally:
         asyncio.run(client.aclose())
 
+    error = captured.value
+    assert error.component == "n8n"
+    assert error.failure_stage == "invocation"
+    assert error.error_type == "ReadTimeout"
+    assert error.detail == "slow"
+
+
+def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("all connection attempts failed", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = N8NAgentAdapter(settings(), client)
+
+    try:
+        with pytest.raises(AgentAdapterError) as captured:
+            asyncio.run(
+                adapter.invoke("scout", AgentInvocation("system", "user"))
+            )
+    finally:
+        asyncio.run(client.aclose())
+
+    error = captured.value
+    assert error.component == "n8n"
+    assert error.failure_stage == "upstream_connection"
+    assert error.error_type == "ConnectError"
+    assert error.detail == "all connection attempts failed"
+
 
 @pytest.mark.parametrize(
-    "response",
+    ("response", "failure_stage", "error_type", "detail", "status_code"),
     [
-        httpx.Response(503, json={"detail": "unavailable"}),
-        httpx.Response(200, json={"output": "legacy-wrapper"}),
-        httpx.Response(200, text="not-json"),
+        (
+            httpx.Response(503, json={"detail": "unavailable"}),
+            "upstream_http",
+            "HTTPStatusError",
+            "n8n returned HTTP 503",
+            503,
+        ),
+        (
+            httpx.Response(200, json={"output": "legacy-wrapper"}),
+            "response_contract",
+            "N8NResponseContractError",
+            "n8n response did not contain a non-empty raw_output",
+            None,
+        ),
+        (
+            httpx.Response(200, text="not-json"),
+            "response_decode",
+            "JSONDecodeError",
+            "n8n returned a response that was not valid JSON",
+            None,
+        ),
     ],
 )
 def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
     response: httpx.Response,
+    failure_stage: str,
+    error_type: str,
+    detail: str,
+    status_code: int | None,
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return response
@@ -92,12 +142,19 @@ def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
     adapter = N8NAgentAdapter(settings(), client)
 
     try:
-        with pytest.raises(AgentAdapterError):
+        with pytest.raises(AgentAdapterError) as captured:
             asyncio.run(
                 adapter.invoke("meridian", AgentInvocation("system", "user"))
             )
     finally:
         asyncio.run(client.aclose())
+
+    error = captured.value
+    assert error.component == "n8n"
+    assert error.failure_stage == failure_stage
+    assert error.error_type == error_type
+    assert error.detail == detail
+    assert error.upstream_status_code == status_code
 
 
 def _assert_workflow_is_thin_raw_adapter(
