@@ -40,6 +40,18 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 - Agents must not write UI-owned deterministic fields such as lifecycle stage, selected option, or stored recommendation history unless an approved contract explicitly changes ownership.
 - Do not preserve superseded API or state shapes by default during pre-MVP development.
 
+## Application logging
+
+- Treat production observability as part of every Backend implementation story. During discovery and implementation, identify the operationally meaningful request, decision, external-call, response, retry, and failure boundaries affected by the story, and add or update logs where needed. If the existing logs already make the changed flow diagnosable, record that no logging change is required instead of adding noise.
+- Use the repository's standard `logger.info`, `logger.warning`, `logger.error`, and `logger.exception` interface. Application and business code must remain independent of Axiom, Datadog, or any other telemetry vendor; exporter and transport configuration belong at the observability boundary.
+- Write a concise, human-readable primary message that makes sense by itself in a logs explorer. Keep stable event names and structured fields as additional searchable context; do not make operators reconstruct the message from flattened attributes.
+- Propagate the established correlation context through the full execution path. Include the conversation-level `trip_id` on every turn when available, a per-HTTP-call `request_id`, and the agent, engine, attempt, and duration fields at the boundaries where they apply.
+- Log calls to external execution boundaries immediately before invocation and log their outcome after completion. Capture only the bounded, operationally useful input and response summary needed to trace the conversation; do not emit entire state objects or unbounded provider payloads by default.
+- Make failures attributable at a glance. Name the failing component and operation (for example FastAPI validation, n8n invocation, or LangGraph/provider execution), include the concrete exception type and a safe detail message, use the appropriate warning/error severity, and preserve traceback context with `logger.exception` for unexpected failures.
+- Never log secrets, authorization headers, credentials, tokens, or sensitive URL parameters. Redact sensitive values and bound user messages, upstream bodies, validation details, and exception text before logging them.
+- Avoid duplicate logs for the same event at adjacent layers unless each entry represents a distinct boundary or adds actionable context. Do not log successful health checks or other high-volume noise unless an approved operational need requires it.
+- Add or update focused tests for logging behavior whenever a story changes an observable boundary, correlation propagation, redaction, severity, or failure attribution. Verification must confirm both the human-readable message and the structured fields needed to filter one trip, request, agent, engine, or failure component.
+
 ## Documentation
 
 - Keep product behavior and shared-contract docs in `TWM_Docs/`, including Scout/Meridian behavior, the playbook, product architecture, TripState/stages/CTA mappings, and shared API/user flows.
