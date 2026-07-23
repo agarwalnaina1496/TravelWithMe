@@ -88,6 +88,46 @@ def test_redaction_and_size_limits_apply_before_sink() -> None:
     assert fields["nested"]["safe"].endswith("...[TRUNCATED]")
 
 
+def test_format_log_json_redacts_keys_and_bounds_the_complete_message() -> None:
+    logger = TelemetryLogger(
+        settings(payload_mode=PayloadMode.FULL, max_field_size=128),
+        InMemorySink(),
+    )
+    rendered = logger.format_json(
+        {
+            "message": "hello",
+            "authorization": "Bearer private",
+            "endpoint": "https://private.test/conversation",
+            "long": "x" * 100,
+        }
+    )
+
+    assert "private" not in rendered
+    assert "[REDACTED_URL]" in rendered
+    assert REDACTED in rendered
+    assert len(rendered) == 128
+    assert rendered.endswith("...[TRUNCATED]")
+
+
+def test_message_json_respects_metadata_and_off_payload_modes() -> None:
+    value = {"message": "private traveler content"}
+
+    metadata = TelemetryLogger(
+        settings(payload_mode=PayloadMode.METADATA, max_field_size=128),
+        InMemorySink(),
+    ).format_json(value)
+    disabled = TelemetryLogger(
+        settings(payload_mode=PayloadMode.OFF), InMemorySink()
+    ).format_json(value)
+
+    assert json.loads(metadata) == {
+        "type": "dict",
+        "size_bytes": len(json.dumps(value).encode("utf-8")),
+    }
+    assert "private traveler content" not in metadata
+    assert disabled == "[CONTENT_DISABLED]"
+
+
 def test_serialized_diagnostic_strings_redact_credential_values() -> None:
     sink = InMemorySink()
     logger = TelemetryLogger(
@@ -195,8 +235,8 @@ def test_metadata_mode_describes_payload_and_response_without_content() -> None:
     sink = InMemorySink()
 
     TelemetryLogger(settings(), sink).info(
-        "Scout response received",
-        event="be.agent.raw_response.received",
+        "Scout agent response received from n8n",
+        event="be.agent.response.received",
         payload={"private": "input"},
         response={"private": "output"},
     )

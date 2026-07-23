@@ -186,7 +186,7 @@ def test_scout_api_preserves_entry_contract(
         "Tell me about Uttarakhand.",
     )
     received, returning = sink.events
-    assert received["message"] == "Received Scout request"
+    assert received["message"].startswith("Received Scout request. Request - ")
     assert received["payload"] == {
         "trip_state": {
             "stage": "new",
@@ -195,8 +195,16 @@ def test_scout_api_preserves_entry_contract(
         },
         "message": "Tell me about Uttarakhand.",
     }
-    assert returning["message"] == "Returning Scout response"
+    assert json.loads(received["message"].partition("Request - ")[2]) == received[
+        "payload"
+    ]
+    assert returning["message"].startswith(
+        "Returning Scout response. Response - "
+    )
     assert returning["response"] == response.json()
+    assert json.loads(returning["message"].partition("Response - ")[2]) == returning[
+        "response"
+    ]
     assert {
         (event["request_id"], event["trip_id"], event["turn_id"])
         for event in sink.events

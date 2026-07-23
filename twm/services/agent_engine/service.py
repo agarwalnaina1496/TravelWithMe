@@ -17,6 +17,7 @@ from .contracts import (
     AgentAdapterError,
     AgentExecution,
     AgentInvocation,
+    AgentInvocationResult,
     AgentName,
     AgentOutputError,
 )
@@ -85,17 +86,15 @@ class AgentExecutionService:
         invocation = _build_invocation(
             release, definition.output_model, trip_state, message
         )
-        raw_output = await self._invoke(
+        invocation_result = await self._invoke(
             agent,
             invocation,
             attempt=1,
             prompt_version=release.version,
             traveler_message=message,
         )
-        validated_attempt = 1
-
         try:
-            response = _parse_and_validate(raw_output, definition)
+            response = _parse_and_validate(invocation_result.raw_output, definition)
         except _OutputValidationFailure as first_failure:
             self._log_validation_failure(agent, 1, first_failure.failures)
             self._logger.warning(
@@ -107,16 +106,17 @@ class AgentExecutionService:
                 attempt=2,
                 validation_failures=first_failure.failures,
             )
-            regenerated_output = await self._invoke(
+            invocation_result = await self._invoke(
                 agent,
                 _build_regeneration_invocation(invocation, first_failure.failures),
                 attempt=2,
                 prompt_version=release.version,
                 traveler_message=message,
             )
-            validated_attempt = 2
             try:
-                response = _parse_and_validate(regenerated_output, definition)
+                response = _parse_and_validate(
+                    invocation_result.raw_output, definition
+                )
             except _OutputValidationFailure as final_failure:
                 self._log_validation_failure(agent, 2, final_failure.failures)
                 self._logger.error(
@@ -139,13 +139,13 @@ class AgentExecutionService:
                 raise AgentOutputError(agent, final_failure.failures) from None
 
         self._logger.info(
-            f"{agent.capitalize()} response validated",
-            event="be.agent.output.validated",
+            f"{agent.capitalize()} agent response received from "
+            f"{_display_engine_name(self._engine_name)}. Response - "
+            f"{self._logger.format_json(response)}",
+            event="be.agent.response.received",
             source="agent_engine",
-            agent=agent,
-            engine=self._engine_name,
-            attempt=validated_attempt,
-            status="success",
+            fields=invocation_result.metadata,
+            response=response,
         )
 
         return AgentExecution(response=response, prompt_release=release)
@@ -157,7 +157,7 @@ class AgentExecutionService:
         attempt: int,
         prompt_version: str,
         traveler_message: str | None,
-    ) -> str:
+    ) -> AgentInvocationResult:
         common_fields = {
             "agent": agent,
             "engine": self._engine_name,
@@ -165,17 +165,13 @@ class AgentExecutionService:
             "prompt_version": prompt_version,
         }
         self._logger.info(
-            f"{agent.capitalize()} called via {self._engine_name} with message "
+            f"{agent.capitalize()} agent called via "
+            f"{_display_engine_name(self._engine_name)} with message "
             f"{_quoted_message(traveler_message)}",
             event="be.agent.invocation.started",
             source="agent_engine",
-            fields={
-                **common_fields,
-                "component": self._engine_name,
-                "operation": f"{agent}.invoke",
-            },
+            fields=common_fields,
             payload={
-                "system_prompt": invocation.system_prompt,
                 "user_prompt": invocation.user_prompt,
             },
         )
@@ -216,16 +212,11 @@ class AgentExecutionService:
             **common_fields,
             "status": "success",
             "duration_ms": duration_ms,
-            "raw_output_chars": len(result.raw_output),
         }
-        self._logger.info(
-            f"{agent.capitalize()} response received",
-            event="be.agent.raw_response.received",
-            source="agent_engine",
-            fields=response_fields,
-            response=result.raw_output,
+        return AgentInvocationResult(
+            raw_output=result.raw_output,
+            metadata=response_fields,
         )
-        return result.raw_output
 
     def _log_validation_failure(
         self,
@@ -253,6 +244,10 @@ class AgentExecutionService:
 
 def _quoted_message(message: str | None) -> str:
     return json.dumps(_bounded_single_line(message or "", 1_024), ensure_ascii=False)
+
+
+def _display_engine_name(engine_name: str) -> str:
+    return "LangGraph" if engine_name == "langgraph" else engine_name
 
 
 def _bounded_single_line(value: str, max_characters: int = 512) -> str:

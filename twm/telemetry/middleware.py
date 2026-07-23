@@ -62,12 +62,9 @@ class TelemetryContextMiddleware:
             )
         token = set_correlation_context(context)
         started_at = self.clock()
-        status_code = 500
 
         async def correlated_send(message: Message) -> None:
-            nonlocal status_code
             if message["type"] == "http.response.start":
-                status_code = message["status"]
                 response_headers = MutableHeaders(scope=message)
                 response_headers[REQUEST_ID_HEADER] = context.request_id
                 if context.trip_id:
@@ -77,12 +74,6 @@ class TelemetryContextMiddleware:
             await send(message)
 
         agent = scope["path"].removeprefix("/").capitalize()
-        self.logger.info(
-            f"Received {agent} HTTP request",
-            event="be.http.request.received",
-            source="http",
-            fields={"method": scope["method"], "path": scope["path"]},
-        )
         try:
             await self.app(scope, receive, correlated_send)
         except Exception as exc:
@@ -106,17 +97,5 @@ class TelemetryContextMiddleware:
                 },
             )
             raise
-        else:
-            self.logger.info(
-                f"Sent {agent} HTTP response",
-                event="be.http.response.sent",
-                source="http",
-                fields={
-                    "method": scope["method"],
-                    "path": scope["path"],
-                    "status_code": status_code,
-                    "duration_ms": round((self.clock() - started_at) * 1000, 3),
-                },
-            )
         finally:
             reset_correlation_context(token)

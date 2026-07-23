@@ -67,6 +67,19 @@ def payload_metadata(payload: Any) -> dict[str, Any]:
     return metadata
 
 
+def format_log_json(value: Any, max_characters: int) -> str:
+    """Serialize a redacted value for a bounded human-readable log message."""
+
+    safe_value = sanitize(value, max_characters)
+    serialized = json.dumps(
+        safe_value,
+        default=_safe_string,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return _truncate(redact_error_detail(serialized), max_characters)
+
+
 def redact_error_detail(value: str) -> str:
     """Remove credentials and endpoint URLs from exception-derived text."""
 

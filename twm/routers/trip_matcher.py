@@ -25,7 +25,8 @@ async def scout(
 ):
     request_data = payload.model_dump(mode="json", exclude_none=True)
     logger.info(
-        "Received Scout request",
+        "Received Scout request. Request - "
+        f"{logger.format_json(request_data)}",
         event="be.request.validated",
         source="http",
         agent="scout",
@@ -33,13 +34,15 @@ async def scout(
     )
     execution = await engine.scout(payload.trip_state.model_dump(), payload.message)
     response = _normalize_scout_response(execution)
+    response_data = response.model_dump(mode="json", exclude_none=True)
     logger.info(
-        "Returning Scout response",
+        "Returning Scout response. Response - "
+        f"{logger.format_json(response_data)}",
         event="be.response.normalized",
         source="http",
         agent="scout",
         status="success",
-        response=response.model_dump(mode="json", exclude_none=True),
+        response=response_data,
     )
     return response
 
@@ -54,7 +57,8 @@ async def meridian(
 ):
     request_data = payload.model_dump(mode="json", exclude_none=True)
     logger.info(
-        "Received Meridian request",
+        "Received Meridian request. Request - "
+        f"{logger.format_json(request_data)}",
         event="be.request.validated",
         source="http",
         agent="meridian",
@@ -62,12 +66,14 @@ async def meridian(
     )
     execution = await engine.meridian(payload.trip_state.model_dump(), payload.message)
     response = _normalize_meridian_response(execution)
+    response_data = response.model_dump(mode="json", exclude_none=True)
     logger.info(
-        "Returning Meridian response",
+        "Returning Meridian response. Response - "
+        f"{logger.format_json(response_data)}",
         event="be.response.normalized",
         source="http",
         agent="meridian",
         status="success",
-        response=response.model_dump(mode="json", exclude_none=True),
+        response=response_data,
     )
     return response

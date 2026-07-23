@@ -38,12 +38,13 @@ Conversation call sites use `TelemetryLogger.debug/info/warning/error/critical` 
 
 ```python
 logger.info(
-    'Scout called via n8n with message "3 travelers, Bengaluru"',
+    'Scout agent called via n8n with message "3 travelers, Bengaluru"',
     event="be.agent.invocation.started",
     agent="scout",
     engine="n8n",
     attempt=1,
-    payload=sanitized_engine_input,
+    prompt_version="1.1.0",
+    payload={"user_prompt": sanitized_user_prompt},
 )
 ```
 

@@ -113,8 +113,8 @@ def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
         "timestamp": "2026-07-21T08:00:00+00:00",
         "level": "WARNING",
         "service": "test-service",
-        "event": "be.http.response.sent",
-        "message": "Sent Scout HTTP response",
+        "event": "be.agent.response.received",
+        "message": "Scout agent response received from n8n",
         "request_id": "request-1",
         "fields": {
             "status_code": 502,
@@ -129,7 +129,7 @@ def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
 
     exported = exporter.get_finished_logs()[0].log_record
 
-    assert exported.body == "Sent Scout HTTP response"
+    assert exported.body == "Scout agent response received from n8n"
     assert exported.severity_text == "WARNING"
     assert exported.attributes["request_id"] == "request-1"
     assert "message" not in exported.attributes
