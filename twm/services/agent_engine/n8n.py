@@ -54,6 +54,7 @@ class N8NAgentAdapter:
                 error_type=type(error).__name__,
                 detail=f"n8n returned HTTP {status_code}",
                 upstream_status_code=status_code,
+                upstream_response=_response_body(error.response),
             ) from error
         except httpx.RequestError as error:
             raise AgentAdapterError(
@@ -70,6 +71,7 @@ class N8NAgentAdapter:
                 failure_stage="response_decode",
                 error_type=type(error).__name__,
                 detail="n8n returned a response that was not valid JSON",
+                upstream_response=response.text,
             ) from error
 
         raw_output = payload.get("raw_output") if isinstance(payload, dict) else None
@@ -80,5 +82,13 @@ class N8NAgentAdapter:
                 failure_stage="response_contract",
                 error_type="N8NResponseContractError",
                 detail="n8n response did not contain a string raw_output",
+                upstream_response=payload,
             )
         return AgentInvocationResult(raw_output=raw_output)
+
+
+def _response_body(response: httpx.Response) -> object:
+    try:
+        return response.json()
+    except ValueError:
+        return response.text

@@ -39,7 +39,7 @@ def sanitize(value: Any, max_field_size: int, key: str | None = None) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        return _truncate(_redact_sensitive_text(value), max_field_size)
+        return _truncate(redact_error_detail(value), max_field_size)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, bytes):

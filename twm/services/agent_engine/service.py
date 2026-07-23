@@ -204,12 +204,22 @@ class AgentExecutionService:
             upstream_status_code = getattr(error, "upstream_status_code", None)
             if upstream_status_code is not None:
                 failure_fields["upstream_status_code"] = upstream_status_code
+            upstream_response = getattr(error, "upstream_response", None)
+            response_detail = (
+                ""
+                if upstream_response is None
+                else (
+                    ". Response - "
+                    f"{self._logger.format_json(upstream_response)}"
+                )
+            )
             self._logger.error(
                 f"{agent.capitalize()} invocation via {component} failed. "
-                f"Detail - {error_type}: {display_detail}",
+                f"Detail - {error_type}: {display_detail}{response_detail}",
                 event="be.agent.invocation.failed",
                 source="agent_engine",
                 fields=failure_fields,
+                response=upstream_response,
             )
             raise
         duration_ms = round((time.perf_counter() - started_at) * 1000)
@@ -235,7 +245,8 @@ class AgentExecutionService:
         self._logger.warning(
             f"FastAPI rejected {agent.capitalize()} response from "
             f"{self._engine_name}. Detail - AgentOutputValidationError: "
-            f"{len(failures)} contract violation(s).",
+            f"{len(failures)} contract violation(s). Response - "
+            f"{self._logger.format_json(raw_output)}",
             event="be.agent.output.validation_failed",
             source="agent_engine",
             agent=agent,
@@ -248,6 +259,7 @@ class AgentExecutionService:
             status="failed",
             raw_output_chars=len(raw_output),
             validation_failures=failures,
+            response=raw_output,
         )
 
 

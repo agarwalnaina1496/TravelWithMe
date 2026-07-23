@@ -84,6 +84,7 @@ def test_n8n_adapter_maps_timeout() -> None:
     assert error.failure_stage == "invocation"
     assert error.error_type == "ReadTimeout"
     assert error.detail == "slow"
+    assert error.upstream_response is None
 
 
 def test_n8n_adapter_returns_empty_model_content_for_common_repair() -> None:
@@ -122,10 +123,19 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
     assert error.failure_stage == "upstream_connection"
     assert error.error_type == "ConnectError"
     assert error.detail == "all connection attempts failed"
+    assert error.upstream_response is None
 
 
+@pytest.mark.parametrize("agent", ["scout", "meridian"])
 @pytest.mark.parametrize(
-    ("response", "failure_stage", "error_type", "detail", "status_code"),
+    (
+        "response",
+        "failure_stage",
+        "error_type",
+        "detail",
+        "status_code",
+        "upstream_response",
+    ),
     [
         (
             httpx.Response(503, json={"detail": "unavailable"}),
@@ -133,6 +143,7 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
             "HTTPStatusError",
             "n8n returned HTTP 503",
             503,
+            {"detail": "unavailable"},
         ),
         (
             httpx.Response(200, json={"output": "legacy-wrapper"}),
@@ -140,6 +151,7 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
             "N8NResponseContractError",
             "n8n response did not contain a string raw_output",
             None,
+            {"output": "legacy-wrapper"},
         ),
         (
             httpx.Response(200, text="not-json"),
@@ -147,15 +159,18 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
             "JSONDecodeError",
             "n8n returned a response that was not valid JSON",
             None,
+            "not-json",
         ),
     ],
 )
 def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
+    agent: str,
     response: httpx.Response,
     failure_stage: str,
     error_type: str,
     detail: str,
     status_code: int | None,
+    upstream_response: object,
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return response
@@ -166,7 +181,7 @@ def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
     try:
         with pytest.raises(AgentAdapterError) as captured:
             asyncio.run(
-                adapter.invoke("meridian", invocation())
+                adapter.invoke(agent, invocation())
             )
     finally:
         asyncio.run(client.aclose())
@@ -177,6 +192,7 @@ def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
     assert error.error_type == error_type
     assert error.detail == detail
     assert error.upstream_status_code == status_code
+    assert error.upstream_response == upstream_response
 
 
 def _assert_workflow_uses_schema_constrained_generation(
