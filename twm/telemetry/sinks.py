@@ -147,14 +147,28 @@ def _flatten_attributes(
 def _flatten_attribute_value(
     flattened: dict[str, Any], path: str, value: Any
 ) -> None:
+    if value is None:
+        return
+
     if isinstance(value, Mapping):
-        for key, child in value.items():
-            _flatten_attribute_value(flattened, f"{path}.{key}", child)
-    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        for index, child in enumerate(value):
-            _flatten_attribute_value(flattened, f"{path}.{index}", child)
-    elif value is not None:
-        flattened[path] = value
+        flattened[path] = json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+        return
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        flattened[path] = json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+        return
+
+    flattened[path] = value
 
 
 class InMemorySink:
