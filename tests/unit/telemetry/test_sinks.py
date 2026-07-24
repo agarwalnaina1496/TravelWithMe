@@ -1,11 +1,10 @@
+import json
 from io import StringIO
-
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import (
     InMemoryLogRecordExporter,
     SimpleLogRecordProcessor,
 )
-
 from twm.telemetry import CompositeSink, InMemorySink, JsonStdoutSink, OtlpHttpSink
 from twm.telemetry.sinks import build_telemetry_sink
 
@@ -99,9 +98,6 @@ def test_invalid_otlp_configuration_fails_open_to_stdout(monkeypatch) -> None:
     )
 
     assert selected is stdout
-
-
-import json
 
 
 def test_otlp_sink_preserves_structured_body_and_serializes_nested_attributes() -> None:
