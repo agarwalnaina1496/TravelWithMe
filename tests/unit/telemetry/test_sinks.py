@@ -101,7 +101,10 @@ def test_invalid_otlp_configuration_fails_open_to_stdout(monkeypatch) -> None:
     assert selected is stdout
 
 
-def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
+import json
+
+
+def test_otlp_sink_preserves_structured_body_and_serializes_nested_attributes() -> None:
     provider = LoggerProvider()
     exporter = InMemoryLogRecordExporter()
     provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
@@ -109,6 +112,7 @@ def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
     sink = OtlpHttpSink(
         "test-service", otel_logger=otel_logger, provider=provider
     )
+
     event = {
         "timestamp": "2026-07-21T08:00:00+00:00",
         "level": "WARNING",
@@ -119,7 +123,10 @@ def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
         "fields": {
             "status_code": 502,
             "validation_failures": [
-                {"type": "missing", "loc": ["options", 0]}
+                {
+                    "type": "missing",
+                    "loc": ["options", 0],
+                }
             ],
         },
     }
@@ -133,9 +140,17 @@ def test_otlp_sink_preserves_structured_body_and_queryable_attributes() -> None:
     assert exported.severity_text == "WARNING"
     assert exported.attributes["request_id"] == "request-1"
     assert "message" not in exported.attributes
-    assert exported.attributes["fields.status_code"] == 502
-    assert exported.attributes["fields.validation_failures.0.type"] == "missing"
-    assert exported.attributes["fields.validation_failures.0.loc.0"] == "options"
-    assert exported.attributes["fields.validation_failures.0.loc.1"] == 0
 
-    sink.shutdown()
+    fields = json.loads(exported.attributes["fields"])
+
+    assert fields == {
+        "status_code": 502,
+        "validation_failures": [
+            {
+                "type": "missing",
+                "loc": ["options", 0],
+            }
+        ],
+    }
+
+    assert "fields.status_code" not in exported.attributes
