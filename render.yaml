@@ -6,8 +6,6 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
-      - key: ENVIRONMENT
-        value: prod
       - key: AGENT_ENGINE
         value: n8n
       - key: LANGGRAPH_MODEL_PROVIDER
