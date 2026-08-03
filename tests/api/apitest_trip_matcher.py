@@ -120,7 +120,12 @@ def test_active_phase_prompt_releases_are_complete() -> None:
     assert load_prompt_versions() == {
         "scout": "1.7.0",
         "meridian": "1.6.0",
+        "guide": "1.0.0",
     }
+    guide_prompt = load_prompt_release("guide").content
+    assert "Traveler authority" in guide_prompt
+    assert "APPROVE_PLACES" in guide_prompt
+    assert "Atlas owns researched itinerary details" in guide_prompt
     meridian_prompt = load_prompt_release("meridian").content
     assert "conversation_context.awaiting" in meridian_prompt
     assert "constraint_adjustment_suggestions" in meridian_prompt

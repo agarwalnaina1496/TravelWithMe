@@ -1,0 +1,87 @@
+{
+  "name": "Guide",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "guide",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "id": "0b12cd2a-905b-4bf7-a790-6effdcadd625",
+      "name": "Webhook",
+      "webhookId": "9fe4b0e8-6454-4d38-8d1a-d3d35653d548"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Webhook').item.json.body.user_prompt }}",
+        "options": {
+          "systemMessage": "={{ $('Webhook').item.json.body.system_prompt }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [240, 0],
+      "id": "024d848a-3011-47c2-822a-068d22a70244",
+      "name": "Guide"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {
+          "maxTokensToSample": "={{ $('Webhook').item.json.body.generation.max_output_tokens }}",
+          "temperature": "={{ $('Webhook').item.json.body.generation.temperature }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [240, 180],
+      "id": "01f5bf34-a286-4d50-90ca-f7d8f95e226b",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "HBYxDE4k9lhrrGOL",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { raw_output: $json.output } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [560, 0],
+      "id": "40372b9c-d6f5-4174-86ac-6e60b406a13a",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Guide", "type": "main", "index": 0}]]
+    },
+    "Guide": {
+      "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [[{"node": "Guide", "type": "ai_languageModel", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 180
+  },
+  "versionId": "c158b1ef-6e70-4691-89ad-ea1063314a1a",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

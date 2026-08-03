@@ -6,7 +6,7 @@ from typing import Any, Literal, Optional, Protocol
 from ...prompts import PromptRelease
 
 
-AgentName = Literal["scout", "meridian"]
+AgentName = Literal["scout", "meridian", "guide"]
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,11 @@ class AgentEngine(Protocol):
         ...
 
     async def meridian(
+        self, trip_state: dict[str, Any], message: Optional[str]
+    ) -> AgentExecution:
+        ...
+
+    async def guide(
         self, trip_state: dict[str, Any], message: Optional[str]
     ) -> AgentExecution:
         ...

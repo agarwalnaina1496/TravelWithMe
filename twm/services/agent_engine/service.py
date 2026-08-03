@@ -1,4 +1,4 @@
-"""Common Scout and Meridian execution, parsing, validation, and repair."""
+"""Common agent execution, parsing, validation, and repair."""
 
 import json
 import time
@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from ...prompts import PromptRelease, load_prompt_release
-from ...schemas import MeridianAgentOutput, ScoutAgentOutput
+from ...schemas import GuideAgentOutput, MeridianAgentOutput, ScoutAgentOutput
 from ...security import frame_untrusted_payload
 from ...telemetry import TelemetryLogger
 from ...telemetry.sanitization import redact_error_detail
@@ -51,6 +51,7 @@ class _OutputValidationFailure(ValueError):
 AGENT_DEFINITIONS: dict[AgentName, AgentDefinition] = {
     "scout": AgentDefinition(ScoutAgentOutput),
     "meridian": AgentDefinition(MeridianAgentOutput),
+    "guide": AgentDefinition(GuideAgentOutput),
 }
 
 
@@ -78,6 +79,11 @@ class AgentExecutionService:
         self, trip_state: dict[str, Any], message: str | None
     ) -> AgentExecution:
         return await self._execute("meridian", trip_state, message)
+
+    async def guide(
+        self, trip_state: dict[str, Any], message: str | None
+    ) -> AgentExecution:
+        return await self._execute("guide", trip_state, message)
 
     async def _execute(
         self,

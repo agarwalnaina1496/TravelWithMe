@@ -23,6 +23,7 @@ def settings() -> AgentEngineSettings:
         environment="test",
         n8n_scout_webhook_url="http://agents.example/webhook/scout",
         n8n_meridian_webhook_url="http://agents.example/webhook/meridian",
+        n8n_guide_webhook_url="http://agents.example/webhook/guide",
     )
 
 
@@ -135,7 +136,7 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
     assert error.upstream_response is None
 
 
-@pytest.mark.parametrize("agent", ["scout", "meridian"])
+@pytest.mark.parametrize("agent", ["scout", "meridian", "guide"])
 @pytest.mark.parametrize(
     (
         "response",
@@ -265,3 +266,7 @@ def test_scout_workflow_is_thin_raw_adapter() -> None:
 
 def test_meridian_workflow_is_thin_raw_adapter() -> None:
     _assert_workflow_is_thin_raw_adapter("meridian.json", "Meridian")
+
+
+def test_guide_workflow_is_thin_raw_adapter() -> None:
+    _assert_workflow_is_thin_raw_adapter("guide.json", "Guide")

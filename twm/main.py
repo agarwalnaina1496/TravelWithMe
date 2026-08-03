@@ -13,6 +13,7 @@ from .shared.properties import property_loader
 from .middleware import SecurityBoundaryMiddleware
 from .routers.health import router as health_api
 from .routers.trip_matcher import router as trip_matcher_api
+from .routers.trip_planner import router as trip_planner_api
 from .services import (
     AgentAdapterError,
     AgentAdapterTimeoutError,
@@ -137,7 +138,11 @@ def initialize_app() -> FastAPI:
         request: Request, error: RequestValidationError
     ):
         path = request.scope.get("path", "")
-        agent = path.removeprefix("/") if path in {"/scout", "/meridian"} else "agent"
+        agent = (
+            path.removeprefix("/")
+            if path in {"/scout", "/meridian", "/guide"}
+            else "agent"
+        )
         failure_types = [
             item["type"] for item in error.errors()
         ]
@@ -157,6 +162,7 @@ def initialize_app() -> FastAPI:
 
     app.include_router(health_api)
     app.include_router(trip_matcher_api)
+    app.include_router(trip_planner_api)
 
     return app
 

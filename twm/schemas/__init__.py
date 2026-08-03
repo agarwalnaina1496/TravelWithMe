@@ -1,6 +1,17 @@
 """Public request and response contracts for the Travel With Me API."""
 
 from .common import AgentMeta
+from .guide import (
+    GuideAgentOutput,
+    GuideDay,
+    GuideEvent,
+    GuidePhase,
+    GuidePlannerState,
+    GuideRequest,
+    GuideResponse,
+    GuideTripState,
+    GuideWorkingState,
+)
 from .meridian import (
     MeridianAdvisorConversationContext,
     MeridianAdvisorState,
@@ -27,6 +38,15 @@ from .recommendations import (
 
 __all__ = [
     "AgentMeta",
+    "GuideAgentOutput",
+    "GuideDay",
+    "GuideEvent",
+    "GuidePhase",
+    "GuidePlannerState",
+    "GuideRequest",
+    "GuideResponse",
+    "GuideTripState",
+    "GuideWorkingState",
     "MeridianAdvisorConversationContext",
     "MeridianAdvisorState",
     "MeridianAgentOutput",

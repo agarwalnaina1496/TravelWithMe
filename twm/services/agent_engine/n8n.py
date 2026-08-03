@@ -25,6 +25,7 @@ class N8NAgentAdapter:
         urls = {
             "scout": self._settings.n8n_scout_webhook_url,
             "meridian": self._settings.n8n_meridian_webhook_url,
+            "guide": self._settings.n8n_guide_webhook_url,
         }
         try:
             response = await self._http_client.post(

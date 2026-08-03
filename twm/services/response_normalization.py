@@ -1,6 +1,6 @@
 """Normalize workflow responses into validated API contracts."""
 
-from ..schemas import AgentMeta, MeridianResponse, ScoutResponse
+from ..schemas import AgentMeta, GuideResponse, MeridianResponse, ScoutResponse
 from .agent_engine import AgentExecution
 
 
@@ -15,6 +15,19 @@ def _normalize_scout_response(execution: AgentExecution) -> ScoutResponse:
         message=response.get("message") or "",
         state_delta=response.get("state_delta") or {},
         intent=response.get("intent"),
+        agent_meta=_agent_meta(execution),
+    )
+
+
+def _normalize_guide_response(execution: AgentExecution) -> GuideResponse:
+    response = execution.response
+    guide_state = dict(response.get("guide_state") or {})
+    guide_state.setdefault("duration_days", None)
+    guide_state.setdefault("start_date", None)
+    guide_state.setdefault("pending_clarification", None)
+    return GuideResponse(
+        message=response.get("message") or "",
+        guide_state=guide_state,
         agent_meta=_agent_meta(execution),
     )
 
