@@ -1,0 +1,49 @@
+"""Stateless Trip Planner agent execution routes."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+
+from ..core import get_engine, get_logger
+from ..schemas import GuideRequest, GuideResponse
+from ..services import AgentEngine
+from ..services.response_normalization import _normalize_guide_response
+from ..telemetry import TelemetryLogger
+
+
+router = APIRouter(tags=["Trip Planner"])
+
+EngineDependency = Annotated[AgentEngine, Depends(get_engine)]
+LoggerDependency = Annotated[TelemetryLogger, Depends(get_logger)]
+
+
+@router.post("/guide", response_model=GuideResponse)
+async def guide(
+    payload: GuideRequest,
+    engine: EngineDependency,
+    logger: LoggerDependency,
+):
+    request_data = payload.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        "Received Guide request. Request - "
+        f"{logger.format_json(request_data)}",
+        event="be.request.validated",
+        source="http",
+        agent="guide",
+        payload=request_data,
+    )
+    agent_state = payload.trip_state.model_dump(mode="json")
+    agent_state["guide_event"] = payload.event
+    execution = await engine.guide(agent_state, payload.message)
+    response = _normalize_guide_response(execution)
+    response_data = response.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        "Returning Guide response. Response - "
+        f"{logger.format_json(response_data)}",
+        event="be.response.normalized",
+        source="http",
+        agent="guide",
+        status="success",
+        response=response_data,
+    )
+    return response

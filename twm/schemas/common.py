@@ -6,5 +6,5 @@ from pydantic import BaseModel
 
 
 class AgentMeta(BaseModel):
-    agent: Literal["scout", "meridian"]
+    agent: Literal["scout", "meridian", "guide"]
     prompt_version: str

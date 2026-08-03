@@ -11,10 +11,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -80,
-        0
+        1060,
+        520
       ],
-      "id": "488c3640-3d83-4568-babd-afd0925cc29b",
+      "id": "31a88074-b340-464c-9a68-3f55a87d0cf1",
       "name": "Webhook",
       "webhookId": "4207bdee-78f4-4d90-8d2f-3d5de97022af"
     },
@@ -27,10 +27,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        840,
-        0
+        1880,
+        520
       ],
-      "id": "8f0b5ed5-9a84-48be-87fb-b58d9445e118",
+      "id": "adf75cbf-f1d0-4b3a-a3d9-ef0efecb1e68",
       "name": "Respond to Webhook"
     },
     {
@@ -44,32 +44,29 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.8,
       "position": [
-        200,
-        0
+        1400,
+        520
       ],
-      "id": "d8d4a246-e995-4031-ab74-4d394f3bd976",
+      "id": "08fdd658-4b9c-43e8-8f03-e6ff2a1476a4",
       "name": "Meridian"
     },
     {
       "parameters": {
-        "model": "openai/gpt-oss-120b",
-        "options": {
-          "maxTokensToSample": "={{ $('Webhook').item.json.body.generation.max_output_tokens }}",
-          "temperature": "={{ $('Webhook').item.json.body.generation.temperature }}"
-        }
+        "modelName": "models/gemini-3.6-flash",
+        "options": {}
       },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
       "position": [
-        220,
-        200
+        1460,
+        740
       ],
-      "id": "20e79d0f-c117-436b-91d0-54b996f36a90",
-      "name": "Groq Chat Model",
+      "id": "c29c57bf-025e-42ec-9bc5-b1d99316658b",
+      "name": "Google Gemini Chat Model",
       "credentials": {
-        "groqApi": {
-          "id": "HBYxDE4k9lhrrGOL",
-          "name": "Groq account"
+        "googlePalmApi": {
+          "id": "rzIjtczPG0KV6NJf",
+          "name": "Google Gemini(PaLM) Api account"
         }
       }
     }
@@ -98,7 +95,7 @@
         ]
       ]
     },
-    "Groq Chat Model": {
+    "Google Gemini Chat Model": {
       "ai_languageModel": [
         [
           {
@@ -112,14 +109,13 @@
   },
   "active": true,
   "settings": {
-    "executionOrder": "v1",
-    "executionTimeout": 180
+    "executionOrder": "v1"
   },
-  "versionId": "dfca042a-a37f-4f9a-a1c3-2d93e8292d80",
+  "versionId": "1b54c05b-d0b6-4759-97db-df163648c0fa",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "111d80fe232db9ee76f854ab72cbe1edcebe23e73237176ddf890a8073d51fa7"
   },
-  "id": "vF6LsSc1aeyPsTHc",
+  "id": "GxfGzk3lm30b1l2g",
   "tags": []
 }

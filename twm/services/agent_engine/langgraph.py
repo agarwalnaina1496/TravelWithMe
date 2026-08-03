@@ -31,6 +31,14 @@ class LangGraphAgentAdapter:
     async def invoke(
         self, agent: AgentName, invocation: AgentInvocation
     ) -> AgentInvocationResult:
+        if agent == "guide":
+            raise AgentAdapterError(
+                "guide LangGraph execution is not implemented",
+                component="langgraph",
+                failure_stage="engine_selection",
+                error_type="UnsupportedAgentError",
+                detail="Guide currently supports only the n8n engine",
+            )
         graphs = {
             "scout": self._scout_graph,
             "meridian": self._meridian_graph,

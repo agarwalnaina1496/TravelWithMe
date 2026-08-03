@@ -6,7 +6,7 @@ from pathlib import Path
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
-ALLOWED_PROMPTS = {"scout", "meridian"}
+ALLOWED_PROMPTS = {"scout", "meridian", "guide"}
 VERSIONS_FILE = PROMPTS_DIR / "versions.json"
 CHANGELOG_FILE = PROMPTS_DIR / "CHANGELOG.md"
 SEMVER_PATTERN = re.compile(

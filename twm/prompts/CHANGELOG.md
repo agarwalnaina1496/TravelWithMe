@@ -1,6 +1,13 @@
 # Prompt changelog
 
-Scout and Meridian are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
+Scout, Meridian, and Guide are released independently. Add a separate entry whenever a prompt's behavioral instructions change.
+
+## Guide 1.0.0 — 2026-08-03
+
+- Establishes the first Guide prompt release for places-first trip design.
+- Preserves explicit traveler decisions while supporting place edits and a
+  day-wise, place-only working plan.
+- Keeps researched itinerary details within Atlas ownership.
 
 ## Meridian 1.6.0 — 2026-07-21
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPTS_DIR = ROOT / "twm" / "prompts"
-AGENTS = ("scout", "meridian")
+AGENTS = ("scout", "meridian", "guide")
 
 
 def git_show(base_ref: str, relative_path: str) -> str:
@@ -61,29 +61,31 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    base_prompts = {
-        agent: git_show(args.base_ref, f"twm/prompts/{agent}.md") for agent in AGENTS
-    }
     current_prompts = {
         agent: (PROMPTS_DIR / f"{agent}.md").read_text(encoding="utf-8")
         for agent in AGENTS
     }
+    current_versions = json.loads(
+        (PROMPTS_DIR / "versions.json").read_text(encoding="utf-8")
+    )
+    base_prompts = {}
+    for agent in AGENTS:
+        try:
+            base_prompts[agent] = git_show(
+                args.base_ref, f"twm/prompts/{agent}.md"
+            )
+        except RuntimeError:
+            # A new agent prompt establishes its first release.
+            base_prompts[agent] = current_prompts[agent]
     try:
         base_versions = json.loads(git_show(args.base_ref, "twm/prompts/versions.json"))
     except RuntimeError:
         # Bootstrap: the base predates versioning, so the current files establish
         # the first release instead of requiring a bump from an unknown version.
-        base_versions = {
-            agent: current_versions
-            for agent, current_versions in json.loads(
-                (PROMPTS_DIR / "versions.json").read_text(encoding="utf-8")
-            ).items()
-        }
+        base_versions = dict(current_versions)
         base_prompts = current_prompts
-
-    current_versions = json.loads(
-        (PROMPTS_DIR / "versions.json").read_text(encoding="utf-8")
-    )
+    for agent in AGENTS:
+        base_versions.setdefault(agent, current_versions[agent])
     changelog = (PROMPTS_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
     errors = changed_prompts_requiring_release(
         base_prompts,

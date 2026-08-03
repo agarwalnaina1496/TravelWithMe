@@ -23,6 +23,7 @@ def settings() -> AgentEngineSettings:
         environment="test",
         n8n_scout_webhook_url="http://agents.example/webhook/scout",
         n8n_meridian_webhook_url="http://agents.example/webhook/meridian",
+        n8n_guide_webhook_url="http://agents.example/webhook/guide",
     )
 
 
@@ -135,7 +136,7 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
     assert error.upstream_response is None
 
 
-@pytest.mark.parametrize("agent", ["scout", "meridian"])
+@pytest.mark.parametrize("agent", ["scout", "meridian", "guide"])
 @pytest.mark.parametrize(
     (
         "response",
@@ -205,7 +206,7 @@ def test_n8n_adapter_rejects_upstream_and_private_contract_errors(
 
 
 def _assert_workflow_is_thin_raw_adapter(
-    workflow_name: str, agent_name: str
+    workflow_name: str, agent_name: str, model_name: str
 ) -> None:
     workflow_path = Path(__file__).parents[3] / "n8n" / workflow_name
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
@@ -214,7 +215,7 @@ def _assert_workflow_is_thin_raw_adapter(
     assert {
         "Webhook",
         agent_name,
-        "Groq Chat Model",
+        "Google Gemini Chat Model",
         "Respond to Webhook",
     } == set(nodes)
     main_nodes = [
@@ -222,7 +223,7 @@ def _assert_workflow_is_thin_raw_adapter(
         for node in workflow["nodes"]
         if node["type"]
         not in {
-            "@n8n/n8n-nodes-langchain.lmChatGroq",
+            "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
         }
     ]
     assert len(main_nodes) == 3
@@ -239,14 +240,14 @@ def _assert_workflow_is_thin_raw_adapter(
         nodes["Respond to Webhook"]["parameters"]["responseBody"]
         == "={{ { raw_output: $json.output } }}"
     )
-    assert nodes["Groq Chat Model"]["parameters"]["options"] == {
-        "maxTokensToSample": (
-            "={{ $('Webhook').item.json.body.generation.max_output_tokens }}"
-        ),
-        "temperature": (
-            "={{ $('Webhook').item.json.body.generation.temperature }}"
-        ),
+    model_node = nodes["Google Gemini Chat Model"]
+    assert model_node["parameters"] == {
+        "modelName": model_name,
+        "options": {},
     }
+    assert model_node["credentials"]["googlePalmApi"]["name"] == (
+        "Google Gemini(PaLM) Api account"
+    )
     assert "authentication" not in nodes["Webhook"]["parameters"]
     assert "credentials" not in nodes["Webhook"]
     assert workflow["connections"][agent_name]["main"][0][0]["node"] == (
@@ -256,12 +257,23 @@ def _assert_workflow_is_thin_raw_adapter(
         "ai_outputParser" not in connections
         for connections in workflow["connections"].values()
     )
-    assert workflow["settings"]["executionTimeout"] == 180
+    if workflow_name == "guide.json":
+        assert workflow["settings"]["executionTimeout"] == 180
 
 
 def test_scout_workflow_is_thin_raw_adapter() -> None:
-    _assert_workflow_is_thin_raw_adapter("scout.json", "Scout")
+    _assert_workflow_is_thin_raw_adapter(
+        "scout.json", "Scout", "models/gemini-3.5-flash-lite"
+    )
 
 
 def test_meridian_workflow_is_thin_raw_adapter() -> None:
-    _assert_workflow_is_thin_raw_adapter("meridian.json", "Meridian")
+    _assert_workflow_is_thin_raw_adapter(
+        "meridian.json", "Meridian", "models/gemini-3.6-flash"
+    )
+
+
+def test_guide_workflow_is_thin_raw_adapter() -> None:
+    _assert_workflow_is_thin_raw_adapter(
+        "guide.json", "Guide", "models/gemini-3.6-flash"
+    )

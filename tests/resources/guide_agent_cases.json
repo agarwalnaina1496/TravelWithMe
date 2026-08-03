@@ -1,0 +1,128 @@
+[
+  {
+    "id": "rishikesh-start",
+    "input": {
+      "event": "START",
+      "message": "I want a three-day trip to Rishikesh from Delhi for three friends within INR 50,000.",
+      "trip_context": {
+        "origin": "Delhi",
+        "destinations": ["Rishikesh"],
+        "duration_days": 3,
+        "travelers": 3,
+        "budget": "INR 50000"
+      }
+    },
+    "invariants": {
+      "phase": "PLACES_DRAFT",
+      "destinations": ["Rishikesh"],
+      "duration_days": 3,
+      "day_plan_length": 0
+    }
+  },
+  {
+    "id": "remove-rafting-add-pilgrimage",
+    "input": {
+      "event": "TRAVELER_MESSAGE",
+      "message": "I do not like rafting. Remove it and add a pilgrimage place.",
+      "trip_context": {
+        "destinations": ["Rishikesh"],
+        "duration_days": 3
+      },
+      "guide_state": {
+        "phase": "PLACES_DRAFT",
+        "destinations": ["Rishikesh"],
+        "duration_days": 3,
+        "start_date": null,
+        "places": [
+          "Ram Jhula",
+          "River Rafting",
+          "Triveni Ghat",
+          "Neer Garh Waterfall"
+        ],
+        "day_plan": [],
+        "preferences": [],
+        "exclusions": [],
+        "applied_changes": [],
+        "pending_clarification": null
+      }
+    },
+    "invariants": {
+      "phase": "PLACES_DRAFT",
+      "must_exclude_places": [
+        "River Rafting"
+      ],
+      "must_include_exclusions": [
+        "river rafting"
+      ],
+      "preserve_places": [
+        "Ram Jhula",
+        "Triveni Ghat",
+        "Neer Garh Waterfall"
+      ]
+    }
+  },
+  {
+    "id": "approve-rishikesh-places",
+    "input": {
+      "event": "APPROVE_PLACES",
+      "message": null,
+      "trip_context": {
+        "destinations": ["Rishikesh"],
+        "duration_days": 3
+      },
+      "guide_state": {
+        "phase": "PLACES_DRAFT",
+        "destinations": ["Rishikesh"],
+        "duration_days": 3,
+        "start_date": null,
+        "places": [
+          "Ram Jhula",
+          "Triveni Ghat",
+          "Neer Garh Waterfall",
+          "Neelkanth Mahadev Temple"
+        ],
+        "day_plan": [],
+        "preferences": [
+          "pilgrimage"
+        ],
+        "exclusions": [
+          "river rafting"
+        ],
+        "applied_changes": [],
+        "pending_clarification": null
+      }
+    },
+    "invariants": {
+      "phase": "DAY_PLAN_DRAFT",
+      "duration_days": 3,
+      "day_plan_length": 3,
+      "preserve_all_places": true,
+      "place_only_day_plan": true
+    }
+  },
+  {
+    "id": "preserve-explicit-circuit",
+    "input": {
+      "event": "START",
+      "message": "Plan Delhi, Agra and Jaipur for seven days in that order.",
+      "trip_context": {
+        "destinations": [
+          "Delhi",
+          "Agra",
+          "Jaipur"
+        ],
+        "duration_days": 7,
+        "route_order_fixed": true
+      }
+    },
+    "invariants": {
+      "preserve_destination_order": [
+        "Delhi",
+        "Agra",
+        "Jaipur"
+      ],
+      "duration_days": 7,
+      "must_not_add_destinations": true
+    }
+  }
+]
