@@ -24,6 +24,7 @@ def settings() -> AgentEngineSettings:
         n8n_scout_webhook_url="http://agents.example/webhook/scout",
         n8n_meridian_webhook_url="http://agents.example/webhook/meridian",
         n8n_guide_webhook_url="http://agents.example/webhook/guide",
+        n8n_atlas_webhook_url="http://agents.example/webhook/atlas",
     )
 
 
@@ -136,7 +137,7 @@ def test_n8n_adapter_classifies_connection_failure_without_exposing_url() -> Non
     assert error.upstream_response is None
 
 
-@pytest.mark.parametrize("agent", ["scout", "meridian", "guide"])
+@pytest.mark.parametrize("agent", ["scout", "meridian", "guide", "atlas"])
 @pytest.mark.parametrize(
     (
         "response",
@@ -277,3 +278,22 @@ def test_guide_workflow_is_thin_raw_adapter() -> None:
     _assert_workflow_is_thin_raw_adapter(
         "guide.json", "Guide", "models/gemini-3.6-flash"
     )
+
+
+def test_atlas_workflow_is_gemini_only_until_search_is_integrated() -> None:
+    workflow_path = Path(__file__).parents[3] / "n8n" / "atlas.json"
+    workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+    nodes = {node["name"]: node for node in workflow["nodes"]}
+
+    assert set(nodes) == {
+        "Webhook",
+        "Atlas",
+        "Google Gemini Chat Model",
+        "Respond to Webhook",
+    }
+    assert nodes["Webhook"]["parameters"]["path"] == "atlas"
+    assert nodes["Google Gemini Chat Model"]["parameters"]["modelName"] == (
+        "models/gemini-3.6-flash"
+    )
+    assert all("ai_tool" not in connections for connections in workflow["connections"].values())
+    assert workflow["settings"]["executionTimeout"] == 180

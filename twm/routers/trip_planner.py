@@ -5,9 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from ..core import get_engine, get_logger
-from ..schemas import GuideRequest, GuideResponse
+from ..schemas import AtlasRequest, AtlasResponse, GuideRequest, GuideResponse
 from ..services import AgentEngine
-from ..services.response_normalization import _normalize_guide_response
+from ..services.response_normalization import (
+    _normalize_atlas_response,
+    _normalize_guide_response,
+)
 from ..telemetry import TelemetryLogger
 
 
@@ -43,6 +46,36 @@ async def guide(
         event="be.response.normalized",
         source="http",
         agent="guide",
+        status="success",
+        response=response_data,
+    )
+    return response
+
+
+@router.post("/atlas", response_model=AtlasResponse)
+async def atlas(
+    payload: AtlasRequest,
+    engine: EngineDependency,
+    logger: LoggerDependency,
+):
+    request_data = payload.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        "Received Atlas request. Request - "
+        f"{logger.format_json(request_data)}",
+        event="be.request.validated",
+        source="http",
+        agent="atlas",
+        payload=request_data,
+    )
+    execution = await engine.atlas(request_data, None)
+    response = _normalize_atlas_response(execution)
+    response_data = response.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        "Returning Atlas response. Response - "
+        f"{logger.format_json(response_data)}",
+        event="be.response.normalized",
+        source="http",
+        agent="atlas",
         status="success",
         response=response_data,
     )

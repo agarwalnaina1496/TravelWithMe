@@ -6,9 +6,9 @@ from pathlib import Path
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
-ALLOWED_PROMPTS = {"scout", "meridian", "guide"}
+ALLOWED_PROMPTS = {"scout", "meridian", "guide", "atlas"}
 VERSIONS_FILE = PROMPTS_DIR / "versions.json"
-CHANGELOG_FILE = PROMPTS_DIR / "CHANGELOG.md"
+CHANGELOGS_DIR = PROMPTS_DIR / "changelogs"
 SEMVER_PATTERN = re.compile(
     r"^(0|[1-9]\d*)\."
     r"(0|[1-9]\d*)\."
@@ -86,12 +86,16 @@ def load_prompt_release(agent: str) -> PromptRelease:
 def validate_prompt_release_files() -> None:
     # Every current version needs a human-readable release entry.
     versions = load_prompt_versions()
-    try:
-        changelog = CHANGELOG_FILE.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise ValueError(f"Prompt changelog is missing: {CHANGELOG_FILE}") from exc
-
     for agent, version in versions.items():
+        changelog_file = CHANGELOGS_DIR / f"{agent}.md"
+        try:
+            changelog = changelog_file.read_text(encoding="utf-8")
+        except FileNotFoundError as exc:
+            raise ValueError(
+                f"Prompt changelog is missing: {changelog_file}"
+            ) from exc
         heading = f"## {agent.title()} {version}"
         if heading not in changelog:
-            raise ValueError(f"Prompt changelog is missing heading: {heading}")
+            raise ValueError(
+                f"Prompt changelog is missing heading in {changelog_file}: {heading}"
+            )

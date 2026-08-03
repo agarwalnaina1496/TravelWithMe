@@ -1,6 +1,7 @@
 """Public request and response contracts for the Travel With Me API."""
 
 from .common import AgentMeta
+from .atlas import AtlasAgentOutput, AtlasRequest, AtlasResponse
 from .guide import (
     GuideAgentOutput,
     GuideDay,
@@ -38,6 +39,9 @@ from .recommendations import (
 
 __all__ = [
     "AgentMeta",
+    "AtlasAgentOutput",
+    "AtlasRequest",
+    "AtlasResponse",
     "GuideAgentOutput",
     "GuideDay",
     "GuideEvent",
