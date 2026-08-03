@@ -11,10 +11,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        0,
-        0
+        820,
+        340
       ],
-      "id": "067fad9e-2b14-4a9e-9ce9-0f0b35d4eae4",
+      "id": "bba50ff3-8c4c-47be-b9ce-c52fa34b7a63",
       "name": "Webhook",
       "webhookId": "4207bdee-78f4-4d90-8d2f-3d5de97022af"
     },
@@ -27,10 +27,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        760,
-        0
+        1580,
+        340
       ],
-      "id": "80207876-8331-40e3-a602-e8053ad96225",
+      "id": "05c5250e-1444-4e0e-a50b-1dc9e847b461",
       "name": "Respond to Webhook"
     },
     {
@@ -44,32 +44,29 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.8,
       "position": [
-        220,
-        0
+        1040,
+        340
       ],
-      "id": "961558c7-4f17-4a63-a375-0abf46f5d369",
+      "id": "6227578f-d5b6-47db-aabb-2c56b28b6726",
       "name": "Scout"
     },
     {
       "parameters": {
-        "model": "openai/gpt-oss-120b",
-        "options": {
-          "maxTokensToSample": "={{ $('Webhook').item.json.body.generation.max_output_tokens }}",
-          "temperature": "={{ $('Webhook').item.json.body.generation.temperature }}"
-        }
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
       },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
       "position": [
-        220,
-        180
+        1080,
+        560
       ],
-      "id": "d61eb72d-5ca0-4cb9-9b4d-ec57e0dd6dd8",
-      "name": "Groq Chat Model",
+      "id": "74de9433-c728-472b-a02e-d1f0cd52b4c7",
+      "name": "Google Gemini Chat Model",
       "credentials": {
-        "groqApi": {
-          "id": "HBYxDE4k9lhrrGOL",
-          "name": "Groq account"
+        "googlePalmApi": {
+          "id": "rzIjtczPG0KV6NJf",
+          "name": "Google Gemini(PaLM) Api account"
         }
       }
     }
@@ -98,7 +95,7 @@
         ]
       ]
     },
-    "Groq Chat Model": {
+    "Google Gemini Chat Model": {
       "ai_languageModel": [
         [
           {
@@ -112,10 +109,9 @@
   },
   "active": true,
   "settings": {
-    "executionOrder": "v1",
-    "executionTimeout": 180
+    "executionOrder": "v1"
   },
-  "versionId": "f07d70bd-8300-462c-bcb5-bd5c6c3c4aa2",
+  "versionId": "92cb88c3-98a6-4dc5-b45f-16714cabca53",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "111d80fe232db9ee76f854ab72cbe1edcebe23e73237176ddf890a8073d51fa7"

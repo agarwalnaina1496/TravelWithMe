@@ -31,21 +31,18 @@
     },
     {
       "parameters": {
-        "model": "openai/gpt-oss-120b",
-        "options": {
-          "maxTokensToSample": "={{ $('Webhook').item.json.body.generation.max_output_tokens }}",
-          "temperature": "={{ $('Webhook').item.json.body.generation.temperature }}"
-        }
+        "modelName": "models/gemini-3.6-flash",
+        "options": {}
       },
-      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
       "position": [240, 180],
       "id": "01f5bf34-a286-4d50-90ca-f7d8f95e226b",
-      "name": "Groq Chat Model",
+      "name": "Google Gemini Chat Model",
       "credentials": {
-        "groqApi": {
-          "id": "HBYxDE4k9lhrrGOL",
-          "name": "Groq account"
+        "googlePalmApi": {
+          "id": "rzIjtczPG0KV6NJf",
+          "name": "Google Gemini(PaLM) Api account"
         }
       }
     },
@@ -70,7 +67,7 @@
     "Guide": {
       "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
     },
-    "Groq Chat Model": {
+    "Google Gemini Chat Model": {
       "ai_languageModel": [[{"node": "Guide", "type": "ai_languageModel", "index": 0}]]
     }
   },
