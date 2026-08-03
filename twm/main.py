@@ -140,7 +140,7 @@ def initialize_app() -> FastAPI:
         path = request.scope.get("path", "")
         agent = (
             path.removeprefix("/")
-            if path in {"/scout", "/meridian", "/guide"}
+            if path in {"/scout", "/meridian", "/guide", "/atlas"}
             else "agent"
         )
         failure_types = [

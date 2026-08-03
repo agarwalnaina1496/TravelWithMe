@@ -1,0 +1,84 @@
+{
+  "name": "Atlas",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "atlas",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "id": "a4fe125c-44e7-4b1d-bb17-54a198cbd2a8",
+      "name": "Webhook",
+      "webhookId": "73ccf6b2-bb75-4bf3-8728-6de61be30b4e"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Webhook').item.json.body.user_prompt }}",
+        "options": {
+          "systemMessage": "={{ $('Webhook').item.json.body.system_prompt }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [280, 0],
+      "id": "3f69577f-08f0-4f2d-a9f8-671088b60237",
+      "name": "Atlas"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.6-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [220, 220],
+      "id": "9434a8bc-73b6-40d9-94b5-bdeef3a1e7ef",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "rzIjtczPG0KV6NJf",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { raw_output: $json.output } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [620, 0],
+      "id": "465d9dfb-f121-418d-a9d0-560b51e78c27",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Atlas", "type": "main", "index": 0}]]
+    },
+    "Atlas": {
+      "main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [[{"node": "Atlas", "type": "ai_languageModel", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 180
+  },
+  "versionId": "bfc46aa8-4cdd-4ce0-b8df-bf6a96bd8901",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

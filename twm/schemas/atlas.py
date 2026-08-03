@@ -1,0 +1,256 @@
+"""Atlas input and rich final-itinerary contracts."""
+
+from typing import Annotated, Any, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+from ..security import validate_phase_state
+from .common import AgentMeta
+
+
+AtlasText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+VerificationStatus = Literal["VERIFIED", "GENERAL_GUIDANCE"]
+TimelineKind = Literal["TRAVEL", "STAY", "MEAL", "ACTIVITY", "FREE_TIME"]
+
+
+class AtlasReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: VerificationStatus
+    source_title: Optional[AtlasText] = None
+    source_url: Optional[AtlasText] = None
+
+    @model_validator(mode="after")
+    def require_source_for_verified_detail(self) -> "AtlasReference":
+        if self.status == "VERIFIED" and not (
+            self.source_title and self.source_url
+        ):
+            raise ValueError("VERIFIED details require source_title and source_url")
+        return self
+
+
+class AtlasWorkingDay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day_number: int = Field(ge=1)
+    date: Optional[AtlasText] = None
+    places: list[AtlasText] = Field(default_factory=list)
+
+
+class AtlasWorkingPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    destinations: list[AtlasText]
+    duration_days: int = Field(ge=1, le=60)
+    start_date: Optional[AtlasText] = None
+    approved_places: list[AtlasText] = Field(default_factory=list)
+    days: list[AtlasWorkingDay]
+
+    @model_validator(mode="after")
+    def validate_approved_plan(self) -> "AtlasWorkingPlan":
+        if len(self.days) != self.duration_days:
+            raise ValueError("working plan day count must equal duration_days")
+        if [day.day_number for day in self.days] != list(
+            range(1, self.duration_days + 1)
+        ):
+            raise ValueError("working plan days must be sequential from 1")
+        allocated = [place for day in self.days for place in day.places]
+        normalized = [place.casefold() for place in allocated]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("each approved place must be allocated exactly once")
+        if self.approved_places and set(normalized) != {
+            place.casefold() for place in self.approved_places
+        }:
+            raise ValueError("days must allocate every approved place and no others")
+        return self
+
+
+class AtlasRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trip_context: dict[str, Any] = Field(default_factory=dict)
+    working_plan: AtlasWorkingPlan
+
+    @model_validator(mode="after")
+    def validate_request(self) -> "AtlasRequest":
+        validate_phase_state({"trip_context": self.trip_context})
+        return self
+
+
+class AtlasTripSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: AtlasText
+    destinations: list[AtlasText]
+    duration_days: int = Field(ge=1)
+    travelers: Optional[int] = Field(default=None, ge=1)
+    date_range: Optional[AtlasText] = None
+    overview: AtlasText
+    route_rationale: AtlasText
+
+
+class AtlasTravelOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    from_place: AtlasText
+    to_place: AtlasText
+    mode: AtlasText
+    suggestion: AtlasText
+    duration_guidance: Optional[AtlasText] = None
+    estimated_cost_low: Optional[int] = Field(default=None, ge=0)
+    estimated_cost_high: Optional[int] = Field(default=None, ge=0)
+    reference: AtlasReference
+
+    @model_validator(mode="after")
+    def validate_cost_range(self) -> "AtlasTravelOption":
+        _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
+        return self
+
+
+class AtlasStayOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    location: AtlasText
+    suggestion: AtlasText
+    nights: int = Field(ge=1)
+    check_in_day: int = Field(ge=1)
+    check_out_day: int = Field(ge=1)
+    why_it_fits: AtlasText
+    estimated_cost_low: Optional[int] = Field(default=None, ge=0)
+    estimated_cost_high: Optional[int] = Field(default=None, ge=0)
+    reference: AtlasReference
+
+    @model_validator(mode="after")
+    def validate_stay(self) -> "AtlasStayOption":
+        if self.check_out_day <= self.check_in_day:
+            raise ValueError("stay check_out_day must follow check_in_day")
+        _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
+        return self
+
+
+class AtlasTimelineItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start_time: Optional[AtlasText] = None
+    end_time: Optional[AtlasText] = None
+    kind: TimelineKind
+    title: AtlasText
+    location: AtlasText
+    detail: AtlasText
+    movement_guidance: Optional[AtlasText] = None
+    estimated_cost_low: Optional[int] = Field(default=None, ge=0)
+    estimated_cost_high: Optional[int] = Field(default=None, ge=0)
+    reference: AtlasReference
+
+    @model_validator(mode="after")
+    def validate_cost_range(self) -> "AtlasTimelineItem":
+        _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
+        return self
+
+
+class AtlasDay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day_number: int = Field(ge=1)
+    date: Optional[AtlasText] = None
+    title: AtlasText
+    primary_location: AtlasText
+    summary: AtlasText
+    timeline: list[AtlasTimelineItem] = Field(min_length=1)
+    seasonal_guidance: AtlasText
+    permit_or_ticket_guidance: AtlasText
+    backup_plan: Optional[AtlasText] = None
+
+
+class AtlasBudgetLine(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: AtlasText
+    amount_low: int = Field(ge=0)
+    amount_high: int = Field(ge=0)
+    note: AtlasText
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "AtlasBudgetLine":
+        if self.amount_high < self.amount_low:
+            raise ValueError("budget amount_high must be at least amount_low")
+        return self
+
+
+class AtlasBudgetSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    currency: AtlasText
+    lines: list[AtlasBudgetLine] = Field(min_length=1)
+    total_low: int = Field(default=0, ge=0)
+    total_high: int = Field(default=0, ge=0)
+    budget_fit: AtlasText
+
+    @model_validator(mode="after")
+    def calculate_totals(self) -> "AtlasBudgetSummary":
+        self.total_low = sum(line.amount_low for line in self.lines)
+        self.total_high = sum(line.amount_high for line in self.lines)
+        return self
+
+
+class AtlasPracticalNote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: AtlasText
+    title: AtlasText
+    detail: AtlasText
+    reference: AtlasReference
+
+
+class AtlasSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: AtlasText
+    url: AtlasText
+    supports: list[AtlasText] = Field(min_length=1)
+
+
+class AtlasUnresolvedItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item: AtlasText
+    generic_guidance: AtlasText
+
+
+class AtlasFinalItinerary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trip_summary: AtlasTripSummary
+    travel_options: list[AtlasTravelOption]
+    stay_options: list[AtlasStayOption]
+    days: list[AtlasDay]
+    budget_summary: AtlasBudgetSummary
+    practical_notes: list[AtlasPracticalNote]
+    sources: list[AtlasSource]
+
+    @model_validator(mode="after")
+    def validate_days(self) -> "AtlasFinalItinerary":
+        expected = self.trip_summary.duration_days
+        if len(self.days) != expected:
+            raise ValueError("final itinerary day count must equal duration_days")
+        if [day.day_number for day in self.days] != list(range(1, expected + 1)):
+            raise ValueError("final itinerary days must be sequential from 1")
+        return self
+
+
+class AtlasAgentOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    final_itinerary: AtlasFinalItinerary
+    unresolved: list[AtlasUnresolvedItem]
+
+
+class AtlasResponse(AtlasAgentOutput):
+    agent_meta: AgentMeta
+
+
+def _validate_optional_range(low: Optional[int], high: Optional[int]) -> None:
+    if (low is None) != (high is None):
+        raise ValueError("cost range requires both low and high or neither")
+    if low is not None and high is not None and high < low:
+        raise ValueError("cost high must be at least cost low")

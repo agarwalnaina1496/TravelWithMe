@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPTS_DIR = ROOT / "twm" / "prompts"
-AGENTS = ("scout", "meridian", "guide")
+AGENTS = ("scout", "meridian", "guide", "atlas")
 
 
 def git_show(base_ref: str, relative_path: str) -> str:
@@ -36,7 +36,7 @@ def changed_prompts_requiring_release(
     current_prompts: dict[str, str],
     base_versions: dict[str, str],
     current_versions: dict[str, str],
-    changelog: str,
+    changelogs: dict[str, str],
 ) -> list[str]:
     errors: list[str] = []
     for agent in AGENTS:
@@ -46,8 +46,11 @@ def changed_prompts_requiring_release(
             errors.append(f"{agent}.md changed without a {agent} version bump")
             continue
         heading = f"## {agent.title()} {current_versions.get(agent, '')}"
-        if heading not in changelog:
-            errors.append(f"{agent}.md changed but CHANGELOG.md is missing heading: {heading}")
+        if heading not in changelogs[agent]:
+            errors.append(
+                f"{agent}.md changed but changelogs/{agent}.md is missing "
+                f"heading: {heading}"
+            )
     return errors
 
 
@@ -86,13 +89,18 @@ def main() -> int:
         base_prompts = current_prompts
     for agent in AGENTS:
         base_versions.setdefault(agent, current_versions[agent])
-    changelog = (PROMPTS_DIR / "CHANGELOG.md").read_text(encoding="utf-8")
+    changelogs = {
+        agent: (PROMPTS_DIR / "changelogs" / f"{agent}.md").read_text(
+            encoding="utf-8"
+        )
+        for agent in AGENTS
+    }
     errors = changed_prompts_requiring_release(
         base_prompts,
         current_prompts,
         base_versions,
         current_versions,
-        changelog,
+        changelogs,
     )
     if errors:
         for error in errors:
