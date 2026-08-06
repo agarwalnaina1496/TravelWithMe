@@ -440,3 +440,60 @@ def test_start_planning_requires_backend_owned_destination(api_client: TestClien
     assert response.status_code == 422
     assert engine.calls == []
     assert api_client.get(f"/trips/{trip['id']}").json()["version"] == 1
+
+
+def test_continue_resumes_backend_selected_agent_without_message(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeCommandEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = api_client.post(
+        "/trips", json={"title": "Trip", "trip_state": {}, "ui_state": {}}
+    ).json()
+    payload = {
+        "command": "continue",
+        "expected_version": 1,
+        "idempotency_key": str(uuid4()),
+    }
+
+    first = api_client.post(f"/trips/{trip['id']}/commands", json=payload)
+    replay = api_client.post(f"/trips/{trip['id']}/commands", json=payload)
+
+    assert first.status_code == 200
+    assert replay.json() == first.json()
+    assert len(engine.calls) == 1
+    assert engine.calls[0][0] == "scout"
+    assert engine.calls[0][2] is None
+
+
+def test_matched_scout_handoff_clears_obsolete_selection(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "matched",
+        "active_agent": None,
+        "trip_context": {
+            "selected_option": {
+                "type": "single", "id": "goa", "name": "Goa"
+            }
+        },
+    }
+    trip = api_client.post(
+        "/trips", json={"title": "Trip", "trip_state": state, "ui_state": {}}
+    ).json()
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Actually suggest mountains instead",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["scout", "meridian"]
+    assert "selected_option" not in engine.calls[1][1]["trip_context"]
+    assert "selected_option" not in response.json()["trip"]["trip_state"]["trip_context"]
