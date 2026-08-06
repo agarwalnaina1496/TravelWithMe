@@ -149,6 +149,14 @@ class TripCommandService:
             return {"message": None, "agent_meta": None}
         if payload.command == "select_destination":
             return self._select_destination(state, payload.option_id or "")
+        if payload.command == "start_planning":
+            if not self._has_planning_destination(state["trip_context"]):
+                raise InvalidTripCommandError(
+                    "Select or provide a destination before starting planning."
+                )
+            state["stage"] = "planning"
+            state["active_agent"] = "guide"
+            return await self._guide(state, "START", None)
         if payload.command == "approve_places":
             return await self._guide(state, "APPROVE_PLACES", None)
         if payload.command == "approve_plan":
@@ -162,6 +170,23 @@ class TripCommandService:
         }:
             return await self._meridian(state, message)
         return await self._scout(state, message)
+
+    @staticmethod
+    def _has_planning_destination(trip_context: dict[str, Any]) -> bool:
+        selected = trip_context.get("selected_option")
+        if isinstance(selected, dict) and any(
+            selected.get(key) for key in ("id", "name")
+        ):
+            return True
+        for key in ("destination", "destinations", "destination_name"):
+            value = trip_context.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+            if isinstance(value, list) and any(
+                isinstance(item, str) and item.strip() for item in value
+            ):
+                return True
+        return False
 
     async def _scout(self, state: dict[str, Any], message: str) -> dict[str, Any]:
         phase = {

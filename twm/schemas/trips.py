@@ -69,6 +69,7 @@ class TripConflictResponse(BaseModel):
 TripCommandName = Literal[
     "traveler_message",
     "select_destination",
+    "start_planning",
     "approve_places",
     "approve_plan",
     "new_journey",
