@@ -8,12 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from ..core import get_logger, get_trip_persistence
 from ..persistence.contracts import TripRecord, VersionConflictError
 from ..persistence.service import TripPersistenceService
-from ..schemas.trips import TripCreateRequest, TripListResponse, TripRenameRequest, TripReplaceRequest, TripResponse, TripSummary
+from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRenameRequest, TripReplaceRequest, TripResponse, TripSummary
+from ..services import AgentEngine
+from ..services.trip_commands import IdempotencyConflictError, InvalidTripCommandError, TripCommandService
+from ..core import get_engine
 from ..telemetry import TelemetryLogger
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
 Persistence = Annotated[TripPersistenceService, Depends(get_trip_persistence)]
 Logger = Annotated[TelemetryLogger, Depends(get_logger)]
+Engine = Annotated[AgentEngine, Depends(get_engine)]
 
 
 def _response(record: TripRecord) -> TripResponse:
@@ -72,3 +76,45 @@ async def rename_trip(trip_id: UUID, payload: TripRenameRequest, request: Reques
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found.")
     return _response(trip)
+
+
+@router.post("/{trip_id}/commands", response_model=TripCommandResponse)
+async def execute_trip_command(
+    trip_id: UUID,
+    payload: TripCommandRequest,
+    request: Request,
+    response: Response,
+    persistence: Persistence,
+    engine: Engine,
+    logger: Logger,
+):
+    guest = await persistence.guest(request, response)
+    trip = await persistence.repository.get_trip(guest.id, trip_id)
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    logger.info(
+        "Received Backend-owned trip command.",
+        event="be.trip.command.received",
+        source="http",
+        trip_id=str(trip_id),
+        command=payload.command,
+        expected_version=payload.expected_version,
+        idempotency_key=str(payload.idempotency_key),
+    )
+    service = TripCommandService(persistence.repository, engine, logger)
+    try:
+        return await service.execute(guest.id, trip, payload)
+    except VersionConflictError as error:
+        logger.warning(
+            "Rejected stale trip command.",
+            event="be.trip.command.version_conflict",
+            source="http",
+            trip_id=str(trip_id),
+            command=payload.command,
+            current_version=error.current_version,
+        )
+        raise _conflict(error) from error
+    except IdempotencyConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except InvalidTripCommandError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error

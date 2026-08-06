@@ -25,6 +25,12 @@ class TripRecord:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class TripCommandRecord:
+    request_hash: str
+    response: dict[str, Any]
+
+
 class VersionConflictError(Exception):
     def __init__(self, current_version: int):
         self.current_version = current_version
@@ -39,3 +45,5 @@ class TripRepository(Protocol):
     async def get_trip(self, guest_id: UUID, trip_id: UUID) -> TripRecord | None: ...
     async def replace_trip(self, guest_id: UUID, trip_id: UUID, expected_version: int, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord | None: ...
     async def rename_trip(self, guest_id: UUID, trip_id: UUID, expected_version: int, title: str) -> TripRecord | None: ...
+    async def get_command(self, guest_id: UUID, trip_id: UUID, idempotency_key: UUID) -> TripCommandRecord | None: ...
+    async def commit_command(self, guest_id: UUID, trip_id: UUID, expected_version: int, idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any], response: dict[str, Any]) -> TripRecord | TripCommandRecord | None: ...

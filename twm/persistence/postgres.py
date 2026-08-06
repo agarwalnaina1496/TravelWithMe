@@ -7,7 +7,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .contracts import GuestSession, TripRecord, VersionConflictError
+from .contracts import GuestSession, TripCommandRecord, TripRecord, VersionConflictError
 
 
 def _json_object(value: str | dict[str, Any]) -> dict[str, Any]:
@@ -78,3 +78,58 @@ class PostgresTripRepository:
             f"""UPDATE {self.schema}.trips SET title=$4,version=version+1,updated_at=now()
             WHERE id=$1 AND guest_session_id=$2 AND version=$3 RETURNING *""",
             guest_id, trip_id, expected_version, title)
+
+    async def get_command(self, guest_id: UUID, trip_id: UUID, idempotency_key: UUID) -> TripCommandRecord | None:
+        row = await self.pool.fetchrow(
+            f"""SELECT request_hash,response FROM {self.schema}.trip_commands
+            WHERE guest_session_id=$1 AND trip_id=$2 AND idempotency_key=$3""",
+            guest_id, trip_id, idempotency_key,
+        )
+        return TripCommandRecord(row["request_hash"], _json_object(row["response"])) if row else None
+
+    async def commit_command(
+        self, guest_id: UUID, trip_id: UUID, expected_version: int,
+        idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any],
+        response: dict[str, Any],
+    ) -> TripRecord | TripCommandRecord | None:
+        async with self.pool.acquire() as connection:
+            async with connection.transaction():
+                prior = await connection.fetchrow(
+                    f"""SELECT request_hash,response FROM {self.schema}.trip_commands
+                    WHERE guest_session_id=$1 AND trip_id=$2 AND idempotency_key=$3""",
+                    guest_id, trip_id, idempotency_key,
+                )
+                if prior:
+                    return TripCommandRecord(prior["request_hash"], _json_object(prior["response"]))
+                row = await connection.fetchrow(
+                    f"""UPDATE {self.schema}.trips SET trip_state=$4::jsonb,version=version+1,updated_at=now()
+                    WHERE id=$1 AND guest_session_id=$2 AND version=$3 RETURNING *""",
+                    trip_id, guest_id, expected_version, json.dumps(trip_state),
+                )
+                if not row:
+                    prior = await connection.fetchrow(
+                        f"""SELECT request_hash,response FROM {self.schema}.trip_commands
+                        WHERE guest_session_id=$1 AND trip_id=$2 AND idempotency_key=$3""",
+                        guest_id, trip_id, idempotency_key,
+                    )
+                    if prior:
+                        return TripCommandRecord(
+                            prior["request_hash"], _json_object(prior["response"])
+                        )
+                    current = await connection.fetchval(
+                        f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND guest_session_id=$2",
+                        trip_id, guest_id,
+                    )
+                    if current is None:
+                        return None
+                    raise VersionConflictError(current)
+                stored_response = dict(response)
+                stored_response["trip"] = _record(row).__dict__
+                await connection.execute(
+                    f"""INSERT INTO {self.schema}.trip_commands
+                    (guest_session_id,trip_id,idempotency_key,request_hash,response)
+                    VALUES ($1,$2,$3,$4,$5::jsonb)""",
+                    guest_id, trip_id, idempotency_key, request_hash,
+                    json.dumps(stored_response, default=str),
+                )
+                return _record(row)

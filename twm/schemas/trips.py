@@ -4,7 +4,10 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .common import AgentMeta
+from .scout import BoundedMessage
 
 
 class TripCreateRequest(BaseModel):
@@ -52,3 +55,44 @@ class TripListResponse(BaseModel):
 class TripConflictResponse(BaseModel):
     detail: str = "Trip has a newer version."
     current_version: int
+
+
+TripCommandName = Literal[
+    "traveler_message",
+    "select_destination",
+    "approve_places",
+    "approve_plan",
+    "new_journey",
+]
+
+
+class TripCommandRequest(BaseModel):
+    """A browser intent; canonical TripState is deliberately not accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: TripCommandName
+    expected_version: int = Field(ge=1)
+    idempotency_key: UUID
+    message: BoundedMessage | None = None
+    option_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_command_fields(self) -> "TripCommandRequest":
+        if self.command == "traveler_message" and not (
+            self.message and self.message.strip()
+        ):
+            raise ValueError("traveler_message requires message")
+        if self.command == "select_destination" and not self.option_id:
+            raise ValueError("select_destination requires option_id")
+        if self.command != "traveler_message" and self.message is not None:
+            raise ValueError("message is allowed only for traveler_message")
+        if self.command != "select_destination" and self.option_id is not None:
+            raise ValueError("option_id is allowed only for select_destination")
+        return self
+
+
+class TripCommandResponse(BaseModel):
+    trip: TripResponse
+    message: str | None = None
+    agent_meta: AgentMeta | None = None
