@@ -147,6 +147,7 @@ class FakeCommandEngine:
                     "applied_changes": ["Approved places"],
                     "pending_clarification": None,
                 },
+                "explicit_changes": [],
             },
             prompt_release=PromptRelease("guide", "1.0.0", "test"),
         )
@@ -219,7 +220,11 @@ class FakeGuideLifecycleEngine(FakeCommandEngine):
                     {"day_number": 1, "date": None, "places": ["Unexpected place"]}
                 ]
         return AgentExecution(
-            response={"message": "Guide revision ready.", "guide_state": guide_state},
+            response={
+                "message": "Guide revision ready.",
+                "guide_state": guide_state,
+                "explicit_changes": [],
+            },
             prompt_release=PromptRelease("guide", "1.0.0", "test"),
         )
 
@@ -231,12 +236,17 @@ class FakeDayPlanClarificationEngine(FakeCommandEngine):
         if len(self.calls) == 1:
             guide_state["phase"] = "NEEDS_CLARIFICATION"
             guide_state["day_plan"] = []
+            guide_state["preferences"] = ["adventure"]
             guide_state["pending_clarification"] = "Morning or evening?"
         else:
             guide_state["phase"] = "DAY_PLAN_DRAFT"
             guide_state["pending_clarification"] = None
         return AgentExecution(
-            response={"message": "Clarification handled.", "guide_state": guide_state},
+            response={
+                "message": "Clarification handled.",
+                "guide_state": guide_state,
+                "explicit_changes": ["preferences"] if len(self.calls) == 1 else [],
+            },
             prompt_release=PromptRelease("guide", "1.0.0", "test"),
         )
 
@@ -260,7 +270,15 @@ class FakePlacesApprovalClarificationEngine(FakeCommandEngine):
             ]
             guide_state["pending_clarification"] = None
         return AgentExecution(
-            response={"message": "Duration handled.", "guide_state": guide_state},
+            response={
+                "message": "Duration handled.",
+                "guide_state": guide_state,
+                "explicit_changes": (
+                    []
+                    if trip_state["guide_event"] == "APPROVE_PLACES"
+                    else ["duration_days", "day_plan"]
+                ),
+            },
             prompt_release=PromptRelease("guide", "1.0.0", "test"),
         )
 
@@ -274,8 +292,43 @@ class FakeDayPlanPlaceMutationEngine(FakeCommandEngine):
             {"day_number": 1, "date": None, "places": ["Unexpected place"]}
         ]
         return AgentExecution(
-            response={"message": "Changed.", "guide_state": guide_state},
+            response={
+                "message": "Changed.",
+                "guide_state": guide_state,
+                "explicit_changes": [],
+            },
             prompt_release=PromptRelease("guide", "1.0.0", "test"),
+        )
+
+
+class FakeDayPlanDecisionLossEngine(FakeCommandEngine):
+    async def guide(self, trip_state, message):
+        self.calls.append(("guide", trip_state, message))
+        guide_state = dict(trip_state["guide_state"])
+        guide_state["preferences"] = []
+        guide_state["exclusions"] = []
+        return AgentExecution(
+            response={
+                "message": "Moved.",
+                "guide_state": guide_state,
+                "explicit_changes": [],
+            },
+            prompt_release=PromptRelease("guide", "1.0.0", "test"),
+        )
+
+
+class FakeExplicitPreferenceOverrideEngine(FakeCommandEngine):
+    async def guide(self, trip_state, message):
+        self.calls.append(("guide", trip_state, message))
+        guide_state = dict(trip_state["guide_state"])
+        guide_state["exclusions"] = []
+        return AgentExecution(
+            response={
+                "message": "Rafting is allowed again.",
+                "guide_state": guide_state,
+                "explicit_changes": ["exclusions"],
+            },
+            prompt_release=PromptRelease("guide", "1.1.0", "test"),
         )
 
 
@@ -644,7 +697,7 @@ def test_day_plan_survives_a_backend_owned_clarification_round_trip(
         f"/trips/{trip['id']}/commands",
         json={
             "command": "traveler_message",
-            "message": "Move Triveni Ghat",
+            "message": "Make it adventurous and move Triveni Ghat",
             "expected_version": 1,
             "idempotency_key": str(uuid4()),
         },
@@ -656,6 +709,7 @@ def test_day_plan_survives_a_backend_owned_clarification_round_trip(
     assert pending["state"]["phase"] == "NEEDS_CLARIFICATION"
     assert pending["clarification_resume_phase"] == "DAY_PLAN_DRAFT"
     assert pending["clarification_base_state"]["day_plan"] == guide_state["day_plan"]
+    assert pending["clarification_base_state"]["preferences"] == ["adventure"]
 
     resolved = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -668,12 +722,14 @@ def test_day_plan_survives_a_backend_owned_clarification_round_trip(
     )
     assert resolved.status_code == 200
     assert engine.calls[1][1]["guide_state"]["day_plan"] == guide_state["day_plan"]
+    assert engine.calls[1][1]["guide_state"]["preferences"] == ["adventure"]
     resumed = resolved.json()["trip"]["trip_state"]["planner_state"][
         "guide_session"
     ]
     assert resumed["revision"] == 3
     assert resumed["state"]["phase"] == "DAY_PLAN_DRAFT"
     assert resumed["state"]["day_plan"] == guide_state["day_plan"]
+    assert resumed["state"]["preferences"] == ["adventure"]
     assert "clarification_base_state" not in resumed
 
 
@@ -780,6 +836,102 @@ def test_day_plan_edits_cannot_reopen_the_approved_places_boundary(
     persisted = api_client.get(f"/trips/{trip['id']}").json()
     assert persisted["version"] == 1
     assert persisted["trip_state"]["planner_state"]["guide_session"]["state"] == guide_state
+
+
+def test_day_plan_edits_cannot_drop_confirmed_preferences_or_exclusions(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeDayPlanDecisionLossEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    guide_state = {
+        "phase": "DAY_PLAN_DRAFT",
+        "destinations": ["Rishikesh"],
+        "duration_days": 1,
+        "start_date": None,
+        "places": ["Triveni Ghat"],
+        "day_plan": [
+            {"day_number": 1, "date": None, "places": ["Triveni Ghat"]}
+        ],
+        "preferences": ["pilgrimage"],
+        "exclusions": ["rafting"],
+        "applied_changes": ["Removed rafting"],
+        "pending_clarification": None,
+    }
+    state = {
+        "stage": "planning",
+        "active_agent": "guide",
+        "trip_context": {"destination": "Rishikesh"},
+        "planner_state": {"guide_session": {"revision": 1, "state": guide_state}},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Move Triveni Ghat to the evening",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+    assert "preferences" in response.json()["detail"]
+    assert "exclusions" in response.json()["detail"]
+    persisted = api_client.get(f"/trips/{trip['id']}").json()
+    assert persisted["version"] == 1
+    assert persisted["trip_state"]["planner_state"]["guide_session"]["state"] == guide_state
+
+
+def test_day_plan_accepts_an_explicit_traveler_preference_override(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeExplicitPreferenceOverrideEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    guide_state = {
+        "phase": "DAY_PLAN_DRAFT",
+        "destinations": ["Rishikesh"],
+        "duration_days": 1,
+        "start_date": None,
+        "places": ["Triveni Ghat"],
+        "day_plan": [
+            {"day_number": 1, "date": None, "places": ["Triveni Ghat"]}
+        ],
+        "preferences": ["pilgrimage"],
+        "exclusions": ["rafting"],
+        "applied_changes": ["Removed rafting"],
+        "pending_clarification": None,
+    }
+    state = {
+        "stage": "planning",
+        "active_agent": "guide",
+        "trip_context": {"destination": "Rishikesh"},
+        "planner_state": {"guide_session": {"revision": 1, "state": guide_state}},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Actually rafting is fine.",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    session = response.json()["trip"]["trip_state"]["planner_state"][
+        "guide_session"
+    ]
+    assert session["revision"] == 2
+    assert session["state"]["preferences"] == ["pilgrimage"]
+    assert session["state"]["exclusions"] == []
+    assert session["explicit_changes"] == ["exclusions"]
 
 
 def test_scout_matcher_intent_hands_off_to_meridian_in_same_command(api_client: TestClient):

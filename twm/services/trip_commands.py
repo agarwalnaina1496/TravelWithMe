@@ -344,11 +344,13 @@ class TripCommandService:
             replacement,
             clarification_resume_phase=clarification_resume_phase,
             clarification_base_state=clarification_base_state,
+            explicit_changes=response.explicit_changes,
         )
         revision = int(session.get("revision", 0)) + 1
         next_session = {
             "state": replacement,
             "revision": revision,
+            "explicit_changes": list(response.explicit_changes),
         }
         if response.guide_state.phase == "NEEDS_CLARIFICATION":
             next_session["clarification_resume_phase"] = (
@@ -361,12 +363,16 @@ class TripCommandService:
                 )
             )
             base_state = (
-                clarification_base_state
+                copy.deepcopy(clarification_base_state)
                 if isinstance(clarification_base_state, dict)
-                else prior_state
+                else copy.deepcopy(prior_state)
             )
+            if event == "TRAVELER_MESSAGE":
+                for field in response.explicit_changes:
+                    if field != "day_plan":
+                        base_state[field] = copy.deepcopy(replacement[field])
             if base_state.get("phase") in {"PLACES_DRAFT", "DAY_PLAN_DRAFT"}:
-                next_session["clarification_base_state"] = copy.deepcopy(base_state)
+                next_session["clarification_base_state"] = base_state
         planner["guide_session"] = next_session
         if response.guide_state.phase == "PLAN_APPROVED":
             planner["frozen_plan"] = {
@@ -387,6 +393,7 @@ class TripCommandService:
             guide_phase=response.guide_state.phase,
             guide_revision=revision,
             frozen=response.guide_state.phase == "PLAN_APPROVED",
+            explicit_changes=list(response.explicit_changes),
         )
         return {
             "message": response.message,
@@ -414,6 +421,7 @@ class TripCommandService:
         *,
         clarification_resume_phase: str | None,
         clarification_base_state: dict[str, Any] | None,
+        explicit_changes: list[str],
     ) -> None:
         next_phase = replacement.get("phase")
         prior_phase = prior_state.get("phase")
@@ -435,6 +443,10 @@ class TripCommandService:
             raise InvalidTripCommandError(
                 f"Guide returned invalid phase {next_phase} for {event}."
             )
+        if event != "TRAVELER_MESSAGE" and explicit_changes:
+            raise InvalidTripCommandError(
+                f"Guide declared traveler changes for non-traveler event {event}."
+            )
         comparison_state = prior_state
         preserved_fields: tuple[str, ...] = ()
         if event in {"APPROVE_PLACES", "APPROVE_PLAN"}:
@@ -448,22 +460,32 @@ class TripCommandService:
             )
             if event == "APPROVE_PLAN":
                 preserved_fields += ("day_plan",)
-        elif event == "TRAVELER_MESSAGE" and (
-            prior_phase == "DAY_PLAN_DRAFT"
-            or clarification_resume_phase == "DAY_PLAN_DRAFT"
-        ):
-            preserved_fields = ("destinations", "places")
+        elif event == "TRAVELER_MESSAGE":
+            preserved_fields = (
+                "destinations",
+                "duration_days",
+                "start_date",
+                "places",
+                "day_plan",
+                "preferences",
+                "exclusions",
+            )
             if isinstance(clarification_base_state, dict):
                 comparison_state = clarification_base_state
+            if next_phase == "NEEDS_CLARIFICATION":
+                preserved_fields = tuple(
+                    field for field in preserved_fields if field != "day_plan"
+                )
         changed = [
             field
             for field in preserved_fields
             if replacement.get(field) != comparison_state.get(field)
         ]
-        if changed:
+        undeclared = [field for field in changed if field not in explicit_changes]
+        if undeclared:
             raise InvalidTripCommandError(
-                "Guide changed protected traveler decisions during planning: "
-                + ", ".join(changed)
+                "Guide changed traveler decisions without declaring them: "
+                + ", ".join(undeclared)
                 + "."
             )
 

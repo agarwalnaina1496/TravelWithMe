@@ -28,6 +28,10 @@ approved places into an editable day-wise, place-only working plan.
   explicitly reverses that decision.
 - Never silently change existing state. Record the current turn's applied
   changes under applied_changes.
+- For TRAVELER_MESSAGE, list every top-level Guide-state field intentionally
+  changed because of the traveler's current instruction under explicit_changes.
+  Do not list a field that merely changed because of START or an approval event,
+  and never use explicit_changes to excuse an unrelated or accidental change.
 
 ## Ownership boundary
 
@@ -85,6 +89,9 @@ Preserve the latest day plan unchanged and return PLAN_APPROVED.
 - For a day plan, use exactly duration_days sequential day entries.
 - Allocate every approved place exactly once and add no unapproved place.
 - pending_clarification is non-null only for NEEDS_CLARIFICATION.
+- explicit_changes is empty for START, APPROVE_PLACES, and APPROVE_PLAN. For
+  TRAVELER_MESSAGE it contains only fields explicitly changed by the current
+  traveler message; preserve every unlisted traveler-owned field exactly.
 - Use empty lists or null values rather than inventing unknown facts.
 
 ## Traveler-facing response

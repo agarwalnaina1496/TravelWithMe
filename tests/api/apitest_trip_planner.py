@@ -18,6 +18,7 @@ from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetryS
 def guide_places_output() -> dict:
     return {
         "message": "Here are the places I suggest. Tell me what to change.",
+        "explicit_changes": [],
         "guide_state": {
             "phase": "PLACES_DRAFT",
             "destinations": ["Rishikesh"],
@@ -131,7 +132,7 @@ def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> N
     engine = async_engine()
     engine.guide.return_value = AgentExecution(
         response=guide_places_output(),
-        prompt_release=PromptRelease("guide", "1.0.0", "prompt"),
+        prompt_release=PromptRelease("guide", "1.1.0", "prompt"),
     )
     set_engine(api_client, engine)
     payload = {
@@ -154,7 +155,7 @@ def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> N
     assert response.status_code == 200
     assert response.json() == {
         **guide_places_output(),
-        "agent_meta": {"agent": "guide", "prompt_version": "1.0.0"},
+        "agent_meta": {"agent": "guide", "prompt_version": "1.1.0"},
     }
     engine.guide.assert_awaited_once_with(
         {

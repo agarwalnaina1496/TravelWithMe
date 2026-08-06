@@ -23,6 +23,15 @@ GuidePhase = Literal[
     "DAY_PLAN_DRAFT",
     "PLAN_APPROVED",
 ]
+GuideChangedField = Literal[
+    "destinations",
+    "duration_days",
+    "start_date",
+    "places",
+    "day_plan",
+    "preferences",
+    "exclusions",
+]
 
 
 class GuideDay(BaseModel):
@@ -150,6 +159,13 @@ class GuideAgentOutput(BaseModel):
 
     message: GuideText
     guide_state: GuidePlannerState
+    explicit_changes: list[GuideChangedField]
+
+    @model_validator(mode="after")
+    def validate_explicit_changes(self) -> "GuideAgentOutput":
+        if len(self.explicit_changes) != len(set(self.explicit_changes)):
+            raise ValueError("explicit_changes must be unique")
+        return self
 
 
 class GuideResponse(GuideAgentOutput):
