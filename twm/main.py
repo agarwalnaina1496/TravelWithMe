@@ -1,6 +1,7 @@
 from contextlib import AsyncExitStack, asynccontextmanager
 
 import httpx
+import asyncpg
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -14,6 +15,8 @@ from .middleware import SecurityBoundaryMiddleware
 from .routers.health import router as health_api
 from .routers.trip_matcher import router as trip_matcher_api
 from .routers.trip_planner import router as trip_planner_api
+from .routers.trips import router as trips_api
+from .persistence import DatabaseSettings, PostgresTripRepository, TripPersistenceService
 from .services import (
     AgentAdapterError,
     AgentAdapterTimeoutError,
@@ -32,6 +35,7 @@ from .telemetry import (
 @asynccontextmanager
 async def application_lifespan(app: FastAPI):
     settings = AgentEngineSettings.load()
+    database_settings = DatabaseSettings.load()
     async with AsyncExitStack() as stack:
         http_client = None
         if settings.engine == "n8n":
@@ -41,6 +45,12 @@ async def application_lifespan(app: FastAPI):
         app.state.agent_engine = get_agent_engine(
             settings, app.state.telemetry, http_client
         )
+        if database_settings.url:
+            pool = await asyncpg.create_pool(database_settings.url)
+            stack.push_async_callback(pool.close)
+            app.state.trip_persistence = TripPersistenceService(PostgresTripRepository(pool, database_settings.schema), database_settings)
+        else:
+            app.state.trip_persistence = None
         try:
             yield
         finally:
@@ -70,8 +80,8 @@ def initialize_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=property_loader.get_list_property("cors_allowed_origins"),
-        allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
         allow_headers=["Content-Type", *CORRELATION_HEADERS],
         expose_headers=list(CORRELATION_HEADERS),
     )
@@ -163,6 +173,7 @@ def initialize_app() -> FastAPI:
     app.include_router(health_api)
     app.include_router(trip_matcher_api)
     app.include_router(trip_planner_api)
+    app.include_router(trips_api)
 
     return app
 
