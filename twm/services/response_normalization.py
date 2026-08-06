@@ -34,6 +34,7 @@ def _normalize_guide_response(execution: AgentExecution) -> GuideResponse:
     return GuideResponse(
         message=response.get("message") or "",
         guide_state=guide_state,
+        explicit_changes=response.get("explicit_changes"),
         agent_meta=_agent_meta(execution),
     )
 

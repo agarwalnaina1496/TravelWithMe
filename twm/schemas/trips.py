@@ -11,16 +11,10 @@ from .scout import BoundedMessage
 
 
 class TripCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(min_length=1, max_length=120)
     product_mode: Literal["self_led", "twm_led"] = "self_led"
-    trip_state: dict[str, Any] = Field(default_factory=dict)
-    ui_state: dict[str, Any] = Field(default_factory=dict)
-
-
-class TripReplaceRequest(BaseModel):
-    expected_version: int = Field(ge=1)
-    trip_state: dict[str, Any]
-    ui_state: dict[str, Any]
 
 
 class TripRenameRequest(BaseModel):
