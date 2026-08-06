@@ -14,6 +14,10 @@ services:
         value: openai/gpt-oss-120b
       - key: LANGGRAPH_API_KEY
         sync: false
+      - key: APP_DATABASE_URL
+        sync: false
+      - key: APP_DATABASE_SCHEMA
+        value: twm_app
       - key: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
         sync: false
       - key: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
