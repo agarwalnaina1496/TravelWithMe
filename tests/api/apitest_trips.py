@@ -68,6 +68,16 @@ class MemoryTripRepository:
         self.trips[trip_id] = updated
         return updated
 
+    async def update_ui_state(self, guest_id, trip_id, expected_version, ui_state):
+        trip = await self.get_trip(guest_id, trip_id)
+        if not trip:
+            return None
+        if trip.version != expected_version:
+            raise VersionConflictError(trip.version)
+        updated = replace(trip, ui_state=ui_state, version=trip.version + 1, updated_at=datetime.now(timezone.utc))
+        self.trips[trip_id] = updated
+        return updated
+
     async def get_command(self, guest_id, trip_id, idempotency_key):
         return self.commands.get((guest_id, trip_id, idempotency_key))
 
@@ -203,6 +213,49 @@ def test_trip_contract_rejects_invalid_version_and_mode(api_client: TestClient):
     assert api_client.post("/trips", json={"title": "Trip", "product_mode": "concierge", "trip_state": {}, "ui_state": {}}).status_code == 422
     unknown_id = UUID(int=0)
     assert api_client.put(f"/trips/{unknown_id}", json={"expected_version": 0, "trip_state": {}, "ui_state": {}}).status_code == 422
+
+
+def test_ui_state_update_preserves_canonical_trip_state(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    canonical = {"stage": "matching", "trip_context": {"budget": "50k"}}
+    created = api_client.post(
+        "/trips", json={"title": "Trip", "trip_state": canonical, "ui_state": {}}
+    ).json()
+
+    updated = api_client.patch(
+        f"/trips/{created['id']}/ui-state",
+        json={"expected_version": 1, "ui_state": {"last_screen": "chat"}},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["version"] == 2
+    assert updated.json()["trip_state"] == canonical
+    assert updated.json()["ui_state"] == {"last_screen": "chat"}
+    assert api_client.patch(
+        f"/trips/{created['id']}/ui-state",
+        json={"expected_version": 1, "ui_state": {"last_screen": "recos"}},
+    ).status_code == 409
+
+
+def test_ui_state_contract_rejects_trip_state_and_foreign_owner():
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        created = owner.post(
+            "/trips", json={"title": "Trip", "trip_state": {"stage": "new"}, "ui_state": {}}
+        ).json()
+        rejected = owner.patch(
+            f"/trips/{created['id']}/ui-state",
+            json={"expected_version": 1, "ui_state": {}, "trip_state": {}},
+        )
+        assert rejected.status_code == 422
+        hidden = stranger.patch(
+            f"/trips/{created['id']}/ui-state",
+            json={"expected_version": 1, "ui_state": {"last_screen": "chat"}},
+        )
+        assert hidden.status_code == 404
+    app.dependency_overrides.clear()
 
 
 def test_trip_command_loads_owned_state_and_replays_idempotently(api_client: TestClient):

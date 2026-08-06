@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from ..core import get_logger, get_trip_persistence
 from ..persistence.contracts import TripRecord, VersionConflictError
 from ..persistence.service import TripPersistenceService
-from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRenameRequest, TripReplaceRequest, TripResponse, TripSummary
+from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRenameRequest, TripReplaceRequest, TripResponse, TripSummary, TripUiStateRequest
 from ..services import AgentEngine
 from ..services.trip_commands import IdempotencyConflictError, InvalidTripCommandError, TripCommandService
 from ..core import get_engine
@@ -75,6 +75,34 @@ async def rename_trip(trip_id: UUID, payload: TripRenameRequest, request: Reques
         raise _conflict(error) from error
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found.")
+    return _response(trip)
+
+
+@router.patch("/{trip_id}/ui-state", response_model=TripResponse)
+async def update_ui_state(trip_id: UUID, payload: TripUiStateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger):
+    guest = await persistence.guest(request, response)
+    try:
+        trip = await persistence.repository.update_ui_state(
+            guest.id, trip_id, payload.expected_version, payload.ui_state
+        )
+    except VersionConflictError as error:
+        logger.warning(
+            "Rejected stale trip UI-state update.",
+            event="be.trip.ui_state.version_conflict",
+            source="http",
+            trip_id=str(trip_id),
+            current_version=error.current_version,
+        )
+        raise _conflict(error) from error
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    logger.info(
+        "Updated guest trip UI state.",
+        event="be.trip.ui_state.updated",
+        source="http",
+        trip_id=str(trip_id),
+        version=trip.version,
+    )
     return _response(trip)
 
 
