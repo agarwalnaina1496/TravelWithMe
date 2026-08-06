@@ -393,6 +393,9 @@ def test_start_planning_invokes_guide_from_backend_owned_destination(api_client:
     state = {
         "stage": "matched",
         "active_agent": None,
+        "advisor_state": None,
+        "matcher_state": None,
+        "planner_state": None,
         "trip_context": {
             "selected_option": {
                 "type": "single", "id": "rishikesh", "name": "Rishikesh"
@@ -418,6 +421,8 @@ def test_start_planning_invokes_guide_from_backend_owned_destination(api_client:
     saved = first.json()["trip"]["trip_state"]
     assert saved["stage"] == "planning"
     assert saved["active_agent"] == "guide"
+    assert saved["advisor_state"] == {"conversation_context": {}, "artifacts": []}
+    assert saved["matcher_state"] == {"conversation_context": {}, "recommendations": []}
     assert saved["planner_state"]["guide_session"]["revision"] == 1
 
 

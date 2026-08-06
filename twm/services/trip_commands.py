@@ -71,10 +71,15 @@ def _canonical_state(value: dict[str, Any]) -> dict[str, Any]:
     state.setdefault("status", "free")
     state.setdefault("stage", "new")
     state.setdefault("active_agent", "scout")
-    state.setdefault("trip_context", {})
-    state.setdefault("advisor_state", {"conversation_context": {}, "artifacts": []})
-    state.setdefault("matcher_state", {"conversation_context": {}, "recommendations": []})
-    state.setdefault("planner_state", {})
+    object_branches = {
+        "trip_context": {},
+        "advisor_state": {"conversation_context": {}, "artifacts": []},
+        "matcher_state": {"conversation_context": {}, "recommendations": []},
+        "planner_state": {},
+    }
+    for name, default in object_branches.items():
+        if not isinstance(state.get(name), dict):
+            state[name] = copy.deepcopy(default)
     return state
 
 
