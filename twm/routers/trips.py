@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from ..core import get_logger, get_trip_persistence
 from ..persistence.contracts import TripRecord, VersionConflictError
 from ..persistence.service import TripPersistenceService
-from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRenameRequest, TripReplaceRequest, TripResponse, TripSummary, TripUiStateRequest
+from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRenameRequest, TripResponse, TripSummary, TripUiStateRequest
 from ..services import AgentEngine
 from ..services.trip_commands import IdempotencyConflictError, InvalidTripCommandError, TripCommandService
 from ..core import get_engine
@@ -34,7 +34,9 @@ async def list_trips(request: Request, response: Response, persistence: Persiste
 @router.post("", response_model=TripResponse, status_code=201)
 async def create_trip(payload: TripCreateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger):
     guest = await persistence.guest(request, response)
-    trip = await persistence.repository.create_trip(guest.id, payload.title, payload.product_mode, payload.trip_state, payload.ui_state)
+    trip = await persistence.repository.create_trip(
+        guest.id, payload.title, payload.product_mode, {}, {}
+    )
     logger.info("Created guest trip.", event="be.trip.created", source="http", trip_id=str(trip.id), version=trip.version)
     return _response(trip)
 
@@ -50,19 +52,6 @@ async def get_trip(trip_id: UUID, request: Request, response: Response, persiste
 
 def _conflict(error: VersionConflictError) -> HTTPException:
     return HTTPException(status_code=409, detail={"message": "Trip has a newer version.", "current_version": error.current_version})
-
-
-@router.put("/{trip_id}", response_model=TripResponse)
-async def replace_trip(trip_id: UUID, payload: TripReplaceRequest, request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
-    try:
-        trip = await persistence.repository.replace_trip(guest.id, trip_id, payload.expected_version, payload.trip_state, payload.ui_state)
-    except VersionConflictError as error:
-        logger.warning("Rejected stale trip replacement.", event="be.trip.version_conflict", source="http", trip_id=str(trip_id), current_version=error.current_version)
-        raise _conflict(error) from error
-    if trip is None:
-        raise HTTPException(status_code=404, detail="Trip not found.")
-    return _response(trip)
 
 
 @router.patch("/{trip_id}", response_model=TripResponse)
@@ -143,6 +132,21 @@ async def execute_trip_command(
         )
         raise _conflict(error) from error
     except IdempotencyConflictError as error:
+        logger.warning(
+            "Rejected trip command because its idempotency key was reused.",
+            event="be.trip.command.idempotency_conflict",
+            source="http",
+            trip_id=str(trip_id),
+            command=payload.command,
+        )
         raise HTTPException(status_code=409, detail=str(error)) from error
     except InvalidTripCommandError as error:
+        logger.warning(
+            "Rejected invalid Backend-owned trip command.",
+            event="be.trip.command.invalid_transition",
+            source="http",
+            trip_id=str(trip_id),
+            command=payload.command,
+            detail=str(error),
+        )
         raise HTTPException(status_code=422, detail=str(error)) from error
