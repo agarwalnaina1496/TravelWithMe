@@ -71,10 +71,15 @@ def _canonical_state(value: dict[str, Any]) -> dict[str, Any]:
     state.setdefault("status", "free")
     state.setdefault("stage", "new")
     state.setdefault("active_agent", "scout")
-    state.setdefault("trip_context", {})
-    state.setdefault("advisor_state", {"conversation_context": {}, "artifacts": []})
-    state.setdefault("matcher_state", {"conversation_context": {}, "recommendations": []})
-    state.setdefault("planner_state", {})
+    object_branches = {
+        "trip_context": {},
+        "advisor_state": {"conversation_context": {}, "artifacts": []},
+        "matcher_state": {"conversation_context": {}, "recommendations": []},
+        "planner_state": {},
+    }
+    for name, default in object_branches.items():
+        if not isinstance(state.get(name), dict):
+            state[name] = copy.deepcopy(default)
     return state
 
 
@@ -147,8 +152,29 @@ class TripCommandService:
             state.clear()
             state.update(_canonical_state({}))
             return {"message": None, "agent_meta": None}
+        if payload.command == "continue":
+            if state.get("stage") == "planning" or state.get("active_agent") == "guide":
+                session = state["planner_state"].get("guide_session", {})
+                if session.get("state"):
+                    raise InvalidTripCommandError(
+                        "Send a traveler message to continue an existing Guide session."
+                    )
+                return await self._guide(state, "START", None)
+            if state.get("active_agent") == "meridian" or state.get("stage") in {
+                "matching", "recommendation_ready", "recommended"
+            }:
+                return await self._meridian(state, None)
+            return await self._scout(state, None)
         if payload.command == "select_destination":
             return self._select_destination(state, payload.option_id or "")
+        if payload.command == "start_planning":
+            if not self._has_planning_destination(state["trip_context"]):
+                raise InvalidTripCommandError(
+                    "Select or provide a destination before starting planning."
+                )
+            state["stage"] = "planning"
+            state["active_agent"] = "guide"
+            return await self._guide(state, "START", None)
         if payload.command == "approve_places":
             return await self._guide(state, "APPROVE_PLACES", None)
         if payload.command == "approve_plan":
@@ -163,7 +189,24 @@ class TripCommandService:
             return await self._meridian(state, message)
         return await self._scout(state, message)
 
-    async def _scout(self, state: dict[str, Any], message: str) -> dict[str, Any]:
+    @staticmethod
+    def _has_planning_destination(trip_context: dict[str, Any]) -> bool:
+        selected = trip_context.get("selected_option")
+        if isinstance(selected, dict) and any(
+            selected.get(key) for key in ("id", "name")
+        ):
+            return True
+        for key in ("destination", "destinations", "destination_name"):
+            value = trip_context.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+            if isinstance(value, list) and any(
+                isinstance(item, str) and item.strip() for item in value
+            ):
+                return True
+        return False
+
+    async def _scout(self, state: dict[str, Any], message: str | None) -> dict[str, Any]:
         phase = {
             "stage": state["stage"],
             "trip_context": state["trip_context"],
@@ -194,6 +237,7 @@ class TripCommandService:
                 }
             )
         if response.intent == "matcher":
+            state["trip_context"].pop("selected_option", None)
             state["stage"] = "matching"
             state["active_agent"] = "meridian"
             return await self._meridian(state, message)
