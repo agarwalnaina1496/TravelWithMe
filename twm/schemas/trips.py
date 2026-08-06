@@ -28,6 +28,15 @@ class TripRenameRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
 
 
+class TripUiStateRequest(BaseModel):
+    """Versioned presentation state; canonical TripState is not accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    ui_state: dict[str, Any]
+
+
 class TripResponse(BaseModel):
     id: UUID
     title: str

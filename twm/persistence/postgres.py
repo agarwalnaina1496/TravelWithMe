@@ -79,6 +79,12 @@ class PostgresTripRepository:
             WHERE id=$1 AND guest_session_id=$2 AND version=$3 RETURNING *""",
             guest_id, trip_id, expected_version, title)
 
+    async def update_ui_state(self, guest_id: UUID, trip_id: UUID, expected_version: int, ui_state: dict[str, Any]) -> TripRecord | None:
+        return await self._mutate(
+            f"""UPDATE {self.schema}.trips SET ui_state=$4::jsonb,version=version+1,updated_at=now()
+            WHERE id=$1 AND guest_session_id=$2 AND version=$3 RETURNING *""",
+            guest_id, trip_id, expected_version, json.dumps(ui_state))
+
     async def get_command(self, guest_id: UUID, trip_id: UUID, idempotency_key: UUID) -> TripCommandRecord | None:
         row = await self.pool.fetchrow(
             f"""SELECT request_hash,response FROM {self.schema}.trip_commands
