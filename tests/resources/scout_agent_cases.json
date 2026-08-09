@@ -1,0 +1,39 @@
+[
+  {
+    "id": "advisor-answers-general-question",
+    "scenario": "Traveler asks a general advisory question with no destination decided yet",
+    "invariants": {
+      "intent": "advise",
+      "extracts_trip_context": true,
+      "no_stage_transition": true,
+      "must_not_set_selected_option": true
+    }
+  },
+  {
+    "id": "criteria-ready-routes-to-matcher",
+    "scenario": "Traveler has given enough criteria (origin, budget, dates) to search for a destination",
+    "invariants": {
+      "intent": "matcher",
+      "must_clear_selected_option": true,
+      "routes_to_meridian": true
+    }
+  },
+  {
+    "id": "destination-confirmed-routes-to-planner",
+    "scenario": "Traveler already knows the destination and asks to start day-by-day planning",
+    "invariants": {
+      "intent": "planner",
+      "routes_to_guide": true,
+      "preserves_trip_context": true
+    }
+  },
+  {
+    "id": "extraction-preserves-advisor-message",
+    "scenario": "Traveler shares new preferences mid-conversation before a routing decision is made",
+    "invariants": {
+      "intent": "advise",
+      "must_not_set_selected_option": true,
+      "advisor_message_stored_in_conversation_context": true
+    }
+  }
+]

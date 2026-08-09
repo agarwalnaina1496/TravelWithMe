@@ -34,8 +34,8 @@ jobs:
       - name: Enforce prompt release metadata
         run: python scripts/check_prompt_version_changes.py "origin/${{ github.base_ref }}"
 
-      - name: Run backend tests
-        run: python -m pytest -v
+      - name: Run backend tests with coverage
+        run: python -m pytest -v --cov=twm --cov-report=term-missing --cov-fail-under=85
 
       - name: Build hardened container
         run: docker build --tag travelwithme-api:security-check .
