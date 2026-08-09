@@ -11,7 +11,7 @@ from .scout import (
     ScoutAdvisorConversationContext,
     ScoutAdvisorState,
 )
-from ..security import validate_phase_state
+from ..trust_boundary import validate_phase_state
 
 
 MeridianAdvisorConversationContext = ScoutAdvisorConversationContext

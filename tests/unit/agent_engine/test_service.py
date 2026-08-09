@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from twm.prompts import PromptRelease
+from twm.prompt_registry import PromptRelease
 from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
-from twm.security import UNTRUSTED_DATA_PREAMBLE
+from twm.trust_boundary import UNTRUSTED_DATA_PREAMBLE
 from twm.services import (
     AgentAdapterError,
     AgentAdapterTimeoutError,

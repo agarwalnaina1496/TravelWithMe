@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from ..security import validate_phase_state
+from ..trust_boundary import validate_phase_state
 from .common import AgentMeta
 
 

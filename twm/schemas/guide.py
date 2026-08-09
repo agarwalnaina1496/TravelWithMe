@@ -10,7 +10,7 @@ from pydantic import (
     model_validator,
 )
 
-from ..security import validate_phase_state
+from ..trust_boundary import validate_phase_state
 from .common import AgentMeta
 from .scout import BoundedMessage
 

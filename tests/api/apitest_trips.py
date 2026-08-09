@@ -6,12 +6,12 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
-from twm.core import get_engine, get_logger, get_trip_persistence
+from twm.dependencies import get_engine, get_logger, get_trip_persistence
 from twm.main import app
 from twm.persistence.contracts import GuestSession, TripCommandRecord, TripRecord, VersionConflictError
 from twm.persistence.service import TripPersistenceService
 from twm.persistence.settings import DatabaseSettings
-from twm.prompts import PromptRelease
+from twm.prompt_registry import PromptRelease
 from twm.schemas.trips import TripResponse
 from twm.services import AgentExecution
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
