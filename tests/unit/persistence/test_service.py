@@ -8,12 +8,14 @@ from uuid import uuid4
 
 from fastapi import Response
 
-from twm.persistence.contracts import GuestSession
+from twm.persistence.contracts import GuestSession, TripRepository
 from twm.persistence.service import TripPersistenceService
 from twm.persistence.settings import DatabaseSettings
 
 
-class FakeGuestRepository:
+class FakeTripRepository(TripRepository):
+    """Minimal in-memory TripRepository; only guest-session methods are exercised here."""
+
     def __init__(self):
         self.guests: dict[str, GuestSession] = {}
         self.resolve_calls: list[tuple[str, int]] = []
@@ -29,6 +31,30 @@ class FakeGuestRepository:
         self.guests[token_hash] = guest
         return guest
 
+    async def list_trips(self, guest_id):
+        raise NotImplementedError
+
+    async def create_trip(self, guest_id, title, product_mode, trip_state, ui_state):
+        raise NotImplementedError
+
+    async def get_trip(self, guest_id, trip_id):
+        raise NotImplementedError
+
+    async def replace_trip(self, guest_id, trip_id, expected_version, trip_state, ui_state):
+        raise NotImplementedError
+
+    async def rename_trip(self, guest_id, trip_id, expected_version, title):
+        raise NotImplementedError
+
+    async def update_ui_state(self, guest_id, trip_id, expected_version, ui_state):
+        raise NotImplementedError
+
+    async def get_command(self, guest_id, trip_id, idempotency_key):
+        raise NotImplementedError
+
+    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response):
+        raise NotImplementedError
+
 
 def _request(cookie_value: str | None) -> Mock:
     request = Mock()
@@ -36,13 +62,13 @@ def _request(cookie_value: str | None) -> Mock:
     return request
 
 
-def _service(repository: FakeGuestRepository, **settings_overrides) -> TripPersistenceService:
+def _service(repository: FakeTripRepository, **settings_overrides) -> TripPersistenceService:
     settings = DatabaseSettings(url=None, **settings_overrides)
     return TripPersistenceService(repository=repository, settings=settings)
 
 
 def test_guest_resolves_existing_session_from_cookie() -> None:
-    repository = FakeGuestRepository()
+    repository = FakeTripRepository()
     service = _service(repository)
     token_hash = hashlib.sha256(b"known-token").hexdigest()
     repository.guests[token_hash] = GuestSession(uuid4(), datetime.now(timezone.utc) + timedelta(days=1))
@@ -54,7 +80,7 @@ def test_guest_resolves_existing_session_from_cookie() -> None:
 
 
 def test_guest_creates_new_session_when_no_cookie_present() -> None:
-    repository = FakeGuestRepository()
+    repository = FakeTripRepository()
     service = _service(repository)
 
     asyncio.run(service.guest(_request(None), Response()))
@@ -64,7 +90,7 @@ def test_guest_creates_new_session_when_no_cookie_present() -> None:
 
 
 def test_guest_creates_new_session_when_cookie_is_unresolvable() -> None:
-    repository = FakeGuestRepository()
+    repository = FakeTripRepository()
     service = _service(repository)
 
     guest = asyncio.run(service.guest(_request("stale-token"), Response()))
@@ -75,7 +101,7 @@ def test_guest_creates_new_session_when_cookie_is_unresolvable() -> None:
 
 
 def test_guest_sets_a_secure_httponly_cookie_by_default() -> None:
-    repository = FakeGuestRepository()
+    repository = FakeTripRepository()
     service = _service(repository)
     response = Response()
 
@@ -90,7 +116,7 @@ def test_guest_sets_a_secure_httponly_cookie_by_default() -> None:
 
 
 def test_guest_cookie_secure_flag_follows_settings() -> None:
-    repository = FakeGuestRepository()
+    repository = FakeTripRepository()
     service = _service(repository, guest_cookie_secure=False)
     response = Response()
 
