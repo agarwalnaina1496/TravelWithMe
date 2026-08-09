@@ -1,0 +1,8 @@
+{
+  "agent": "guide",
+  "case_id": "remove-rafting-add-pilgrimage",
+  "execution_path": "n8n",
+  "prompt_version": "1.1.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Removed river rafting and added Neelkanth Mahadev Temple, a pilgrimage site.\", \"guide_state\": {\"phase\": \"PLACES_DRAFT\", \"destinations\": [\"Rishikesh\"], \"duration_days\": 3, \"start_date\": null, \"places\": [\"Ram Jhula\", \"Triveni Ghat\", \"Neer Garh Waterfall\", \"Neelkanth Mahadev Temple\"], \"day_plan\": [], \"preferences\": [\"pilgrimage\"], \"exclusions\": [\"river rafting\"], \"applied_changes\": [\"Removed River Rafting\", \"Added Neelkanth Mahadev Temple\"], \"pending_clarification\": null}, \"explicit_changes\": [\"places\", \"exclusions\", \"preferences\"]}"
+}

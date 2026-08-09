@@ -37,6 +37,9 @@ jobs:
       - name: Run backend tests with coverage
         run: python -m pytest -v --cov=twm --cov-report=term-missing --cov-fail-under=85
 
+      - name: Run agent evaluation harness
+        run: python -m pytest tests/unit/evaluation_harness -v
+
       - name: Build hardened container
         run: docker build --tag travelwithme-api:security-check .
 

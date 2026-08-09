@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "goa-single-destination-success",
+  "execution_path": "direct",
+  "prompt_version": "1.6.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"SUCCESS\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": null}}}, \"message\": \"Goa is a great fit within your budget and preferred pace.\", \"trip_type\": \"single\", \"traveler_criteria\": [{\"id\": \"budget\", \"label\": \"Budget fit\", \"requirement_type\": \"HARD\", \"source_context_paths\": [\"budget\"]}, {\"id\": \"pace\", \"label\": \"Relaxed pace\", \"requirement_type\": \"PREFERENCE\", \"source_context_paths\": [\"travel_style.pace\"]}], \"options\": [{\"rank\": 1, \"type\": \"single\", \"name\": \"Goa Beach Escape\", \"destination_id\": \"goa\", \"summary\": \"Goa Beach Escape fits the stated budget and a relaxed pace.\", \"evaluations\": [{\"criterion_id\": \"budget\", \"outcome\": \"MATCH\", \"conclusion\": \"The full trip fits within the stated budget.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Estimated total stays under INR 40000.\"]}]}, {\"criterion_id\": \"pace\", \"outcome\": \"MATCH\", \"conclusion\": \"The itinerary keeps travel days short.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Most activities are within a short radius.\"]}]}]}]}"
+}

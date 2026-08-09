@@ -2,6 +2,21 @@
   {
     "id": "goa-single-destination-success",
     "scenario": "Clear single-destination criteria produce a ranked, fully-evaluated recommendation",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 4,
+          "budget": "INR 40000",
+          "travelers": 2
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Find me a relaxed beach destination for 4 days."
+    },
     "invariants": {
       "status": "SUCCESS",
       "trip_type": "single",
@@ -13,6 +28,19 @@
   {
     "id": "circuit-preference-clarification",
     "scenario": "Traveler wants a multi-city circuit but has not said whether stops are fixed or flexible",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 10
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "I want to see three cities in Rajasthan over 10 days."
+    },
     "invariants": {
       "status": "NEEDS_CLARIFICATION",
       "requires_awaiting_reason": true,
@@ -23,6 +51,21 @@
   {
     "id": "budget-conflict-soft-fail",
     "scenario": "No option satisfies every hard requirement within budget, so the closest options are returned with visible trade-offs",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 4,
+          "budget": "INR 8000",
+          "travelers": 2
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "I want a 5-star beach resort for 4 days within INR 8000 total."
+    },
     "invariants": {
       "status": "SOFT_FAIL",
       "requires_visible_tradeoff": true,
@@ -32,7 +75,23 @@
   {
     "id": "recommendation-history-is-backend-owned",
     "scenario": "Meridian must not write recommendation history or the traveler's selected option itself",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 4,
+          "budget": "INR 40000",
+          "travelers": 2
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Find me a relaxed beach destination for 4 days."
+    },
     "invariants": {
+      "status": "SUCCESS",
       "reject_agent_written_recommendations": true,
       "reject_agent_written_selected_option": true
     }

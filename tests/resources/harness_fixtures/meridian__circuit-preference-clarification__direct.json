@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "circuit-preference-clarification",
+  "execution_path": "direct",
+  "prompt_version": "1.6.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"NEEDS_CLARIFICATION\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": \"circuit_preference\", \"last_meridian_message\": \"Do you want a fixed circuit or a flexible one across the three cities?\"}}}, \"message\": \"Do you want a fixed circuit or a flexible one across the three cities?\", \"options\": []}"
+}

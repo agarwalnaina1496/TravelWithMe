@@ -2,6 +2,16 @@
   {
     "id": "advisor-answers-general-question",
     "scenario": "Traveler asks a general advisory question with no destination decided yet",
+    "input": {
+      "trip_state": {
+        "stage": "new",
+        "trip_context": {},
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        }
+      },
+      "message": "What's a good time of year to visit Kerala backwaters?"
+    },
     "invariants": {
       "intent": "advise",
       "extracts_trip_context": true,
@@ -12,6 +22,16 @@
   {
     "id": "criteria-ready-routes-to-matcher",
     "scenario": "Traveler has given enough criteria (origin, budget, dates) to search for a destination",
+    "input": {
+      "trip_state": {
+        "stage": "new",
+        "trip_context": { "origin": "Delhi" },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        }
+      },
+      "message": "I have INR 40000, want to travel from Delhi for 5 days in December."
+    },
     "invariants": {
       "intent": "matcher",
       "must_clear_selected_option": true,
@@ -21,6 +41,20 @@
   {
     "id": "destination-confirmed-routes-to-planner",
     "scenario": "Traveler already knows the destination and asks to start day-by-day planning",
+    "input": {
+      "trip_state": {
+        "stage": "matched",
+        "trip_context": {
+          "origin": "Delhi",
+          "destinations": ["Goa"],
+          "duration_days": 4
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        }
+      },
+      "message": "Let's start planning day by day for Goa."
+    },
     "invariants": {
       "intent": "planner",
       "routes_to_guide": true,
@@ -30,6 +64,18 @@
   {
     "id": "extraction-preserves-advisor-message",
     "scenario": "Traveler shares new preferences mid-conversation before a routing decision is made",
+    "input": {
+      "trip_state": {
+        "stage": "new",
+        "trip_context": { "origin": "Delhi" },
+        "advisor_state": {
+          "conversation_context": {
+            "last_advisor_message": "Do you prefer beaches or mountains?"
+          }
+        }
+      },
+      "message": "Actually I prefer mountains over beaches."
+    },
     "invariants": {
       "intent": "advise",
       "must_not_set_selected_option": true,

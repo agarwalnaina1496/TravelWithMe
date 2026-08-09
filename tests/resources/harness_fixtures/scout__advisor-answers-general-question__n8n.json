@@ -1,0 +1,8 @@
+{
+  "agent": "scout",
+  "case_id": "advisor-answers-general-question",
+  "execution_path": "n8n",
+  "prompt_version": "1.7.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Kerala backwaters are best visited October through March when it's dry and cool.\", \"state_delta\": {\"trip_context\": {\"interests\": [\"backwaters\"]}}, \"intent\": \"advise\"}"
+}
