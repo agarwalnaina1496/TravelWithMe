@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "budget-conflict-soft-fail",
+  "execution_path": "direct",
+  "prompt_version": "1.6.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"SOFT_FAIL\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": null}}}, \"message\": \"No option keeps a 5-star stay within INR 8000, so here are the closest fits.\", \"trip_type\": \"single\", \"traveler_criteria\": [{\"id\": \"budget\", \"label\": \"Budget fit\", \"requirement_type\": \"HARD\", \"source_context_paths\": [\"budget\"]}, {\"id\": \"star_rating\", \"label\": \"5-star stay\", \"requirement_type\": \"PREFERENCE\", \"source_context_paths\": [\"preferences.star_rating\"]}], \"options\": [{\"rank\": 1, \"type\": \"single\", \"name\": \"Budget-friendly Beach Stay\", \"destination_id\": \"goa2\", \"summary\": \"Closest available fit, but the stay is 3-star rather than 5-star.\", \"evaluations\": [{\"criterion_id\": \"budget\", \"outcome\": \"TRADEOFF\", \"conclusion\": \"The trip runs slightly above the stated budget.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Estimated total is about 10% above INR 8000.\"]}], \"tradeoffs\": [\"Slightly above the stated budget.\"]}, {\"criterion_id\": \"star_rating\", \"outcome\": \"MISMATCH\", \"conclusion\": \"No 5-star property is available at this budget.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"The best available option is a 3-star hotel.\"]}], \"tradeoffs\": [\"3-star stay instead of the requested 5-star.\"]}]}], \"constraint_adjustment_suggestions\": [\"Consider increasing the budget by about 20%.\", \"Consider a 3-star or 4-star property instead of 5-star.\"]}"
+}

@@ -1,0 +1,8 @@
+{
+  "agent": "scout",
+  "case_id": "extraction-preserves-advisor-message",
+  "execution_path": "direct",
+  "prompt_version": "1.7.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Got it, mountains it is. Let me suggest some options.\", \"state_delta\": {\"trip_context\": {\"preferences\": [\"mountains\"]}}, \"intent\": \"advise\"}"
+}

@@ -2,6 +2,29 @@
   {
     "id": "rishikesh-three-day-approved-plan",
     "scenario": "Domestic places-first plan with an explicit rafting exclusion",
+    "input": {
+      "trip_context": {
+        "origin": "Delhi",
+        "travelers": 3,
+        "budget": "INR 50000",
+        "exclusions": ["river rafting"]
+      },
+      "working_plan": {
+        "destinations": ["Rishikesh"],
+        "duration_days": 3,
+        "start_date": null,
+        "approved_places": [
+          "Ram Jhula",
+          "Triveni Ghat",
+          "Neer Garh Waterfall"
+        ],
+        "days": [
+          { "day_number": 1, "date": null, "places": ["Ram Jhula"] },
+          { "day_number": 2, "date": null, "places": ["Triveni Ghat"] },
+          { "day_number": 3, "date": null, "places": ["Neer Garh Waterfall"] }
+        ]
+      }
+    },
     "invariants": {
       "destinations": ["Rishikesh"],
       "duration_days": 3,
@@ -14,6 +37,27 @@
   {
     "id": "delhi-agra-jaipur-fixed-route",
     "scenario": "Traveler explicitly fixes a seven-day circuit and route order",
+    "input": {
+      "trip_context": {
+        "origin": "Delhi",
+        "route_order_fixed": true
+      },
+      "working_plan": {
+        "destinations": ["Delhi", "Agra", "Jaipur"],
+        "duration_days": 7,
+        "start_date": null,
+        "approved_places": [],
+        "days": [
+          { "day_number": 1, "date": null, "places": [] },
+          { "day_number": 2, "date": null, "places": [] },
+          { "day_number": 3, "date": null, "places": [] },
+          { "day_number": 4, "date": null, "places": [] },
+          { "day_number": 5, "date": null, "places": [] },
+          { "day_number": 6, "date": null, "places": [] },
+          { "day_number": 7, "date": null, "places": [] }
+        ]
+      }
+    },
     "invariants": {
       "destinations": ["Delhi", "Agra", "Jaipur"],
       "duration_days": 7,
@@ -24,6 +68,22 @@
   {
     "id": "international-current-rules",
     "scenario": "International plan where permits, border rules and operators are time-sensitive",
+    "input": {
+      "trip_context": {
+        "origin": "Delhi",
+        "international": true
+      },
+      "working_plan": {
+        "destinations": ["Kathmandu"],
+        "duration_days": 2,
+        "start_date": null,
+        "approved_places": [],
+        "days": [
+          { "day_number": 1, "date": null, "places": [] },
+          { "day_number": 2, "date": null, "places": [] }
+        ]
+      }
+    },
     "invariants": {
       "no_live_search_available": true,
       "do_not_claim_verified": true,
@@ -34,6 +94,22 @@
   {
     "id": "specific-hotel-not-found",
     "scenario": "A named stay cannot be confidently resolved",
+    "input": {
+      "trip_context": {
+        "origin": "Delhi",
+        "requested_stay": "Hillcrest Boutique Inn"
+      },
+      "working_plan": {
+        "destinations": ["Manali"],
+        "duration_days": 2,
+        "start_date": null,
+        "approved_places": [],
+        "days": [
+          { "day_number": 1, "date": null, "places": [] },
+          { "day_number": 2, "date": null, "places": [] }
+        ]
+      }
+    },
     "invariants": {
       "do_not_invent_url": true,
       "allow_general_guidance": true,
@@ -44,6 +120,22 @@
   {
     "id": "budget-total-consistency",
     "scenario": "Returned model totals conflict with category ranges",
+    "input": {
+      "trip_context": {
+        "origin": "Delhi",
+        "budget": "INR 30000"
+      },
+      "working_plan": {
+        "destinations": ["Jaipur"],
+        "duration_days": 2,
+        "start_date": null,
+        "approved_places": [],
+        "days": [
+          { "day_number": 1, "date": null, "places": [] },
+          { "day_number": 2, "date": null, "places": [] }
+        ]
+      }
+    },
     "invariants": {
       "backend_recalculates_totals": true,
       "non_negative_ranges": true,

@@ -1,0 +1,8 @@
+{
+  "agent": "scout",
+  "case_id": "destination-confirmed-routes-to-planner",
+  "execution_path": "direct",
+  "prompt_version": "1.7.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Let's start planning Goa day by day.\", \"state_delta\": {\"trip_context\": {}}, \"intent\": \"planner\"}"
+}
