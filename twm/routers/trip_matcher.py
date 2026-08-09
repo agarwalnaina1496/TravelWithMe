@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from ..core import get_engine, get_logger
+from ..dependencies import get_engine, get_logger
 from ..schemas import MeridianRequest, MeridianResponse, ScoutRequest, ScoutResponse
 from ..services import AgentEngine
 from ..services.response_normalization import (

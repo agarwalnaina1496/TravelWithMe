@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from twm.prompts import (
+from twm.prompt_registry import (
     PromptRelease,
     load_prompt_release,
     load_prompt_versions,
@@ -27,7 +27,7 @@ from twm.services import (
 from twm.services.response_normalization import _normalize_meridian_response
 from twm.schemas.scout import ScoutResponse
 from tests.factories import recommendation_option, traveler_criteria
-from twm.security import (
+from twm.trust_boundary import (
     MAX_CONTAINER_ITEMS,
     MAX_DATA_DEPTH,
     MAX_MESSAGE_CHARACTERS,

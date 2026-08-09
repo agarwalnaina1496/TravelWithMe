@@ -5,13 +5,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from ..core import get_logger, get_trip_persistence
+from ..dependencies import get_engine, get_logger, get_trip_persistence
 from ..persistence.contracts import TripRecord, VersionConflictError
 from ..persistence.service import TripPersistenceService
 from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRenameRequest, TripResponse, TripSummary, TripUiStateRequest
 from ..services import AgentEngine
 from ..services.trip_commands import IdempotencyConflictError, InvalidTripCommandError, TripCommandService
-from ..core import get_engine
 from ..telemetry import TelemetryLogger
 
 router = APIRouter(prefix="/trips", tags=["Trips"])

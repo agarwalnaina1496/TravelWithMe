@@ -7,14 +7,14 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from ...prompts import PromptRelease, load_prompt_release
+from ...prompt_registry import PromptRelease, load_prompt_release
 from ...schemas import (
     AtlasAgentOutput,
     GuideAgentOutput,
     MeridianAgentOutput,
     ScoutAgentOutput,
 )
-from ...security import frame_untrusted_payload
+from ...trust_boundary import frame_untrusted_payload
 from ...telemetry import TelemetryLogger
 from ...telemetry.sanitization import redact_error_detail
 from .contracts import (

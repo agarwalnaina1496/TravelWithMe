@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional, Protocol
 
-from ...prompts import PromptRelease
+from ...prompt_registry import PromptRelease
 
 
 AgentName = Literal["scout", "meridian", "guide", "atlas"]

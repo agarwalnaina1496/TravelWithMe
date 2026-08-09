@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 
-from twm.prompts import PromptRelease, load_prompt_release
+from twm.prompt_registry import PromptRelease, load_prompt_release
 from twm.routers import trip_planner
 from twm.services import (
     AgentExecution,

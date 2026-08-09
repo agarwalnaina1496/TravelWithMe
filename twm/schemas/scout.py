@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .common import AgentMeta
-from ..security import MAX_MESSAGE_CHARACTERS, validate_phase_state
+from ..trust_boundary import MAX_MESSAGE_CHARACTERS, validate_phase_state
 
 
 BoundedMessage = Annotated[str, StringConstraints(max_length=MAX_MESSAGE_CHARACTERS)]
