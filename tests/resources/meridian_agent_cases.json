@@ -1,0 +1,40 @@
+[
+  {
+    "id": "goa-single-destination-success",
+    "scenario": "Clear single-destination criteria produce a ranked, fully-evaluated recommendation",
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "single",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "awaiting_cleared": true
+    }
+  },
+  {
+    "id": "circuit-preference-clarification",
+    "scenario": "Traveler wants a multi-city circuit but has not said whether stops are fixed or flexible",
+    "invariants": {
+      "status": "NEEDS_CLARIFICATION",
+      "requires_awaiting_reason": true,
+      "message_matches_last_meridian_message": true,
+      "no_options_allowed": true
+    }
+  },
+  {
+    "id": "budget-conflict-soft-fail",
+    "scenario": "No option satisfies every hard requirement within budget, so the closest options are returned with visible trade-offs",
+    "invariants": {
+      "status": "SOFT_FAIL",
+      "requires_visible_tradeoff": true,
+      "allows_constraint_adjustment_suggestions": true
+    }
+  },
+  {
+    "id": "recommendation-history-is-backend-owned",
+    "scenario": "Meridian must not write recommendation history or the traveler's selected option itself",
+    "invariants": {
+      "reject_agent_written_recommendations": true,
+      "reject_agent_written_selected_option": true
+    }
+  }
+]
