@@ -11,12 +11,35 @@ class RubricFailure(AssertionError):
     """One invariant did not hold against the normalized response."""
 
 
+# Invariant keys with no automatable check against the response shape alone.
+# This is the single source of truth for "known gap" vs. "someone added a new
+# case with an invariant key nobody wrote a check for" — see
+# tests/unit/evaluation_harness/test_harness.py's
+# test_missing_rubric_checks_match_known_gaps, which fails if this set drifts
+# from what the case files actually declare.
+KNOWN_UNIMPLEMENTED_INVARIANTS: frozenset[tuple[str, str]] = frozenset(
+    {("scout", "advisor_message_stored_in_conversation_context")}
+)
+
+
 def evaluate(case: EvaluationCase, response: dict[str, Any]) -> None:
     checks = _CHECKS[case.agent]
     for key, expected in case.invariants.items():
         if key not in checks:
             raise NotImplementedError(f"no rubric check for invariant key: {key}")
         checks[key](case, response, expected)
+
+
+def missing_checks(cases: list[EvaluationCase]) -> set[tuple[str, str]]:
+    """Every (agent, invariant key) pair declared in cases with no rubric check."""
+
+    missing: set[tuple[str, str]] = set()
+    for case in cases:
+        checks = _CHECKS[case.agent]
+        for key in case.invariants:
+            if key not in checks:
+                missing.add((case.agent, key))
+    return missing
 
 
 def _casefold_set(values: list[str]) -> set[str]:
@@ -84,14 +107,6 @@ def _scout_preserves_trip_context(
     delta = response.get("state_delta", {}).get("trip_context", {})
     if "destinations" in delta and not delta.get("destinations"):
         raise RubricFailure("scout cleared destinations while claiming to preserve context")
-
-
-def _scout_advisor_message_stored(
-    case: EvaluationCase, response: dict[str, Any], expected: bool
-) -> None:
-    raise NotImplementedError(
-        "no rubric check for invariant key: advisor_message_stored_in_conversation_context"
-    )
 
 
 # ---- meridian --------------------------------------------------------------
@@ -524,7 +539,6 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "routes_to_meridian": _scout_routes_to_meridian,
         "routes_to_guide": _scout_routes_to_guide,
         "preserves_trip_context": _scout_preserves_trip_context,
-        "advisor_message_stored_in_conversation_context": _scout_advisor_message_stored,
     },
     "meridian": {
         "status": _meridian_status,
