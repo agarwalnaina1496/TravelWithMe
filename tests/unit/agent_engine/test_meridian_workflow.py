@@ -20,6 +20,11 @@ def test_meridian_evaluation_corpus_covers_status_and_state_ownership() -> None:
         "circuit-preference-clarification",
         "budget-conflict-soft-fail",
         "recommendation-history-is-backend-owned",
+        "group-total-budget-affordability-prioritizes-plausible-access",
+        "per-person-budget-interpreted-as-stated",
+        "missing-origin-blocks-affordability-clarification",
+        "unaffordable-transport-mode-excluded-without-hardcoded-ban",
+        "circuit-accounts-for-complete-round-trip-cost",
     }
     assert cases_by_id["circuit-preference-clarification"]["invariants"] == {
         "status": "NEEDS_CLARIFICATION",
@@ -27,3 +32,12 @@ def test_meridian_evaluation_corpus_covers_status_and_state_ownership() -> None:
         "message_matches_last_meridian_message": True,
         "no_options_allowed": True,
     }
+    assert cases_by_id["group-total-budget-affordability-prioritizes-plausible-access"][
+        "invariants"
+    ]["no_hardcoded_transport_mode_exclusion"] is True
+    assert cases_by_id["missing-origin-blocks-affordability-clarification"][
+        "invariants"
+    ]["status"] == "NEEDS_CLARIFICATION"
+    assert cases_by_id["circuit-accounts-for-complete-round-trip-cost"][
+        "invariants"
+    ]["requires_complete_round_trip_accounting"] is True

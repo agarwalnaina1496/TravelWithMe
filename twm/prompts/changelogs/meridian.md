@@ -1,5 +1,13 @@
 # Meridian prompt changelog
 
+## Meridian 1.7.0 — 2026-08-11
+
+- Required conversational interpretation of total versus per-person budget without a fixed form.
+- Required a rough complete-trip affordability estimate for the full party, covering origin, traveler count, duration, round-trip access, stay, food, local movement, and named required activities where reasonably estimable.
+- Let affordability and complete round-trip feasibility influence candidate generation, exclusion, and ranking, without hardcoding flight rejection or any transport-mode numeric threshold.
+- Required circuits to account for the complete round trip, including outbound and return legs, and clarified that day-level return-timing constraints remain owned by circuit-feasibility validation elsewhere.
+- Reaffirmed that hard budget boundaries cannot be silently relaxed and that missing cost estimates must be qualified or omitted rather than treated as zero.
+
 ## Meridian 1.6.0 — 2026-07-21
 
 - Uses the Backend-supplied JSON Schema as the single structural output contract instead of duplicating hand-written JSON examples in the prompt.

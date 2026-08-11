@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "missing-origin-blocks-affordability-clarification",
+  "execution_path": "direct",
+  "prompt_version": "1.7.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"NEEDS_CLARIFICATION\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": \"origin\", \"last_meridian_message\": \"To check whether a 4 day trip fits within INR 20000 total once travel is included, where would you be starting from?\"}}}, \"message\": \"To check whether a 4 day trip fits within INR 20000 total once travel is included, where would you be starting from?\", \"options\": []}"
+}
