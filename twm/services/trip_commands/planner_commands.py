@@ -51,6 +51,10 @@ async def apply_guide(
     response = _normalize_guide_response(
         await engine.guide(agent_state, request.message)
     )
+
+    if event == "TRAVELER_MESSAGE" and response.outcome == "reopen_destination_discovery":
+        return await _reopen_destination_discovery(engine, logger, state, session, message)
+
     replacement = response.guide_state.model_dump(mode="json")
     _validate_guide_transition(
         event,
@@ -113,6 +117,44 @@ async def apply_guide(
         "message": response.message,
         "agent_meta": response.agent_meta.model_dump(mode="json"),
     }
+
+
+async def _reopen_destination_discovery(
+    engine: AgentEngine,
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    session: dict[str, Any],
+    message: str | None,
+) -> dict[str, Any]:
+    """Backend-validated pre-itinerary Guide -> Meridian reversal.
+
+    Only reachable from a TRAVELER_MESSAGE turn before the plan is frozen
+    (frozen_plan is checked before Guide is ever called). Retains the
+    superseded Guide session and destination context rather than deleting
+    them, then hands off to Meridian within this same command so exactly
+    one version increment is committed.
+    """
+    planner = state["planner_state"]
+    superseded = planner.setdefault("superseded_guide_sessions", [])
+    superseded.append({
+        "guide_session": session,
+        "destination_context": state["trip_context"].get("destination"),
+    })
+    planner.pop("guide_session", None)
+    state["trip_context"].pop("destination", None)
+    state["trip_context"].pop("selected_option", None)
+    state["stage"] = "matching"
+    state["active_agent"] = "meridian"
+    logger.info(
+        "Backend validated a pre-itinerary Guide to Meridian reversal.",
+        event="be.trip.guide.reopened_destination_discovery",
+        source="application",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        superseded_guide_revision=session.get("revision"),
+    )
+    from .matcher_commands import apply_meridian
+
+    return await apply_meridian(engine, state, message)
 
 
 def _validate_guide_event(event: str, prior_phase: str | None) -> None:

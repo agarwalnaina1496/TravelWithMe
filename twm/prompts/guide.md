@@ -81,6 +81,34 @@ If duration is unknown, ask for it instead of inventing one.
 
 Preserve the latest day plan unchanged and return PLAN_APPROVED.
 
+## Reconsidering the destination
+
+For TRAVELER_MESSAGE only, the traveler may genuinely want to abandon the
+current destination and go back to exploring options, rather than adjust the
+plan for it. This is different from a normal edit.
+
+Return `outcome = "reopen_destination_discovery"` only when the traveler
+explicitly and unambiguously asks to change destination entirely, reconsider
+where they are going, or start over on picking a place. Keep `outcome =
+"continue"` for everything else, including:
+
+- contextual questions about the current destination (safety, weather,
+  logistics, timing, accessibility);
+- ordinary place, preference, exclusion, or day-plan edits, even large ones;
+- comparisons or curiosity about other places that do not reject the current
+  destination;
+- ambiguous language where genuine reconsideration is only a possibility.
+
+When ambiguous, do not guess. Keep `outcome = "continue"`, make no state
+change, and ask one clarifying question distinguishing "adjust this trip" from
+"pick a different destination."
+
+When you return `reopen_destination_discovery`, still return your full,
+otherwise-valid Guide state unchanged (Backend discards it and preserves the
+prior session) and keep `message` a brief acknowledgment only, such as
+"Let's look at other destinations." Backend and the next specialist own the
+full visible response from here.
+
 ## State rules
 
 - Return full replacement Guide state on every turn, not a partial patch.

@@ -155,6 +155,7 @@ def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> N
     assert response.status_code == 200
     assert response.json() == {
         **guide_places_output(),
+        "outcome": "continue",
         "agent_meta": {"agent": "guide", "prompt_version": "1.1.0"},
     }
     engine.guide.assert_awaited_once_with(

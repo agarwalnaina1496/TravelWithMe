@@ -332,6 +332,82 @@ class FakeExplicitPreferenceOverrideEngine(FakeCommandEngine):
         )
 
 
+class FakeGuideReversalEngine(FakeCommandEngine):
+    """Guide proposes reopen_destination_discovery; Backend validates and hands off to Meridian."""
+
+    async def guide(self, trip_state, message):
+        self.calls.append(("guide", trip_state, message))
+        guide_state = dict(trip_state["guide_state"])
+        return AgentExecution(
+            response={
+                "message": "Let's look at other destinations.",
+                "guide_state": guide_state,
+                "explicit_changes": [],
+                "outcome": "reopen_destination_discovery",
+            },
+            prompt_release=PromptRelease("guide", "1.2.0", "test"),
+        )
+
+    async def meridian(self, trip_state, message):
+        self.calls.append(("meridian", trip_state, message))
+        return AgentExecution(
+            response={
+                "status": "NEEDS_CLARIFICATION",
+                "message": "What matters most for the next destination?",
+                "state_delta": {"trip_context": {}, "matcher_state": {
+                    "conversation_context": {"last_meridian_message": "What matters most for the next destination?", "awaiting": "preferences"}
+                }},
+                "options": [],
+            },
+            prompt_release=PromptRelease("meridian", "1.0.0", "test"),
+        )
+
+
+class FakeGuideOrdinaryEditEngine(FakeCommandEngine):
+    """Guide handles a normal edit and stays with outcome = continue (the default)."""
+
+    async def guide(self, trip_state, message):
+        self.calls.append(("guide", trip_state, message))
+        guide_state = dict(trip_state["guide_state"])
+        guide_state["places"] = [*guide_state["places"], "Anjuna Beach"]
+        return AgentExecution(
+            response={
+                "message": "Added Anjuna Beach.",
+                "guide_state": guide_state,
+                "explicit_changes": ["places"],
+            },
+            prompt_release=PromptRelease("guide", "1.2.0", "test"),
+        )
+
+
+def _seeded_guide_places_state(destination="Goa", places=("Baga Beach",)):
+    return {
+        "stage": "planning",
+        "active_agent": "guide",
+        "advisor_state": None,
+        "matcher_state": None,
+        "trip_context": {"destination": destination},
+        "planner_state": {
+            "guide_session": {
+                "state": {
+                    "phase": "PLACES_DRAFT",
+                    "destinations": [destination],
+                    "duration_days": None,
+                    "start_date": None,
+                    "places": list(places),
+                    "day_plan": [],
+                    "preferences": [],
+                    "exclusions": [],
+                    "applied_changes": [],
+                    "pending_clarification": None,
+                },
+                "revision": 1,
+                "explicit_changes": [],
+            },
+        },
+    }
+
+
 def _service(repository):
     return TripPersistenceService(repository, DatabaseSettings(url=None, guest_cookie_secure=False))
 
@@ -1227,3 +1303,90 @@ def test_known_destination_entry_missing_destination_returns_deterministic_clari
     saved = response.json()["trip"]
     assert saved["version"] == 2
     assert saved["trip_state"]["stage"] == "new"
+
+
+def test_guide_reversal_reopens_destination_discovery_in_same_command(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeGuideReversalEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(api_client, repository, title="Goa", trip_state=_seeded_guide_places_state())
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Actually, let's not do Goa, suggest somewhere else.",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["guide", "meridian"]
+    saved = response.json()["trip"]
+    assert saved["version"] == 2
+    trip_state = saved["trip_state"]
+    assert trip_state["stage"] == "matching"
+    assert trip_state["active_agent"] == "meridian"
+    assert "destination" not in trip_state["trip_context"]
+    superseded = trip_state["planner_state"]["superseded_guide_sessions"]
+    assert len(superseded) == 1
+    assert superseded[0]["destination_context"] == "Goa"
+    assert superseded[0]["guide_session"]["state"]["places"] == ["Baga Beach"]
+    assert "guide_session" not in trip_state["planner_state"]
+
+
+def test_guide_ordinary_edit_does_not_trigger_reversal(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeGuideOrdinaryEditEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(api_client, repository, title="Goa", trip_state=_seeded_guide_places_state())
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Also add Anjuna Beach.",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["guide"]
+    trip_state = response.json()["trip"]["trip_state"]
+    assert trip_state["stage"] == "planning"
+    assert trip_state["active_agent"] == "guide"
+    assert trip_state["trip_context"]["destination"] == "Goa"
+    assert "superseded_guide_sessions" not in trip_state["planner_state"]
+    assert trip_state["planner_state"]["guide_session"]["state"]["places"] == ["Baga Beach", "Anjuna Beach"]
+
+
+def test_guide_reversal_is_rejected_once_the_plan_is_frozen(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeGuideReversalEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = _seeded_guide_places_state()
+    state["stage"] = "planned"
+    state["active_agent"] = None
+    state["planner_state"]["frozen_plan"] = {
+        "guide_revision": 1,
+        "guide_state": state["planner_state"]["guide_session"]["state"],
+    }
+    trip = _create_seeded_trip(api_client, repository, title="Goa", trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Actually, let's not do Goa, suggest somewhere else.",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+    assert engine.calls == []
