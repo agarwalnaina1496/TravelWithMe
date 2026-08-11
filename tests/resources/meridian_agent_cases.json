@@ -95,5 +95,136 @@
       "reject_agent_written_recommendations": true,
       "reject_agent_written_selected_option": true
     }
+  },
+  {
+    "id": "group-total-budget-affordability-prioritizes-plausible-access",
+    "scenario": "A Bengaluru-origin, three-traveler, INR 30000 total-budget case must evaluate group-level end-to-end affordability and naturally favor plausible ground or rail accessible options without a hardcoded flight ban",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Bengaluru",
+          "duration_days": 4,
+          "budget": "INR 30000 total for the group",
+          "travelers": 3
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Suggest a 4 day trip for the three of us within INR 30000 total."
+    },
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "single",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "no_hardcoded_transport_mode_exclusion": true,
+      "awaiting_cleared": true
+    }
+  },
+  {
+    "id": "per-person-budget-interpreted-as-stated",
+    "scenario": "The traveler states a per-person figure, which must not be treated as a group total",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Mumbai",
+          "duration_days": 5,
+          "budget": "INR 25000 per person",
+          "travelers": 2
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Each of us can spend about INR 25000 for a 5 day trip."
+    },
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "single",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "awaiting_cleared": true
+    }
+  },
+  {
+    "id": "missing-origin-blocks-affordability-clarification",
+    "scenario": "Origin is materially required to estimate round-trip affordability, so Meridian must ask for it rather than assume it",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "duration_days": 4,
+          "budget": "INR 20000 total",
+          "travelers": 2
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Find us a 4 day trip within INR 20000 total."
+    },
+    "invariants": {
+      "status": "NEEDS_CLARIFICATION",
+      "requires_awaiting_reason": true,
+      "message_matches_last_meridian_message": true,
+      "no_options_allowed": true
+    }
+  },
+  {
+    "id": "unaffordable-transport-mode-excluded-without-hardcoded-ban",
+    "scenario": "A materially unaffordable transport mode for the stated party and budget is excluded or trades off through ordinary evaluation, not a fixed rule",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Chennai",
+          "duration_days": 3,
+          "budget": "INR 12000 total",
+          "travelers": 4
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "We want a 3 day trip for the four of us within INR 12000 total."
+    },
+    "invariants": {
+      "status": "SOFT_FAIL",
+      "requires_visible_tradeoff": true,
+      "no_hardcoded_transport_mode_exclusion": true,
+      "allows_constraint_adjustment_suggestions": true
+    }
+  },
+  {
+    "id": "circuit-accounts-for-complete-round-trip-cost",
+    "scenario": "A multi-stop circuit must account for outbound, inter-stop, and return legs in its affordability and feasibility evaluation",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 10,
+          "budget": "INR 90000 total",
+          "travelers": 2,
+          "circuit_cities": ["Jaipur", "Udaipur", "Jodhpur"],
+          "circuit_flexibility": "flexible stop order"
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Plan a flexible 10 day circuit through Jaipur, Udaipur, and Jodhpur within INR 90000 total for two."
+    },
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "circuit",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "requires_complete_round_trip_accounting": true,
+      "awaiting_cleared": true
+    }
   }
 ]

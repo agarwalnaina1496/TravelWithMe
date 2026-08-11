@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "per-person-budget-interpreted-as-stated",
+  "execution_path": "direct",
+  "prompt_version": "1.7.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"SUCCESS\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": null}}}, \"message\": \"With INR 25000 available per person, both of you can comfortably cover Udaipur.\", \"trip_type\": \"single\", \"traveler_criteria\": [{\"id\": \"per_person_budget\", \"label\": \"Per person budget fit\", \"requirement_type\": \"HARD\", \"source_context_paths\": [\"budget\"]}], \"options\": [{\"rank\": 1, \"type\": \"single\", \"name\": \"Udaipur Lakeside\", \"destination_id\": \"udaipur\", \"summary\": \"Udaipur fits comfortably within the stated per person budget for both travelers.\", \"evaluations\": [{\"criterion_id\": \"per_person_budget\", \"outcome\": \"MATCH\", \"conclusion\": \"The estimated per person cost stays under INR 25000, not INR 50000 total.\", \"details\": [{\"type\": \"cost_breakdown\", \"currency\": \"INR\", \"items\": [{\"label\": \"Round trip travel, per person\", \"per_person\": {\"minimum\": 4000, \"maximum\": 7000}}, {\"label\": \"Stay, per person, four nights\", \"per_person\": {\"minimum\": 8000, \"maximum\": 11000}}, {\"label\": \"Food and local movement, per person\", \"per_person\": {\"minimum\": 4000, \"maximum\": 5500}}]}]}]}]}"
+}

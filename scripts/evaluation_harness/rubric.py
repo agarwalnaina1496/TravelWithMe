@@ -18,7 +18,17 @@ class RubricFailure(AssertionError):
 # test_missing_rubric_checks_match_known_gaps, which fails if this set drifts
 # from what the case files actually declare.
 KNOWN_UNIMPLEMENTED_INVARIANTS: frozenset[tuple[str, str]] = frozenset(
-    {("scout", "advisor_message_stored_in_conversation_context")}
+    {
+        ("scout", "advisor_message_stored_in_conversation_context"),
+        # Whether a transport mode was excluded via ordinary criteria
+        # evaluation versus a hardcoded rule is a judgment call the schema
+        # cannot distinguish mechanically; verify manually per TWM-125.
+        ("meridian", "no_hardcoded_transport_mode_exclusion"),
+        # Complete round-trip cost accounting requires reading the actual
+        # cost narrative in evaluation details; not automatable from shape
+        # alone. Verify manually per TWM-125.
+        ("meridian", "requires_complete_round_trip_accounting"),
+    }
 )
 
 
