@@ -1,5 +1,12 @@
 # Meridian prompt changelog
 
+## Meridian 1.8.0 — 2026-08-11
+
+- Defined `matcher_state.refinement` as a Backend-supplied, already-validated More like this signal carrying a MORE_LIKE_THIS type and a canonical single or circuit reference identity.
+- Required the referenced option to act as a positive direction while preserving every existing traveler criterion and hard requirement.
+- Required optional `refinement.instructions` to refine, not replace, known traveler context.
+- Required a fresh ranked result rather than replaying or mutating the referenced option.
+
 ## Meridian 1.7.0 — 2026-08-11
 
 - Required conversational interpretation of total versus per-person budget without a fixed form.

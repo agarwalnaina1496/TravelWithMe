@@ -1305,6 +1305,158 @@ def test_known_destination_entry_missing_destination_returns_deterministic_clari
     assert saved["trip_state"]["stage"] == "new"
 
 
+class FakeMoreLikeThisEngine(FakeCommandEngine):
+    async def meridian(self, trip_state, message):
+        self.calls.append(("meridian", trip_state, message))
+        return AgentExecution(
+            response={
+                "status": "SUCCESS",
+                "message": "Here is another relaxed beach option close to Goa.",
+                "state_delta": {"trip_context": {}, "matcher_state": {
+                    "conversation_context": {"awaiting": None}
+                }},
+                "trip_type": "single",
+                "traveler_criteria": [{
+                    "id": "pace", "label": "Relaxed pace",
+                    "requirement_type": "PREFERENCE", "source_context_paths": ["travel_style.pace"],
+                }],
+                "options": [{
+                    "rank": 1, "type": "single", "name": "Gokarna Coast",
+                    "destination_id": "gokarna",
+                    "summary": "A quieter beach town close to Goa's coastline.",
+                    "evaluations": [{
+                        "criterion_id": "pace", "outcome": "MATCH",
+                        "conclusion": "Gokarna keeps a relaxed pace similar to Goa.",
+                        "details": [{"type": "bullets", "items": ["Fewer crowds than Goa."]}],
+                    }],
+                }],
+            },
+            prompt_release=PromptRelease("meridian", "1.0.0", "test"),
+        )
+
+
+def _recommended_state_with_goa_option():
+    return {
+        "stage": "recommended",
+        "active_agent": None,
+        "trip_context": {},
+        "matcher_state": {"recommendations": [{"options": [
+            {"rank": 1, "type": "single", "destination_id": "goa", "name": "Goa"}
+        ]}]},
+    }
+
+
+def test_more_like_this_refines_around_the_referenced_option(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeMoreLikeThisEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(
+        api_client, repository, trip_state=_recommended_state_with_goa_option()
+    )
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "more_like_this",
+            "refinement": {
+                "type": "MORE_LIKE_THIS",
+                "reference": {"type": "single", "id": "goa"},
+                "instructions": "Somewhere quieter",
+            },
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["meridian"]
+    forwarded_trip_state = engine.calls[0][1]
+    assert forwarded_trip_state["matcher_state"]["refinement"] == {
+        "type": "MORE_LIKE_THIS",
+        "reference": {"type": "single", "id": "goa"},
+        "instructions": "Somewhere quieter",
+    }
+    assert engine.calls[0][2] == "Somewhere quieter"
+    saved = response.json()["trip"]["trip_state"]
+    assert saved["stage"] == "recommended"
+    assert saved["matcher_state"]["recommendations"][-1]["options"][0][
+        "destination_id"
+    ] == "gokarna"
+
+
+def test_more_like_this_rejects_unknown_reference_without_mutating_state(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeMoreLikeThisEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(
+        api_client, repository, trip_state=_recommended_state_with_goa_option()
+    )
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "more_like_this",
+            "refinement": {
+                "type": "MORE_LIKE_THIS",
+                "reference": {"type": "single", "id": "an-unknown-injected-id"},
+            },
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+    assert engine.calls == []
+    assert repository.trips[UUID(trip["id"])].version == 1
+
+
+def test_more_like_this_requires_refinement_field(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: FakeMoreLikeThisEngine()
+    trip = _create_seeded_trip(
+        api_client, repository, trip_state=_recommended_state_with_goa_option()
+    )
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "more_like_this",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_refinement_field_rejected_for_other_commands(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
+    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "hello",
+            "refinement": {
+                "type": "MORE_LIKE_THIS",
+                "reference": {"type": "single", "id": "goa"},
+            },
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_guide_reversal_reopens_destination_discovery_in_same_command(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeGuideReversalEngine()

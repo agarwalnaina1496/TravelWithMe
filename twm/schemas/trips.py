@@ -7,7 +7,27 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import AgentMeta
+from .recommendations import NonEmptyString
 from .scout import BoundedMessage
+
+
+class MeridianRefinementReference(BaseModel):
+    """Canonical identity of the recommendation option a refinement builds on."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["single", "circuit"]
+    id: NonEmptyString
+
+
+class MeridianRefinement(BaseModel):
+    """Additive deterministic More like this refinement input for Meridian."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["MORE_LIKE_THIS"]
+    reference: MeridianRefinementReference
+    instructions: BoundedMessage | None = None
 
 
 class TripCreateRequest(BaseModel):
@@ -71,6 +91,7 @@ TripCommandName = Literal[
     "advice_entry",
     "discover_entry",
     "known_destination_entry",
+    "more_like_this",
 ]
 
 _MESSAGE_COMMANDS = {"traveler_message", "advice_entry"}
@@ -87,6 +108,7 @@ class TripCommandRequest(BaseModel):
     message: BoundedMessage | None = None
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
     destination: str | None = Field(default=None, min_length=1, max_length=200)
+    refinement: MeridianRefinement | None = None
 
     @model_validator(mode="after")
     def validate_command_fields(self) -> "TripCommandRequest":
@@ -100,12 +122,16 @@ class TripCommandRequest(BaseModel):
             raise ValueError("advice_entry requires message")
         if self.command == "select_destination" and not self.option_id:
             raise ValueError("select_destination requires option_id")
+        if self.command == "more_like_this" and self.refinement is None:
+            raise ValueError("more_like_this requires refinement")
         if self.command not in _MESSAGE_COMMANDS and self.message is not None:
             raise ValueError("message is allowed only for traveler_message or advice_entry")
         if self.command != "select_destination" and self.option_id is not None:
             raise ValueError("option_id is allowed only for select_destination")
         if self.command != "known_destination_entry" and self.destination is not None:
             raise ValueError("destination is allowed only for known_destination_entry")
+        if self.command != "more_like_this" and self.refinement is not None:
+            raise ValueError("refinement is allowed only for more_like_this")
         return self
 
 

@@ -226,5 +226,74 @@
       "requires_complete_round_trip_accounting": true,
       "awaiting_cleared": true
     }
+  },
+  {
+    "id": "more-like-this-plain-single-reference",
+    "scenario": "A deterministic MORE_LIKE_THIS refinement with no traveler instructions must produce a fresh ranked result using the referenced option as positive direction",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 4,
+          "budget": "INR 40000",
+          "travelers": 2
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {
+          "prior_recommendations": [
+            {"rank": 1, "name": "Goa Beach Escape", "type": "single", "destination_id": "goa"}
+          ],
+          "refinement": {
+            "type": "MORE_LIKE_THIS",
+            "reference": {"type": "single", "id": "goa"}
+          }
+        }
+      },
+      "message": null
+    },
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "single",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "awaiting_cleared": true
+    }
+  },
+  {
+    "id": "more-like-this-qualified-circuit-reference",
+    "scenario": "A MORE_LIKE_THIS refinement on a circuit option with qualifying instructions must refine, not replace, existing traveler context",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 10,
+          "budget": "INR 90000",
+          "travelers": 2
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {
+          "prior_recommendations": [
+            {"rank": 1, "name": "Rajasthan Heritage Circuit", "type": "circuit", "circuit_id": "jaipur-udaipur-jodhpur"}
+          ],
+          "refinement": {
+            "type": "MORE_LIKE_THIS",
+            "reference": {"type": "circuit", "id": "jaipur-udaipur-jodhpur"},
+            "instructions": "A bit slower paced, with fewer driving days"
+          }
+        }
+      },
+      "message": "A bit slower paced, with fewer driving days"
+    },
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "circuit",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "awaiting_cleared": true
+    }
   }
 ]

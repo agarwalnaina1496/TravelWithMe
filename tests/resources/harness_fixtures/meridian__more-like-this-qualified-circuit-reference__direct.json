@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "more-like-this-qualified-circuit-reference",
+  "execution_path": "direct",
+  "prompt_version": "1.8.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"SUCCESS\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": null}}}, \"message\": \"A slower paced version of the same three city circuit, with one fewer driving day.\", \"trip_type\": \"circuit\", \"traveler_criteria\": [{\"id\": \"circuit_budget\", \"label\": \"Circuit budget fit\", \"requirement_type\": \"HARD\", \"source_context_paths\": [\"budget\"]}, {\"id\": \"pace\", \"label\": \"Slower pace, fewer driving days\", \"requirement_type\": \"PREFERENCE\", \"source_context_paths\": [\"matcher_state.refinement.instructions\"]}], \"options\": [{\"rank\": 1, \"type\": \"circuit\", \"name\": \"Rajasthan Heritage Circuit, Relaxed\", \"circuit_id\": \"jaipur-udaipur-relaxed\", \"summary\": \"Drops one stop from the original circuit to slow the pace while keeping the budget intact.\", \"evaluations\": [{\"criterion_id\": \"circuit_budget\", \"outcome\": \"MATCH\", \"conclusion\": \"The full round trip stays within INR 90000 for two.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Fewer driving legs keep total travel cost similar to the original circuit.\"]}]}, {\"criterion_id\": \"pace\", \"outcome\": \"MATCH\", \"conclusion\": \"Two stops instead of three reduces driving days as requested.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"One fewer inter city transfer than the original circuit.\"]}]}]}]}"
+}
