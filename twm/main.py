@@ -46,7 +46,11 @@ async def application_lifespan(app: FastAPI):
             settings, app.state.telemetry, http_client
         )
         if database_settings.url:
-            pool = await asyncpg.create_pool(database_settings.url)
+            pool = await asyncpg.create_pool(
+                database_settings.url,
+                min_size=database_settings.pool_min_size,
+                max_size=database_settings.pool_max_size,
+            )
             stack.push_async_callback(pool.close)
             app.state.trip_persistence = TripPersistenceService(PostgresTripRepository(pool, database_settings.schema), database_settings)
         else:

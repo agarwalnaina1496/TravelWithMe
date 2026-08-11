@@ -8,6 +8,7 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 - Use the prefix only in Linear. Do not add `[BE]` to branch names, commit messages, or pull-request titles unless the user explicitly requests it.
 - Keep backend work in this repository. Coordinate separate `[UI]` work when a contract or user flow also requires frontend changes.
 - Do not include unrelated prompt, workflow, documentation, or refactoring changes in the same branch or pull request.
+- Name delivery branches `twm-<issue-number>-<short-kebab-slug>` (lowercase, e.g. `twm-125-be-make-meridian-recommendations-practically-affordable-and`). Do not use Linear's suggested `gitBranchName` as-is or prefix it with a username — strip any leading username segment and any `[BE]`/`[UI]` tag.
 
 ## Product intent and discovery
 
