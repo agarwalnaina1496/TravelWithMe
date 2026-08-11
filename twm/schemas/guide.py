@@ -152,6 +152,9 @@ class GuidePlannerState(BaseModel):
             raise ValueError("day plan must allocate every place and no others")
 
 
+GuideOutcome = Literal["continue", "reopen_destination_discovery"]
+
+
 class GuideAgentOutput(BaseModel):
     """Canonical generated Guide output before Backend provenance is attached."""
 
@@ -160,6 +163,7 @@ class GuideAgentOutput(BaseModel):
     message: GuideText
     guide_state: GuidePlannerState
     explicit_changes: list[GuideChangedField]
+    outcome: GuideOutcome = "continue"
 
     @model_validator(mode="after")
     def validate_explicit_changes(self) -> "GuideAgentOutput":
