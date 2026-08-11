@@ -118,6 +118,23 @@ class TripCommandService:
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLACES", None)
         if payload.command == "approve_plan":
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None)
+        if payload.command == "advice_entry":
+            return await apply_scout(self.engine, self.logger, state, payload.message or "")
+        if payload.command == "discover_entry":
+            state["stage"] = "matching"
+            state["active_agent"] = "meridian"
+            return await apply_meridian(self.engine, state, None)
+        if payload.command == "known_destination_entry":
+            destination = (payload.destination or "").strip()
+            if not destination:
+                return {
+                    "message": "Tell us the destination before starting the plan.",
+                    "agent_meta": None,
+                }
+            state["trip_context"]["destination"] = destination
+            state["stage"] = "planning"
+            state["active_agent"] = "guide"
+            return await apply_guide(self.engine, self.logger, state, "START", None)
 
         message = payload.message or ""
         if state.get("stage") == "planning" or state.get("active_agent") == "guide":

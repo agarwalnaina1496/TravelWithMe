@@ -68,7 +68,12 @@ TripCommandName = Literal[
     "approve_places",
     "approve_plan",
     "new_journey",
+    "advice_entry",
+    "discover_entry",
+    "known_destination_entry",
 ]
+
+_MESSAGE_COMMANDS = {"traveler_message", "advice_entry"}
 
 
 class TripCommandRequest(BaseModel):
@@ -81,6 +86,7 @@ class TripCommandRequest(BaseModel):
     idempotency_key: UUID
     message: BoundedMessage | None = None
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
+    destination: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def validate_command_fields(self) -> "TripCommandRequest":
@@ -88,12 +94,18 @@ class TripCommandRequest(BaseModel):
             self.message and self.message.strip()
         ):
             raise ValueError("traveler_message requires message")
+        if self.command == "advice_entry" and not (
+            self.message and self.message.strip()
+        ):
+            raise ValueError("advice_entry requires message")
         if self.command == "select_destination" and not self.option_id:
             raise ValueError("select_destination requires option_id")
-        if self.command != "traveler_message" and self.message is not None:
-            raise ValueError("message is allowed only for traveler_message")
+        if self.command not in _MESSAGE_COMMANDS and self.message is not None:
+            raise ValueError("message is allowed only for traveler_message or advice_entry")
         if self.command != "select_destination" and self.option_id is not None:
             raise ValueError("option_id is allowed only for select_destination")
+        if self.command != "known_destination_entry" and self.destination is not None:
+            raise ValueError("destination is allowed only for known_destination_entry")
         return self
 
 
