@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "more-like-this-plain-single-reference",
+  "execution_path": "direct",
+  "prompt_version": "1.8.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"SUCCESS\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": null}}}, \"message\": \"Here is another relaxed beach option in the same direction as Goa.\", \"trip_type\": \"single\", \"traveler_criteria\": [{\"id\": \"budget\", \"label\": \"Budget fit\", \"requirement_type\": \"HARD\", \"source_context_paths\": [\"budget\"]}, {\"id\": \"pace\", \"label\": \"Relaxed beach pace\", \"requirement_type\": \"PREFERENCE\", \"source_context_paths\": [\"matcher_state.refinement\"]}], \"options\": [{\"rank\": 1, \"type\": \"single\", \"name\": \"Gokarna Coast\", \"destination_id\": \"gokarna\", \"summary\": \"A quieter beach town in the same relaxed direction as Goa.\", \"evaluations\": [{\"criterion_id\": \"budget\", \"outcome\": \"MATCH\", \"conclusion\": \"The full trip fits within the stated budget.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Estimated total stays under INR 40000.\"]}]}, {\"criterion_id\": \"pace\", \"outcome\": \"MATCH\", \"conclusion\": \"Gokarna keeps the same relaxed beach pace as Goa.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Fewer crowds than Goa with a similar coastal feel.\"]}]}]}]}"
+}

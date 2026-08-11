@@ -124,6 +124,16 @@ class TripCommandService:
             state["stage"] = "matching"
             state["active_agent"] = "meridian"
             return await apply_meridian(self.engine, state, None)
+        if payload.command == "more_like_this":
+            refinement = payload.refinement
+            return await apply_meridian(
+                self.engine,
+                state,
+                refinement.instructions if refinement else None,
+                refinement=refinement.model_dump(mode="json", exclude_none=True)
+                if refinement
+                else None,
+            )
         if payload.command == "known_destination_entry":
             destination = (payload.destination or "").strip()
             if not destination:

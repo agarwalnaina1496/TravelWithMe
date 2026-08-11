@@ -10,7 +10,10 @@ from .state import deep_merge, merge_operational_state
 
 
 async def apply_meridian(
-    engine: AgentEngine, state: dict[str, Any], message: str | None
+    engine: AgentEngine,
+    state: dict[str, Any],
+    message: str | None,
+    refinement: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     latest = (state["matcher_state"].get("recommendations") or [None])[-1]
     prior_options = [] if not latest else [
@@ -21,16 +24,20 @@ async def apply_meridian(
         }
         for option in latest.get("options", [])
     ]
+    matcher_state: dict[str, Any] = {
+        "conversation_context": state["matcher_state"].get("conversation_context", {}),
+        "prior_recommendations": prior_options,
+        "rejected_options": state["matcher_state"].get("rejected_options", []),
+    }
+    if refinement is not None:
+        _validate_refinement_reference(refinement, prior_options)
+        matcher_state["refinement"] = refinement
     phase = {
         "trip_context": state["trip_context"],
         "advisor_state": {
             "conversation_context": state["advisor_state"].get("conversation_context", {})
         },
-        "matcher_state": {
-            "conversation_context": state["matcher_state"].get("conversation_context", {}),
-            "prior_recommendations": prior_options,
-            "rejected_options": state["matcher_state"].get("rejected_options", []),
-        },
+        "matcher_state": matcher_state,
     }
     request = MeridianRequest.model_validate({"trip_state": phase, "message": message})
     response = _normalize_meridian_response(
@@ -54,6 +61,24 @@ async def apply_meridian(
         "message": response.message,
         "agent_meta": response.agent_meta.model_dump(mode="json"),
     }
+
+
+def _validate_refinement_reference(
+    refinement: dict[str, Any], prior_options: list[dict[str, Any]]
+) -> None:
+    reference = refinement.get("reference", {})
+    reference_type = reference.get("type")
+    reference_id = reference.get("id")
+    known = any(
+        option["type"] == reference_type
+        and reference_id
+        in {option.get("destination_id"), option.get("circuit_id")}
+        for option in prior_options
+    )
+    if not known:
+        raise InvalidTripCommandError(
+            "More like this reference does not match a known recommendation option."
+        )
 
 
 def select_destination(state: dict[str, Any], option_id: str) -> dict[str, Any]:
