@@ -11,6 +11,8 @@ class DatabaseSettings:
     guest_cookie_name: str = "twm_guest"
     guest_cookie_secure: bool = True
     guest_session_days: int = 180
+    pool_min_size: int = 1
+    pool_max_size: int = 5
 
     @classmethod
     def load(cls) -> "DatabaseSettings":
@@ -23,4 +25,6 @@ class DatabaseSettings:
                 "GUEST_COOKIE_SECURE", "true" if environment == "prod" else "false"
             ).lower() == "true",
             guest_session_days=int(os.getenv("GUEST_SESSION_DAYS", "180")),
+            pool_min_size=int(os.getenv("APP_DATABASE_POOL_MIN_SIZE", "1")),
+            pool_max_size=int(os.getenv("APP_DATABASE_POOL_MAX_SIZE", "5")),
         )
