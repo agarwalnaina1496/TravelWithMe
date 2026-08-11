@@ -393,6 +393,17 @@ def _atlas_requires_budget_lines(
         raise RubricFailure("expected non-empty budget lines")
 
 
+def _atlas_requires_assumptions_for_missing_start_date(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    start_date = case.input.get("working_plan", {}).get("start_date")
+    assumptions = response.get("final_itinerary", {}).get("assumptions", [])
+    if expected and start_date is None and not assumptions:
+        raise RubricFailure(
+            "expected an explicit assumption when the working plan has no start date"
+        )
+
+
 def _atlas_preserve_destination_order(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
@@ -584,6 +595,7 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "exclude": _atlas_exclude,
         "requires_day_timeline": _atlas_requires_day_timeline,
         "requires_budget_lines": _atlas_requires_budget_lines,
+        "requires_assumptions_for_missing_start_date": _atlas_requires_assumptions_for_missing_start_date,
         "preserve_destination_order": _atlas_preserve_destination_order,
         "do_not_add_destinations": _atlas_do_not_add_destinations,
         "no_live_search_available": _atlas_no_live_search_available,

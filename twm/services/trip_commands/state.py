@@ -50,6 +50,7 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
         "advisor_state": {"conversation_context": {}, "artifacts": []},
         "matcher_state": {"conversation_context": {}, "recommendations": []},
         "planner_state": {},
+        "itinerary_state": {},
     }
     for name, default in object_branches.items():
         if not isinstance(state.get(name), dict):

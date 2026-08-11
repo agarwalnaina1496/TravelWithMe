@@ -92,6 +92,7 @@ TripCommandName = Literal[
     "discover_entry",
     "known_destination_entry",
     "more_like_this",
+    "start_itinerary",
 ]
 
 _MESSAGE_COMMANDS = {"traveler_message", "advice_entry"}

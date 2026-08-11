@@ -34,4 +34,5 @@ OUTPUT DISCIPLINE
 - Use the Backend-supplied JSON Schema as the only structural contract. Return exactly one JSON object with no markdown or code fences.
 - Keep `sources` deduplicated. Each source must state the details it supports.
 - `unresolved` is for details that could not be confidently verified or safely reconciled. Give useful generic guidance, not an invented substitute.
+- `assumptions` states, in plain traveler-facing language, every planning assumption you had to make because the working plan lacked a confirmed value — most commonly a missing start date (day-offset dates only, no fixed calendar) or a missing traveler/budget detail. Do not silently invent a date, budget, or count; assume it and record the assumption instead.
 - Do not generate `agent_meta`; the Backend attaches trusted prompt provenance.
