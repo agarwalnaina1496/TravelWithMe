@@ -62,8 +62,33 @@ def atlas_output() -> dict:
                 "overview": "A calm day around the approved riverside places.",
                 "route_rationale": "The day keeps nearby places together.",
             },
-            "travel_options": [],
-            "stay_options": [],
+            "travel_options": [
+                {
+                    "from_place": "Delhi",
+                    "to_place": "Rishikesh",
+                    "mode": "Bus",
+                    "suggestion": "Overnight Volvo bus.",
+                    "duration_guidance": "About 7 hours.",
+                    "estimated_cost_low": 600,
+                    "estimated_cost_high": 900,
+                    "reference": general_reference,
+                    "booking_readiness": "needs_advance_booking",
+                }
+            ],
+            "stay_options": [
+                {
+                    "location": "Rishikesh",
+                    "suggestion": "Riverside guesthouse near Ram Jhula.",
+                    "nights": 1,
+                    "check_in_day": 1,
+                    "check_out_day": 2,
+                    "why_it_fits": "Central, budget-friendly, walkable to the ghats.",
+                    "estimated_cost_low": 800,
+                    "estimated_cost_high": 1500,
+                    "reference": general_reference,
+                    "booking_readiness": "suggested",
+                }
+            ],
             "days": [
                 {
                     "day_number": 1,
@@ -83,6 +108,8 @@ def atlas_output() -> dict:
                             "estimated_cost_low": 0,
                             "estimated_cost_high": 0,
                             "reference": general_reference,
+                            "requires_advance_booking": False,
+                            "booking_readiness": None,
                         }
                     ],
                     "seasonal_guidance": "Carry weather-appropriate layers.",
@@ -112,6 +139,12 @@ def atlas_output() -> dict:
             },
             "practical_notes": [],
             "sources": [],
+            "assumptions": [
+                {
+                    "category": "dates",
+                    "detail": "Assumed a start date since none was confirmed.",
+                }
+            ],
         },
         "unresolved": [],
     }
@@ -312,6 +345,40 @@ def test_atlas_api_uses_prompt_schema_and_common_validation(
     assert framed_input["trip_state"]["working_plan"]["approved_places"] == [
         "Ram Jhula"
     ]
+
+
+def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
+    api_client: TestClient,
+) -> None:
+    invalid_output = atlas_output()
+    invalid_output["final_itinerary"]["days"][0]["timeline"][0][
+        "requires_advance_booking"
+    ] = True
+    invalid_output["final_itinerary"]["days"][0]["timeline"][0][
+        "booking_readiness"
+    ] = None
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(invalid_output))
+    )
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin": "Delhi", "travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "duration_days": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert adapter.invoke.await_count == 2
 
 
 def test_atlas_rejects_plan_that_does_not_allocate_approved_places(
