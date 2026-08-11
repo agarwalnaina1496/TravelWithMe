@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import AgentMeta
+from .logistics import LogisticsConfirmationInput
 from .recommendations import NonEmptyString
 from .scout import BoundedMessage
 
@@ -93,6 +94,9 @@ TripCommandName = Literal[
     "known_destination_entry",
     "more_like_this",
     "start_itinerary",
+    "confirm_logistics",
+    "accept_itinerary_revision",
+    "keep_current_itinerary",
 ]
 
 _MESSAGE_COMMANDS = {"traveler_message", "advice_entry"}
@@ -110,6 +114,7 @@ class TripCommandRequest(BaseModel):
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
     destination: str | None = Field(default=None, min_length=1, max_length=200)
     refinement: MeridianRefinement | None = None
+    logistics_confirmation: LogisticsConfirmationInput | None = None
 
     @model_validator(mode="after")
     def validate_command_fields(self) -> "TripCommandRequest":
@@ -125,6 +130,12 @@ class TripCommandRequest(BaseModel):
             raise ValueError("select_destination requires option_id")
         if self.command == "more_like_this" and self.refinement is None:
             raise ValueError("more_like_this requires refinement")
+        if self.command == "confirm_logistics" and self.logistics_confirmation is None:
+            raise ValueError("confirm_logistics requires logistics_confirmation")
+        if self.command != "confirm_logistics" and self.logistics_confirmation is not None:
+            raise ValueError(
+                "logistics_confirmation is allowed only for confirm_logistics"
+            )
         if self.command not in _MESSAGE_COMMANDS and self.message is not None:
             raise ValueError("message is allowed only for traveler_message or advice_entry")
         if self.command != "select_destination" and self.option_id is not None:

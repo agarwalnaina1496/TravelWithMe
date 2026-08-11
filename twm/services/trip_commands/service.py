@@ -12,10 +12,22 @@ from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from .atlas_commands import apply_atlas
 from .errors import IdempotencyConflictError, InvalidTripCommandError
+from .logistics_commands import (
+    apply_accept_itinerary_revision,
+    apply_confirm_logistics,
+    apply_keep_current_itinerary,
+)
 from .matcher_commands import apply_meridian, select_destination
 from .planner_commands import apply_guide
 from .scout_commands import apply_scout
 from .state import canonical_state, trip_response
+
+_POST_FREEZE_COMMANDS = {
+    "start_itinerary",
+    "confirm_logistics",
+    "accept_itinerary_revision",
+    "keep_current_itinerary",
+}
 
 
 @dataclass
@@ -86,13 +98,21 @@ class TripCommandService:
     ) -> dict[str, Any]:
         if (
             state["planner_state"].get("frozen_plan")
-            and payload.command != "start_itinerary"
+            and payload.command not in _POST_FREEZE_COMMANDS
         ):
             raise InvalidTripCommandError(
                 "The approved plan is frozen and cannot be changed."
             )
         if payload.command == "start_itinerary":
             return await apply_atlas(self.engine, self.logger, state)
+        if payload.command == "confirm_logistics":
+            return await apply_confirm_logistics(
+                self.engine, self.logger, state, payload.logistics_confirmation
+            )
+        if payload.command == "accept_itinerary_revision":
+            return apply_accept_itinerary_revision(self.logger, state)
+        if payload.command == "keep_current_itinerary":
+            return apply_keep_current_itinerary(self.logger, state)
         if payload.command == "new_journey":
             state.clear()
             state.update(canonical_state({}))
