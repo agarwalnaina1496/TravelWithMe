@@ -27,6 +27,9 @@ def test_meridian_evaluation_corpus_covers_status_and_state_ownership() -> None:
         "circuit-accounts-for-complete-round-trip-cost",
         "more-like-this-plain-single-reference",
         "more-like-this-qualified-circuit-reference",
+        "circuit-return-timing-feasible-match",
+        "circuit-return-timing-infeasible-tradeoff",
+        "circuit-no-return-timing-constraint-unaffected",
     }
     assert cases_by_id["circuit-preference-clarification"]["invariants"] == {
         "status": "NEEDS_CLARIFICATION",

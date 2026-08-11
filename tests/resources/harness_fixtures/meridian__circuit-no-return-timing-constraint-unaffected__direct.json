@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "circuit-no-return-timing-constraint-unaffected",
+  "execution_path": "direct",
+  "prompt_version": "1.9.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"SUCCESS\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": null}}}, \"message\": \"The Jaipur, Udaipur, Jodhpur circuit fits INR 90000 once the full round trip from Delhi is included.\", \"trip_type\": \"circuit\", \"traveler_criteria\": [{\"id\": \"circuit_budget\", \"label\": \"Circuit budget fit\", \"requirement_type\": \"HARD\", \"source_context_paths\": [\"budget\"]}, {\"id\": \"stop_flexibility\", \"label\": \"Flexible stop order\", \"requirement_type\": \"PREFERENCE\", \"source_context_paths\": [\"circuit_flexibility\"]}], \"options\": [{\"rank\": 1, \"type\": \"circuit\", \"name\": \"Rajasthan Heritage Circuit\", \"circuit_id\": \"jaipur-udaipur-jodhpur\", \"summary\": \"A flexible three city loop that keeps the full Delhi round trip within budget.\", \"evaluations\": [{\"criterion_id\": \"circuit_budget\", \"outcome\": \"MATCH\", \"conclusion\": \"Outbound, inter city legs, and the return to Delhi together stay within INR 90000 for two.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Ten days leaves ample time for all three stops.\"]}]}, {\"criterion_id\": \"stop_flexibility\", \"outcome\": \"MATCH\", \"conclusion\": \"The three stops can be reordered without changing the total round trip cost materially.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Jaipur, Udaipur, and Jodhpur are mutually well connected by road.\"]}]}]}]}"
+}

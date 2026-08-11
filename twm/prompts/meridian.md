@@ -155,7 +155,10 @@ For each driving circuit:
 - reconcile leg sums with total distance and total driving time;
 - reconcile daily averages and driving-day count with route totals;
 - ensure the stated pace and feasibility match the route arithmetic;
-- disclose long transfers and seasonally relevant disruption exposure.
+- disclose long transfers and seasonally relevant disruption exposure;
+- validate the return leg, not only the outbound journey, against any stated return-timing constraint.
+
+When `trip_context` states a return-timing constraint, such as a fixed return date, a weekend-only window, or needing to be back by a specific day, check the return leg's arrival against that constraint using the same route arithmetic used for the rest of the circuit (or a single destination's return, where relevant). Treat this as its own criterion rather than folding it into general pace or distance. When the return realistically lands at or before the stated constraint, record a `MATCH`. When it lands close enough to be workable only with a disclosed compromise, such as a late arrival or a tight final travel day, record a `TRADEOFF` with that compromise stated. When the route cannot realistically meet the constraint, record a `MISMATCH`, or exclude the option entirely if the traveler has stated the constraint as non negotiable. Never silently approve a circuit or single-destination option whose return realistically misses a stated timing constraint.
 
 Keep recommendations at destination or circuit level. Planner owns day by day itinerary execution.
 

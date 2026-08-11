@@ -1,5 +1,10 @@
 # Meridian prompt changelog
 
+## Meridian 1.9.0 — 2026-08-11
+
+- Required Circuit Feasibility to validate the return leg against any stated return-timing constraint (a fixed return date, a weekend-only window, or needing to be back by a specific day), not only outbound and inter-stop legs.
+- Treated return-timing as its own criterion evaluated with the same route arithmetic as the rest of the circuit, surfacing MATCH, TRADEOFF, or MISMATCH rather than silently approving a route that realistically misses the stated constraint.
+
 ## Meridian 1.8.0 — 2026-08-11
 
 - Defined `matcher_state.refinement` as a Backend-supplied, already-validated More like this signal carrying a MORE_LIKE_THIS type and a canonical single or circuit reference identity.

@@ -295,5 +295,87 @@
       "requires_ranked_options": true,
       "awaiting_cleared": true
     }
+  },
+  {
+    "id": "circuit-return-timing-feasible-match",
+    "scenario": "A stated back-by-Monday constraint that the route comfortably meets is validated as its own criterion and recorded as a match",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 4,
+          "budget": "INR 35000 total",
+          "travelers": 2,
+          "circuit_cities": ["Jaipur", "Udaipur"],
+          "return_by": "Monday morning, ready for work"
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Plan a Friday to Monday circuit through Jaipur and Udaipur, I need to be back by Monday morning for work."
+    },
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "circuit",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "awaiting_cleared": true
+    }
+  },
+  {
+    "id": "circuit-return-timing-infeasible-tradeoff",
+    "scenario": "A stated return-timing constraint that the route realistically cannot meet is surfaced as a disclosed trade-off or mismatch rather than silently approved",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 3,
+          "budget": "INR 40000 total",
+          "travelers": 2,
+          "circuit_cities": ["Jaipur", "Udaipur", "Jodhpur"],
+          "return_by": "Sunday night, must be back for an early Monday flight"
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Fit Jaipur, Udaipur, and Jodhpur into a 3 day weekend circuit, I must be back Sunday night for an early Monday flight."
+    },
+    "invariants": {
+      "status": "SOFT_FAIL",
+      "requires_visible_tradeoff": true,
+      "allows_constraint_adjustment_suggestions": true
+    }
+  },
+  {
+    "id": "circuit-no-return-timing-constraint-unaffected",
+    "scenario": "A circuit with no stated return-timing constraint is unaffected by return-timing validation",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin": "Delhi",
+          "duration_days": 10,
+          "budget": "INR 90000 total",
+          "travelers": 2,
+          "circuit_cities": ["Jaipur", "Udaipur", "Jodhpur"],
+          "circuit_flexibility": "flexible stop order"
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Plan a flexible 10 day circuit through Jaipur, Udaipur, and Jodhpur within INR 90000 total for two."
+    },
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "circuit",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "awaiting_cleared": true
+    }
   }
 ]

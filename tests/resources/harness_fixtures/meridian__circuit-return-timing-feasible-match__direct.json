@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "circuit-return-timing-feasible-match",
+  "execution_path": "direct",
+  "prompt_version": "1.9.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"SUCCESS\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": null}}}, \"message\": \"This Jaipur and Udaipur loop gets you back well before Monday morning.\", \"trip_type\": \"circuit\", \"traveler_criteria\": [{\"id\": \"circuit_budget\", \"label\": \"Circuit budget fit\", \"requirement_type\": \"HARD\", \"source_context_paths\": [\"budget\"]}, {\"id\": \"return_timing\", \"label\": \"Back by Monday morning\", \"requirement_type\": \"HARD\", \"source_context_paths\": [\"return_by\"]}], \"options\": [{\"rank\": 1, \"type\": \"circuit\", \"name\": \"Jaipur Udaipur Weekend Loop\", \"circuit_id\": \"jaipur-udaipur-weekend\", \"summary\": \"A Friday to Sunday circuit that leaves a full buffer before Monday.\", \"evaluations\": [{\"criterion_id\": \"circuit_budget\", \"outcome\": \"MATCH\", \"conclusion\": \"The full round trip for two stays within INR 35000.\", \"details\": [{\"type\": \"bullets\", \"items\": [\"Outbound, inter city, and return legs together stay within budget.\"]}]}, {\"criterion_id\": \"return_timing\", \"outcome\": \"MATCH\", \"conclusion\": \"Returning Sunday evening leaves a comfortable buffer before Monday morning.\", \"details\": [{\"type\": \"facts\", \"facts\": [{\"label\": \"Return arrival\", \"value\": \"Sunday, around 7pm\"}, {\"label\": \"Buffer before Monday morning\", \"value\": \"About 12 hours\"}]}]}]}]}"
+}
