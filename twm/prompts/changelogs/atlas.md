@@ -1,5 +1,13 @@
 # Atlas prompt changelog
 
+## Atlas 1.3.0 — 2026-08-12
+
+- Adds handling for `confirmed_anchors`: fixed, application-owned logistics
+  facts (transport/stay/activity) that Atlas must reflect exactly on their
+  named day and never contradict, adjusting surrounding suggestions around
+  them. Still cannot mark anything as booking-confirmed — that stays
+  application-owned.
+
 ## Atlas 1.2.0 — 2026-08-12
 
 - Replaces free-text `assumptions` with structured entries (`category` + `detail`)

@@ -31,6 +31,20 @@ class AtlasAssumption(BaseModel):
     detail: AtlasText
 
 
+LogisticsAnchorType = Literal["transport", "stay", "activity"]
+
+
+class AtlasConfirmedAnchor(BaseModel):
+    """An application-owned confirmed logistics fact Atlas must respect."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: LogisticsAnchorType
+    label: AtlasText
+    detail: AtlasText
+    day_number: Optional[int] = Field(default=None, ge=1)
+
+
 class AtlasReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +102,7 @@ class AtlasRequest(BaseModel):
 
     trip_context: dict[str, Any] = Field(default_factory=dict)
     working_plan: AtlasWorkingPlan
+    confirmed_anchors: list[AtlasConfirmedAnchor] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_request(self) -> "AtlasRequest":

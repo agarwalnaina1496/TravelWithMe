@@ -22,10 +22,10 @@ async def apply_atlas(
 
     itinerary = state["itinerary_state"]
     if itinerary.get("status") == "ready":
-        result = itinerary["result"]
+        result = itinerary["current_version"]["result"]
         return {"message": None, "agent_meta": result["agent_meta"]}
 
-    working_plan = _build_working_plan(frozen_plan["guide_state"])
+    working_plan = build_working_plan(frozen_plan["guide_state"])
     request = AtlasRequest.model_validate(
         {"trip_context": state["trip_context"], "working_plan": working_plan.model_dump(mode="json")}
     )
@@ -34,9 +34,13 @@ async def apply_atlas(
 
     state["itinerary_state"] = {
         "status": "ready",
-        "version": 1,
-        "source_guide_revision": frozen_plan["guide_revision"],
-        "result": response.model_dump(mode="json"),
+        "current_version": {
+            "version": 1,
+            "source_guide_revision": frozen_plan["guide_revision"],
+            "result": response.model_dump(mode="json"),
+        },
+        "history": [],
+        "proposed_revision": None,
     }
     logger.info(
         "Generated Backend-owned initial Atlas itinerary.",
@@ -52,7 +56,7 @@ async def apply_atlas(
     }
 
 
-def _build_working_plan(guide_state: dict[str, Any]) -> AtlasWorkingPlan:
+def build_working_plan(guide_state: dict[str, Any]) -> AtlasWorkingPlan:
     return AtlasWorkingPlan.model_validate(
         {
             "destinations": guide_state["destinations"],
