@@ -227,6 +227,7 @@ class AtlasFinalItinerary(BaseModel):
     budget_summary: AtlasBudgetSummary
     practical_notes: list[AtlasPracticalNote]
     sources: list[AtlasSource]
+    assumptions: list[AtlasText] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_days(self) -> "AtlasFinalItinerary":

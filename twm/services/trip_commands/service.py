@@ -10,6 +10,7 @@ from ...persistence.contracts import TripCommandRecord, TripRecord, TripReposito
 from ...schemas.trips import TripCommandRequest, TripCommandResponse
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
+from .atlas_commands import apply_atlas
 from .errors import IdempotencyConflictError, InvalidTripCommandError
 from .matcher_commands import apply_meridian, select_destination
 from .planner_commands import apply_guide
@@ -83,10 +84,15 @@ class TripCommandService:
     async def _apply(
         self, state: dict[str, Any], payload: TripCommandRequest
     ) -> dict[str, Any]:
-        if state["planner_state"].get("frozen_plan"):
+        if (
+            state["planner_state"].get("frozen_plan")
+            and payload.command != "start_itinerary"
+        ):
             raise InvalidTripCommandError(
                 "The approved plan is frozen and cannot be changed."
             )
+        if payload.command == "start_itinerary":
+            return await apply_atlas(self.engine, self.logger, state)
         if payload.command == "new_journey":
             state.clear()
             state.update(canonical_state({}))

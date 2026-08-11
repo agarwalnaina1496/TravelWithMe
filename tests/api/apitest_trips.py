@@ -229,6 +229,68 @@ class FakeGuideLifecycleEngine(FakeCommandEngine):
         )
 
 
+class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
+    async def atlas(self, trip_state, message):
+        self.calls.append(("atlas", trip_state, message))
+        working_plan = trip_state["working_plan"]
+        return AgentExecution(
+            response={
+                "final_itinerary": {
+                    "trip_summary": {
+                        "title": "Trip",
+                        "destinations": working_plan["destinations"],
+                        "duration_days": working_plan["duration_days"],
+                        "overview": "Overview.",
+                        "route_rationale": "Rationale.",
+                    },
+                    "travel_options": [],
+                    "stay_options": [],
+                    "days": [
+                        {
+                            "day_number": day["day_number"],
+                            "title": f"Day {day['day_number']}",
+                            "primary_location": working_plan["destinations"][0],
+                            "summary": "Summary.",
+                            "timeline": [
+                                {
+                                    "kind": "ACTIVITY",
+                                    "title": "Explore",
+                                    "location": working_plan["destinations"][0],
+                                    "detail": "Detail.",
+                                    "reference": {"status": "GENERAL_GUIDANCE"},
+                                }
+                            ],
+                            "seasonal_guidance": "Guidance.",
+                            "permit_or_ticket_guidance": "Guidance.",
+                        }
+                        for day in working_plan["days"]
+                    ],
+                    "budget_summary": {
+                        "currency": "INR",
+                        "lines": [
+                            {
+                                "category": "Stay",
+                                "amount_low": 1000,
+                                "amount_high": 2000,
+                                "note": "Estimated.",
+                            }
+                        ],
+                        "budget_fit": "Fits within a typical budget.",
+                    },
+                    "practical_notes": [],
+                    "sources": [],
+                    "assumptions": (
+                        ["Assumed a start date since none was confirmed."]
+                        if not working_plan.get("start_date")
+                        else []
+                    ),
+                },
+                "unresolved": [],
+            },
+            prompt_release=PromptRelease("atlas", "1.0.0", "test"),
+        )
+
+
 class FakeDayPlanClarificationEngine(FakeCommandEngine):
     async def guide(self, trip_state, message):
         self.calls.append(("guide", trip_state, message))
@@ -707,6 +769,131 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
     assert rejected.status_code == 422
     assert len(engine.calls) == 1
     assert api_client.get(f"/trips/{trip['id']}").json()["version"] == 2
+
+
+def _frozen_plan_trip_state(*, guide_revision=5, duration_days=1, start_date=None):
+    guide_state = {
+        "phase": "PLAN_APPROVED",
+        "destinations": ["Rishikesh"],
+        "duration_days": duration_days,
+        "start_date": start_date,
+        "places": ["Triveni Ghat"],
+        "day_plan": [
+            {"day_number": day, "date": None, "places": ["Triveni Ghat"] if day == 1 else []}
+            for day in range(1, duration_days + 1)
+        ],
+        "preferences": [],
+        "exclusions": [],
+        "applied_changes": [],
+        "pending_clarification": None,
+    }
+    return {
+        "stage": "planned",
+        "active_agent": None,
+        "trip_context": {"destination": "Rishikesh"},
+        "planner_state": {
+            "guide_session": {"revision": guide_revision, "state": guide_state},
+            "frozen_plan": {"guide_revision": guide_revision, "guide_state": guide_state},
+        },
+    }
+
+
+def test_start_itinerary_requires_frozen_plan(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "planning", "active_agent": "guide",
+        "trip_context": {"destination": "Rishikesh"},
+        "planner_state": {"guide_session": {"revision": 1, "state": {
+            "phase": "PLACES_DRAFT", "destinations": ["Rishikesh"],
+            "duration_days": None, "start_date": None, "places": [],
+            "day_plan": [], "preferences": [], "exclusions": [],
+            "applied_changes": [], "pending_clarification": None,
+        }}},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "start_itinerary", "expected_version": 1,
+              "idempotency_key": str(uuid4())},
+    )
+
+    assert response.status_code == 422
+    assert engine.calls == []
+
+
+def test_start_itinerary_invokes_atlas_from_frozen_plan(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = _frozen_plan_trip_state(guide_revision=5)
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "start_itinerary", "expected_version": 1,
+              "idempotency_key": str(uuid4())},
+    )
+
+    assert response.status_code == 200
+    assert len(engine.calls) == 1
+    saved = response.json()["trip"]["trip_state"]
+    itinerary = saved["itinerary_state"]
+    assert itinerary["status"] == "ready"
+    assert itinerary["source_guide_revision"] == 5
+    assert itinerary["result"]["final_itinerary"]["trip_summary"]["destinations"] == ["Rishikesh"]
+    assert itinerary["result"]["final_itinerary"]["assumptions"] == [
+        "Assumed a start date since none was confirmed."
+    ]
+
+
+def test_start_itinerary_is_idempotent_and_does_not_rerun_atlas(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = _frozen_plan_trip_state(guide_revision=5)
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    first = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "start_itinerary", "expected_version": 1,
+              "idempotency_key": str(uuid4())},
+    )
+    second = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "start_itinerary", "expected_version": 2,
+              "idempotency_key": str(uuid4())},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert len(engine.calls) == 1
+    first_itinerary = first.json()["trip"]["trip_state"]["itinerary_state"]
+    second_itinerary = second.json()["trip"]["trip_state"]["itinerary_state"]
+    assert first_itinerary["result"] == second_itinerary["result"]
+
+
+def test_start_itinerary_rejects_browser_supplied_plan_fields(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = _frozen_plan_trip_state(guide_revision=5)
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "start_itinerary", "expected_version": 1,
+              "idempotency_key": str(uuid4()), "message": "please hurry"},
+    )
+
+    assert response.status_code == 422
+    assert engine.calls == []
 
 
 def test_approval_rejects_agent_changes_to_confirmed_plan(api_client: TestClient):
