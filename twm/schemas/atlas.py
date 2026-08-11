@@ -11,6 +11,24 @@ from .common import AgentMeta
 AtlasText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 VerificationStatus = Literal["VERIFIED", "GENERAL_GUIDANCE"]
 TimelineKind = Literal["TRAVEL", "STAY", "MEAL", "ACTIVITY", "FREE_TIME"]
+AtlasAssumptionCategory = Literal[
+    "dates",
+    "arrival_departure_window",
+    "stay_area",
+    "budget",
+    "traveler_count",
+    "other",
+]
+# Atlas never sees a real reservation, so "confirmed" is deliberately absent:
+# confirmed logistics are an application-owned anchor added by a later capability.
+AtlasBookingReadiness = Literal["suggested", "needs_advance_booking", "unresolved"]
+
+
+class AtlasAssumption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: AtlasAssumptionCategory
+    detail: AtlasText
 
 
 class AtlasReference(BaseModel):
@@ -100,6 +118,7 @@ class AtlasTravelOption(BaseModel):
     estimated_cost_low: Optional[int] = Field(default=None, ge=0)
     estimated_cost_high: Optional[int] = Field(default=None, ge=0)
     reference: AtlasReference
+    booking_readiness: AtlasBookingReadiness
 
     @model_validator(mode="after")
     def validate_cost_range(self) -> "AtlasTravelOption":
@@ -119,6 +138,7 @@ class AtlasStayOption(BaseModel):
     estimated_cost_low: Optional[int] = Field(default=None, ge=0)
     estimated_cost_high: Optional[int] = Field(default=None, ge=0)
     reference: AtlasReference
+    booking_readiness: AtlasBookingReadiness
 
     @model_validator(mode="after")
     def validate_stay(self) -> "AtlasStayOption":
@@ -141,10 +161,24 @@ class AtlasTimelineItem(BaseModel):
     estimated_cost_low: Optional[int] = Field(default=None, ge=0)
     estimated_cost_high: Optional[int] = Field(default=None, ge=0)
     reference: AtlasReference
+    requires_advance_booking: bool = False
+    booking_readiness: Optional[AtlasBookingReadiness] = None
 
     @model_validator(mode="after")
     def validate_cost_range(self) -> "AtlasTimelineItem":
         _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
+        return self
+
+    @model_validator(mode="after")
+    def validate_booking_readiness(self) -> "AtlasTimelineItem":
+        if self.requires_advance_booking and self.booking_readiness is None:
+            raise ValueError(
+                "booking_readiness is required when requires_advance_booking is true"
+            )
+        if not self.requires_advance_booking and self.booking_readiness is not None:
+            raise ValueError(
+                "booking_readiness is allowed only when requires_advance_booking is true"
+            )
         return self
 
 
@@ -227,7 +261,7 @@ class AtlasFinalItinerary(BaseModel):
     budget_summary: AtlasBudgetSummary
     practical_notes: list[AtlasPracticalNote]
     sources: list[AtlasSource]
-    assumptions: list[AtlasText] = Field(default_factory=list)
+    assumptions: list[AtlasAssumption] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_days(self) -> "AtlasFinalItinerary":

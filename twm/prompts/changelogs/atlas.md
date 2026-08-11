@@ -1,5 +1,14 @@
 # Atlas prompt changelog
 
+## Atlas 1.2.0 — 2026-08-12
+
+- Replaces free-text `assumptions` with structured entries (`category` + `detail`)
+  covering dates, arrival/departure window, stay area, budget, and traveler count.
+- Adds `booking_readiness` (`suggested` | `needs_advance_booking` | `unresolved`) to
+  every travel option and stay option, and to day timeline items that require
+  advance booking. Deliberately excludes a confirmed/booked state, which remains
+  application-owned and is never fabricated by Atlas.
+
 ## Atlas 1.1.0 — 2026-08-12
 
 - Adds an explicit `assumptions` output requirement for planning assumptions made

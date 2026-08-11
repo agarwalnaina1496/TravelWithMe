@@ -280,7 +280,12 @@ class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
                     "practical_notes": [],
                     "sources": [],
                     "assumptions": (
-                        ["Assumed a start date since none was confirmed."]
+                        [
+                            {
+                                "category": "dates",
+                                "detail": "Assumed a start date since none was confirmed.",
+                            }
+                        ]
                         if not working_plan.get("start_date")
                         else []
                     ),
@@ -847,7 +852,10 @@ def test_start_itinerary_invokes_atlas_from_frozen_plan(api_client: TestClient):
     assert itinerary["source_guide_revision"] == 5
     assert itinerary["result"]["final_itinerary"]["trip_summary"]["destinations"] == ["Rishikesh"]
     assert itinerary["result"]["final_itinerary"]["assumptions"] == [
-        "Assumed a start date since none was confirmed."
+        {
+            "category": "dates",
+            "detail": "Assumed a start date since none was confirmed.",
+        }
     ]
 
 
