@@ -19,7 +19,7 @@ from .logistics_commands import (
 )
 from .matcher_commands import apply_meridian, select_destination
 from .planner_commands import apply_guide
-from .scout_commands import apply_scout
+from .scout_commands import apply_scout, apply_scout_extraction_only
 from .state import canonical_state, trip_response
 
 _POST_FREEZE_COMMANDS = {
@@ -144,9 +144,12 @@ class TripCommandService:
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLACES", None)
         if payload.command == "approve_plan":
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None)
-        if payload.command == "advice_entry":
+        if payload.command == "scout_entry":
             return await apply_scout(self.engine, self.logger, state, payload.message or "")
         if payload.command == "discover_entry":
+            state["trip_context"].update(payload.trip_context or {})
+            if payload.message:
+                await apply_scout_extraction_only(self.engine, state, payload.message)
             state["stage"] = "matching"
             state["active_agent"] = "meridian"
             return await apply_meridian(self.engine, state, None)
@@ -167,6 +170,9 @@ class TripCommandService:
                     "message": "Tell us the destination before starting the plan.",
                     "agent_meta": None,
                 }
+            state["trip_context"].update(payload.trip_context or {})
+            if payload.message:
+                await apply_scout_extraction_only(self.engine, state, payload.message)
             state["trip_context"]["destination"] = destination
             state["stage"] = "planning"
             state["active_agent"] = "guide"
