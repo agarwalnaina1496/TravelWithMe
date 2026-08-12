@@ -547,7 +547,49 @@ def test_guest_cannot_access_another_guests_trip():
         trip_id = owner.post("/trips", json={"title": "Delhi"}).json()["id"]
         assert stranger.get(f"/trips/{trip_id}").status_code == 404
         assert stranger.patch(f"/trips/{trip_id}", json={"expected_version": 1, "title": "Mine"}).status_code == 404
+        assert stranger.get("/trips").json() == {"trips": []}
+        assert len(owner.get("/trips").json()["trips"]) == 1
     app.dependency_overrides.clear()
+
+
+def test_list_get_and_rename_log_structured_success_and_not_found_events(api_client: TestClient):
+    repository = MemoryTripRepository()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True,
+            environment="test",
+            payload_mode=PayloadMode.METADATA,
+            max_field_size=256,
+        ),
+        sink,
+    )
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_logger] = lambda: logger
+
+    api_client.get("/trips")
+    listed = next(event for event in sink.events if event["event"] == "be.trip.listed")
+    assert listed["level"] == "INFO"
+    assert listed["fields"]["count"] == 0
+
+    trip_id = api_client.post("/trips", json={"title": "Delhi"}).json()["id"]
+
+    api_client.get(f"/trips/{trip_id}")
+    fetched = next(event for event in sink.events if event["event"] == "be.trip.fetched")
+    assert fetched["level"] == "INFO"
+    assert fetched["fields"]["trip_id"] == trip_id
+
+    api_client.patch(f"/trips/{trip_id}", json={"expected_version": 1, "title": "New Delhi"})
+    renamed = next(event for event in sink.events if event["event"] == "be.trip.renamed")
+    assert renamed["level"] == "INFO"
+    assert renamed["fields"]["trip_id"] == trip_id
+    assert renamed["fields"]["version"] == 2
+
+    unknown_id = uuid4()
+    api_client.get(f"/trips/{unknown_id}")
+    not_found = next(event for event in sink.events if event["event"] == "be.trip.not_found")
+    assert not_found["level"] == "WARNING"
+    assert not_found["fields"]["trip_id"] == str(unknown_id)
 
 
 def test_trip_contract_rejects_invalid_version_and_mode(api_client: TestClient):
