@@ -16,6 +16,7 @@ from .scout import BoundedMessage
 
 
 GuideText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+GuidePace = Literal["relaxed", "balanced", "packed"]
 GuideEvent = Literal["START", "TRAVELER_MESSAGE", "APPROVE_PLACES", "APPROVE_PLAN"]
 GuidePhase = Literal[
     "NEEDS_CLARIFICATION",
@@ -40,6 +41,8 @@ class GuideDay(BaseModel):
     day_number: int = Field(ge=1)
     date: Optional[str] = None
     places: list[GuideText] = Field(default_factory=list)
+    pace: GuidePace
+    buffer_note: Optional[GuideText] = None
 
 
 class GuideWorkingState(BaseModel):

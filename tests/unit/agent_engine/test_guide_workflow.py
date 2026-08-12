@@ -19,6 +19,7 @@ def test_guide_evaluation_corpus_covers_incremental_planning() -> None:
         "rishikesh-start",
         "remove-rafting-add-pilgrimage",
         "approve-rishikesh-places",
+        "remove-place-shortens-day-explains-tradeoff",
         "preserve-explicit-circuit",
     }
     assert cases_by_id["approve-rishikesh-places"]["invariants"] == {
@@ -27,4 +28,5 @@ def test_guide_evaluation_corpus_covers_incremental_planning() -> None:
         "day_plan_length": 3,
         "preserve_all_places": True,
         "place_only_day_plan": True,
+        "requires_day_pace": True,
     }

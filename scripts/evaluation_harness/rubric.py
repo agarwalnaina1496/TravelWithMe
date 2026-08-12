@@ -314,6 +314,14 @@ def _guide_preserve_destination_order(
         raise RubricFailure(f"expected destination order {expected!r}, got {actual!r}")
 
 
+def _guide_requires_day_pace(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    day_plan = response.get("guide_state", {}).get("day_plan", [])
+    if expected and any(day.get("pace") not in {"relaxed", "balanced", "packed"} for day in day_plan):
+        raise RubricFailure("expected every day plan entry to carry a valid pace signal")
+
+
 def _guide_must_not_add_destinations(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
@@ -587,6 +595,7 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "place_only_day_plan": _guide_place_only_day_plan,
         "preserve_destination_order": _guide_preserve_destination_order,
         "must_not_add_destinations": _guide_must_not_add_destinations,
+        "requires_day_pace": _guide_requires_day_pace,
     },
     "atlas": {
         "destinations": _atlas_destinations,

@@ -139,6 +139,8 @@ class FakeCommandEngine:
                                 "day_number": 1,
                                 "date": None,
                                 "places": ["Triveni Ghat"],
+                                "pace": "balanced",
+                                "buffer_note": None,
                             }
                         ]
                     ),
@@ -210,14 +212,14 @@ class FakeGuideLifecycleEngine(FakeCommandEngine):
         if event == "APPROVE_PLACES":
             guide_state["phase"] = "DAY_PLAN_DRAFT"
             guide_state["day_plan"] = [
-                {"day_number": 1, "date": None, "places": list(guide_state["places"])}
+                {"day_number": 1, "date": None, "places": list(guide_state["places"]), "pace": "balanced", "buffer_note": None}
             ]
         elif event == "APPROVE_PLAN":
             guide_state["phase"] = "PLAN_APPROVED"
             if self.change_plan_on_approval:
                 guide_state["places"] = ["Unexpected place"]
                 guide_state["day_plan"] = [
-                    {"day_number": 1, "date": None, "places": ["Unexpected place"]}
+                    {"day_number": 1, "date": None, "places": ["Unexpected place"], "pace": "balanced", "buffer_note": None}
                 ]
         return AgentExecution(
             response={
@@ -343,6 +345,8 @@ class FakePlacesApprovalClarificationEngine(FakeCommandEngine):
                     "day_number": 1,
                     "date": None,
                     "places": list(guide_state["places"]),
+                    "pace": "balanced",
+                    "buffer_note": None,
                 }
             ]
             guide_state["pending_clarification"] = None
@@ -366,7 +370,7 @@ class FakeDayPlanPlaceMutationEngine(FakeCommandEngine):
         guide_state = dict(trip_state["guide_state"])
         guide_state["places"] = ["Unexpected place"]
         guide_state["day_plan"] = [
-            {"day_number": 1, "date": None, "places": ["Unexpected place"]}
+            {"day_number": 1, "date": None, "places": ["Unexpected place"], "pace": "balanced", "buffer_note": None}
         ]
         return AgentExecution(
             response={
@@ -690,6 +694,59 @@ def test_approve_places_invokes_guide_from_persisted_session(api_client: TestCli
     assert engine.calls[0][1]["guide_event"] == "APPROVE_PLACES"
     assert saved["planner_state"]["guide_session"]["revision"] == 3
     assert saved["planner_state"]["guide_session"]["state"]["phase"] == "DAY_PLAN_DRAFT"
+    day_plan = saved["planner_state"]["guide_session"]["state"]["day_plan"]
+    assert day_plan
+    assert all(day["pace"] in {"relaxed", "balanced", "packed"} for day in day_plan)
+
+
+class FakeTradeoffExplainingEngine(FakeCommandEngine):
+    async def guide(self, trip_state, message):
+        self.calls.append(("guide", trip_state, message))
+        guide_state = dict(trip_state["guide_state"])
+        guide_state["places"] = ["Triveni Ghat"]
+        guide_state["day_plan"] = [
+            {"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "relaxed", "buffer_note": "Free afternoon after removing Ram Jhula."},
+        ]
+        return AgentExecution(
+            response={
+                "message": "Removed Ram Jhula from Day 1 — that opens up a free afternoon instead of a packed day.",
+                "guide_state": guide_state,
+                "explicit_changes": ["places", "day_plan"],
+            },
+            prompt_release=PromptRelease("guide", "1.0.0", "test"),
+        )
+
+
+def test_traveler_message_response_explains_a_meaningful_tradeoff(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeTradeoffExplainingEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "planning", "active_agent": "guide",
+        "trip_context": {"destination": "Rishikesh"},
+        "planner_state": {"guide_session": {"revision": 2, "state": {
+            "phase": "DAY_PLAN_DRAFT", "destinations": ["Rishikesh"],
+            "duration_days": 1, "start_date": None, "places": ["Triveni Ghat", "Ram Jhula"],
+            "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat", "Ram Jhula"], "pace": "packed", "buffer_note": None}],
+            "preferences": [], "exclusions": [],
+            "applied_changes": [], "pending_clarification": None,
+        }}},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Remove Ram Jhula from day 1.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "Removed Ram Jhula from Day 1 — that opens up a free afternoon instead of a packed day."
+    day_plan = body["trip"]["trip_state"]["planner_state"]["guide_session"]["state"]["day_plan"]
+    assert day_plan[0]["pace"] == "relaxed"
+    assert day_plan[0]["buffer_note"] == "Free afternoon after removing Ram Jhula."
 
 
 def test_guide_approval_requires_the_backend_owned_current_phase(api_client: TestClient):
@@ -749,7 +806,7 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
     guide_state = {
         "phase": "DAY_PLAN_DRAFT", "destinations": ["Rishikesh"],
         "duration_days": 1, "start_date": None, "places": ["Triveni Ghat"],
-        "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat"]}],
+        "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}],
         "preferences": ["pilgrimage"], "exclusions": ["rafting"],
         "applied_changes": ["Removed rafting"], "pending_clarification": None,
     }
@@ -794,7 +851,7 @@ def _frozen_plan_trip_state(*, guide_revision=5, duration_days=1, start_date=Non
         "start_date": start_date,
         "places": ["Triveni Ghat"],
         "day_plan": [
-            {"day_number": day, "date": None, "places": ["Triveni Ghat"] if day == 1 else []}
+            {"day_number": day, "date": None, "places": ["Triveni Ghat"] if day == 1 else [], "pace": "balanced", "buffer_note": None}
             for day in range(1, duration_days + 1)
         ],
         "preferences": [],
@@ -1129,7 +1186,7 @@ def test_approval_rejects_agent_changes_to_confirmed_plan(api_client: TestClient
     guide_state = {
         "phase": "DAY_PLAN_DRAFT", "destinations": ["Rishikesh"],
         "duration_days": 1, "start_date": None, "places": ["Triveni Ghat"],
-        "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat"]}],
+        "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}],
         "preferences": [], "exclusions": [], "applied_changes": [],
         "pending_clarification": None,
     }
@@ -1166,7 +1223,7 @@ def test_day_plan_survives_a_backend_owned_clarification_round_trip(
         "start_date": None,
         "places": ["Triveni Ghat"],
         "day_plan": [
-            {"day_number": 1, "date": None, "places": ["Triveni Ghat"]}
+            {"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}
         ],
         "preferences": [],
         "exclusions": [],
@@ -1295,7 +1352,7 @@ def test_day_plan_edits_cannot_reopen_the_approved_places_boundary(
         "start_date": None,
         "places": ["Triveni Ghat"],
         "day_plan": [
-            {"day_number": 1, "date": None, "places": ["Triveni Ghat"]}
+            {"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}
         ],
         "preferences": [],
         "exclusions": [],
@@ -1340,7 +1397,7 @@ def test_day_plan_edits_cannot_drop_confirmed_preferences_or_exclusions(
         "start_date": None,
         "places": ["Triveni Ghat"],
         "day_plan": [
-            {"day_number": 1, "date": None, "places": ["Triveni Ghat"]}
+            {"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}
         ],
         "preferences": ["pilgrimage"],
         "exclusions": ["rafting"],
@@ -1387,7 +1444,7 @@ def test_day_plan_accepts_an_explicit_traveler_preference_override(
         "start_date": None,
         "places": ["Triveni Ghat"],
         "day_plan": [
-            {"day_number": 1, "date": None, "places": ["Triveni Ghat"]}
+            {"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}
         ],
         "preferences": ["pilgrimage"],
         "exclusions": ["rafting"],

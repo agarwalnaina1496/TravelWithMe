@@ -97,7 +97,45 @@
       "duration_days": 3,
       "day_plan_length": 3,
       "preserve_all_places": true,
-      "place_only_day_plan": true
+      "place_only_day_plan": true,
+      "requires_day_pace": true
+    }
+  },
+  {
+    "id": "remove-place-shortens-day-explains-tradeoff",
+    "input": {
+      "event": "TRAVELER_MESSAGE",
+      "message": "Actually, drop Neelkanth Mahadev Temple from day 3, I don't want to do anything that day.",
+      "trip_context": {
+        "destinations": ["Rishikesh"],
+        "duration_days": 3
+      },
+      "guide_state": {
+        "phase": "DAY_PLAN_DRAFT",
+        "destinations": ["Rishikesh"],
+        "duration_days": 3,
+        "start_date": null,
+        "places": [
+          "Ram Jhula",
+          "Triveni Ghat",
+          "Neelkanth Mahadev Temple"
+        ],
+        "day_plan": [
+          { "day_number": 1, "date": null, "places": ["Ram Jhula"], "pace": "relaxed", "buffer_note": null },
+          { "day_number": 2, "date": null, "places": ["Triveni Ghat"], "pace": "relaxed", "buffer_note": null },
+          { "day_number": 3, "date": null, "places": ["Neelkanth Mahadev Temple"], "pace": "balanced", "buffer_note": null }
+        ],
+        "preferences": [],
+        "exclusions": [],
+        "applied_changes": [],
+        "pending_clarification": null
+      }
+    },
+    "invariants": {
+      "phase": "DAY_PLAN_DRAFT",
+      "day_plan_length": 3,
+      "requires_day_pace": true,
+      "must_exclude_places": ["Neelkanth Mahadev Temple"]
     }
   },
   {

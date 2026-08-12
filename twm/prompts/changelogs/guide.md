@@ -1,5 +1,16 @@
 # Guide prompt changelog
 
+## Guide 1.3.0 — 2026-08-12
+
+- Adds a required `pace` signal (`relaxed`/`balanced`/`packed`) to every day
+  plan entry, and an optional `buffer_note` for a specific, meaningful gap
+  worth naming. Judged from place count/effort/travel, never from cost,
+  which Guide still does not own.
+- Requires explaining a meaningful practical consequence of a traveler edit
+  (e.g. a removed place opening up free time, a removed day tightening pace
+  elsewhere) in the response `message`, in terms of time and pace rather
+  than price, instead of a generic acknowledgment.
+
 ## Guide 1.2.0 — 2026-08-11
 
 - Adds `outcome = "reopen_destination_discovery"` for TRAVELER_MESSAGE only,
