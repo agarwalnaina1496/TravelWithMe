@@ -540,6 +540,23 @@ def test_guest_trip_crud_without_delete_and_version_conflict(api_client: TestCli
     assert api_client.delete(f"/trips/{trip_id}").status_code == 405
 
 
+def test_list_trips_includes_trip_state_and_ui_state_so_the_ui_can_render_cards_without_n_extra_fetches(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    state = {"stage": "matching", "trip_context": {"origin": "Delhi", "budget": "₹1,00,000"}}
+    ui_state = {"destinationsOpenId": "gwalior-orchha-khajuraho-panna"}
+    _create_seeded_trip(api_client, repository, title="Rishikesh", trip_state=state, ui_state=ui_state)
+
+    listed = api_client.get("/trips")
+    assert listed.status_code == 200
+    [summary] = listed.json()["trips"]
+    assert summary["trip_state"] == state
+    assert summary["ui_state"] == ui_state
+
+
 def test_guest_cannot_access_another_guests_trip():
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -1681,7 +1698,7 @@ def test_matched_scout_handoff_clears_obsolete_selection(api_client: TestClient)
     assert "selected_option" not in response.json()["trip"]["trip_state"]["trip_context"]
 
 
-def test_advice_entry_invokes_scout_only(api_client: TestClient):
+def test_scout_entry_invokes_scout_only(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -1691,7 +1708,7 @@ def test_advice_entry_invokes_scout_only(api_client: TestClient):
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
         json={
-            "command": "advice_entry",
+            "command": "scout_entry",
             "message": "Where should I go for a 2 week end-of-year trip?",
             "expected_version": 1,
             "idempotency_key": str(uuid4()),
@@ -1705,7 +1722,7 @@ def test_advice_entry_invokes_scout_only(api_client: TestClient):
     assert saved["trip_state"]["trip_context"]["destination"] == "Rishikesh"
 
 
-def test_advice_entry_hands_off_to_meridian_in_same_command(api_client: TestClient):
+def test_scout_entry_hands_off_to_meridian_in_same_command(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeHandoffEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -1715,7 +1732,7 @@ def test_advice_entry_hands_off_to_meridian_in_same_command(api_client: TestClie
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
         json={
-            "command": "advice_entry",
+            "command": "scout_entry",
             "message": "Suggest mountains",
             "expected_version": 1,
             "idempotency_key": str(uuid4()),
@@ -1729,7 +1746,7 @@ def test_advice_entry_hands_off_to_meridian_in_same_command(api_client: TestClie
     assert saved["trip_state"]["stage"] == "recommended"
 
 
-def test_advice_entry_requires_message(api_client: TestClient):
+def test_scout_entry_requires_message(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
@@ -1737,10 +1754,37 @@ def test_advice_entry_requires_message(api_client: TestClient):
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
-        json={"command": "advice_entry", "expected_version": 1, "idempotency_key": str(uuid4())},
+        json={"command": "scout_entry", "expected_version": 1, "idempotency_key": str(uuid4())},
     )
 
     assert response.status_code == 422
+
+
+def test_discover_entry_passes_the_travelers_first_message_directly_to_meridian(
+    api_client: TestClient,
+):
+    # "Not sure yet" shows a hardcoded first question (e.g. "where are you
+    # traveling from?") before any Backend call — the traveler's reply is
+    # this message, and it must reach Meridian directly, never Scout.
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "discover_entry",
+            "message": "Delhi",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["meridian"]
+    assert engine.calls[0][2] == "Delhi"
 
 
 def test_discover_entry_invokes_meridian_with_no_scout_call(api_client: TestClient):

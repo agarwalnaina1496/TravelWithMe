@@ -144,12 +144,12 @@ class TripCommandService:
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLACES", None)
         if payload.command == "approve_plan":
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None)
-        if payload.command == "advice_entry":
+        if payload.command == "scout_entry":
             return await apply_scout(self.engine, self.logger, state, payload.message or "")
         if payload.command == "discover_entry":
             state["stage"] = "matching"
             state["active_agent"] = "meridian"
-            return await apply_meridian(self.engine, state, None)
+            return await apply_meridian(self.engine, state, payload.message)
         if payload.command == "more_like_this":
             refinement = payload.refinement
             return await apply_meridian(

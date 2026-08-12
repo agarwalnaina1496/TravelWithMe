@@ -67,6 +67,8 @@ class TripSummary(BaseModel):
     id: UUID
     title: str
     product_mode: Literal["self_led", "twm_led"]
+    trip_state: dict[str, Any]
+    ui_state: dict[str, Any]
     version: int
     created_at: datetime
     updated_at: datetime
@@ -89,7 +91,7 @@ TripCommandName = Literal[
     "approve_places",
     "approve_plan",
     "new_journey",
-    "advice_entry",
+    "scout_entry",
     "discover_entry",
     "known_destination_entry",
     "more_like_this",
@@ -99,7 +101,11 @@ TripCommandName = Literal[
     "keep_current_itinerary",
 ]
 
-_MESSAGE_COMMANDS = {"traveler_message", "advice_entry"}
+_MESSAGE_COMMANDS = {"traveler_message", "scout_entry"}
+# discover_entry may optionally carry the traveler's first message (e.g. an
+# answer to "where are you traveling from?") — unlike the commands above,
+# it's never required, since Meridian can still be invoked cold.
+_OPTIONAL_MESSAGE_COMMANDS = {"discover_entry"}
 
 
 class TripCommandRequest(BaseModel):
@@ -122,10 +128,10 @@ class TripCommandRequest(BaseModel):
             self.message and self.message.strip()
         ):
             raise ValueError("traveler_message requires message")
-        if self.command == "advice_entry" and not (
+        if self.command == "scout_entry" and not (
             self.message and self.message.strip()
         ):
-            raise ValueError("advice_entry requires message")
+            raise ValueError("scout_entry requires message")
         if self.command == "select_destination" and not self.option_id:
             raise ValueError("select_destination requires option_id")
         if self.command == "more_like_this" and self.refinement is None:
@@ -136,8 +142,8 @@ class TripCommandRequest(BaseModel):
             raise ValueError(
                 "logistics_confirmation is allowed only for confirm_logistics"
             )
-        if self.command not in _MESSAGE_COMMANDS and self.message is not None:
-            raise ValueError("message is allowed only for traveler_message or advice_entry")
+        if self.command not in _MESSAGE_COMMANDS and self.command not in _OPTIONAL_MESSAGE_COMMANDS and self.message is not None:
+            raise ValueError("message is allowed only for traveler_message, scout_entry, or discover_entry")
         if self.command != "select_destination" and self.option_id is not None:
             raise ValueError("option_id is allowed only for select_destination")
         if self.command != "known_destination_entry" and self.destination is not None:
