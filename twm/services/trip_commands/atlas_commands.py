@@ -63,6 +63,13 @@ def build_working_plan(guide_state: dict[str, Any]) -> AtlasWorkingPlan:
             "duration_days": guide_state["duration_days"],
             "start_date": guide_state.get("start_date"),
             "approved_places": guide_state["places"],
-            "days": guide_state["day_plan"],
+            "days": [
+                {
+                    "day_number": day["day_number"],
+                    "date": day.get("date"),
+                    "places": day["places"],
+                }
+                for day in guide_state["day_plan"]
+            ],
         }
     )
