@@ -1760,41 +1760,14 @@ def test_scout_entry_requires_message(api_client: TestClient):
     assert response.status_code == 422
 
 
-def test_discover_entry_with_message_extracts_via_scout_but_ignores_scouts_own_intent(
+def test_discover_entry_passes_the_travelers_first_message_directly_to_meridian(
     api_client: TestClient,
 ):
-    # Plan-a-trip's "anything else" field: discover_entry already decided
-    # routing (it's the command name itself), so even though this fake
-    # Scout returns intent="planner" (which would normally invoke Guide),
-    # Meridian must still be the one invoked — Scout's intent is discarded.
-    class FakePlannerIntentWithMeridianEngine(FakePlannerIntentEngine):
-        async def scout(self, trip_state, message):
-            self.calls.append(("scout", trip_state, message))
-            return AgentExecution(
-                response={
-                    "message": "This message must never reach the traveler.",
-                    "state_delta": {"trip_context": {"destination": "Rishikesh"}},
-                    "intent": "planner",
-                },
-                prompt_release=PromptRelease("scout", "1.0.0", "test"),
-            )
-
-        async def meridian(self, trip_state, message):
-            self.calls.append(("meridian", trip_state, message))
-            return AgentExecution(
-                response={
-                    "status": "HARD_FAIL",
-                    "message": "I need a little more flexibility before I can recommend.",
-                    "state_delta": {"trip_context": {}, "matcher_state": {
-                        "conversation_context": {"last_meridian_message": "I need a little more flexibility before I can recommend.", "awaiting": None}
-                    }},
-                    "options": [],
-                },
-                prompt_release=PromptRelease("meridian", "1.0.0", "test"),
-            )
-
+    # "Not sure yet" shows a hardcoded first question (e.g. "where are you
+    # traveling from?") before any Backend call — the traveler's reply is
+    # this message, and it must reach Meridian directly, never Scout.
     repository = MemoryTripRepository()
-    engine = FakePlannerIntentWithMeridianEngine()
+    engine = FakeHandoffEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
     trip = api_client.post("/trips", json={"title": "Trip"}).json()
@@ -1803,22 +1776,15 @@ def test_discover_entry_with_message_extracts_via_scout_but_ignores_scouts_own_i
         f"/trips/{trip['id']}/commands",
         json={
             "command": "discover_entry",
-            "trip_context": {"origin": "Delhi"},
-            "message": "We love hiking and quiet places",
+            "message": "Delhi",
             "expected_version": 1,
             "idempotency_key": str(uuid4()),
         },
     )
 
     assert response.status_code == 200
-    assert [call[0] for call in engine.calls] == ["scout", "meridian"]
-    saved = response.json()["trip"]
-    assert saved["trip_state"]["stage"] == "recommended"  # Meridian ran, not Guide
-    assert saved["trip_state"]["trip_context"]["origin"] == "Delhi"
-    assert saved["trip_state"]["trip_context"]["destination"] == "Rishikesh"  # Scout's extracted delta, still merged
-    # Scout's own conversational message must never surface — no one saw this call.
-    assert not saved["trip_state"]["advisor_state"].get("conversation_context", {}).get("last_advisor_message")
-    assert not saved["trip_state"]["advisor_state"].get("artifacts")
+    assert [call[0] for call in engine.calls] == ["meridian"]
+    assert engine.calls[0][2] == "Delhi"
 
 
 def test_discover_entry_invokes_meridian_with_no_scout_call(api_client: TestClient):
@@ -1844,71 +1810,6 @@ def test_discover_entry_invokes_meridian_with_no_scout_call(api_client: TestClie
     assert saved["trip_state"]["stage"] in {"matching", "recommended"}
 
 
-def test_discover_entry_merges_ui_collected_trip_context_before_invoking_meridian(
-    api_client: TestClient,
-):
-    repository = MemoryTripRepository()
-    engine = FakeHandoffEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "discover_entry",
-            "trip_context": {"origin": "Delhi", "budget": "Flexible", "travelers": "2"},
-            "expected_version": 1,
-            "idempotency_key": str(uuid4()),
-        },
-    )
-
-    assert response.status_code == 200
-    saved = response.json()["trip"]
-    assert saved["trip_state"]["trip_context"]["origin"] == "Delhi"
-    assert saved["trip_state"]["trip_context"]["budget"] == "Flexible"
-    assert saved["trip_state"]["trip_context"]["travelers"] == "2"
-
-
-def test_command_rejects_trip_context_with_an_unsupported_key(api_client: TestClient):
-    repository = MemoryTripRepository()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: FakeHandoffEngine()
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "discover_entry",
-            "trip_context": {"selected_option": "sneaky"},
-            "expected_version": 1,
-            "idempotency_key": str(uuid4()),
-        },
-    )
-
-    assert response.status_code == 422
-
-
-def test_command_rejects_trip_context_on_a_command_that_does_not_accept_it(api_client: TestClient):
-    repository = MemoryTripRepository()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "traveler_message",
-            "message": "hi",
-            "trip_context": {"origin": "Delhi"},
-            "expected_version": 1,
-            "idempotency_key": str(uuid4()),
-        },
-    )
-
-    assert response.status_code == 422
-
-
 def test_known_destination_entry_invokes_guide_with_no_scout_or_meridian_call(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeCommandEngine()
@@ -1932,65 +1833,6 @@ def test_known_destination_entry_invokes_guide_with_no_scout_or_meridian_call(ap
     assert saved["version"] == 2
     assert saved["trip_state"]["trip_context"]["destination"] == "Goa"
     assert saved["trip_state"]["stage"] == "planning"
-    assert saved["trip_state"]["active_agent"] == "guide"
-
-
-def test_known_destination_entry_merges_ui_collected_trip_context_before_invoking_guide(
-    api_client: TestClient,
-):
-    repository = MemoryTripRepository()
-    engine = FakeCommandEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "known_destination_entry",
-            "destination": "Goa",
-            "trip_context": {"duration": "10 days", "travel_window": "March 2026"},
-            "expected_version": 1,
-            "idempotency_key": str(uuid4()),
-        },
-    )
-
-    assert response.status_code == 200
-    saved = response.json()["trip"]
-    assert saved["trip_state"]["trip_context"]["destination"] == "Goa"
-    assert saved["trip_state"]["trip_context"]["duration"] == "10 days"
-    assert saved["trip_state"]["trip_context"]["travel_window"] == "March 2026"
-
-
-def test_known_destination_entry_with_message_extracts_via_scout_and_keeps_the_typed_destination(
-    api_client: TestClient,
-):
-    # FakeCommandEngine's scout() extracts trip_context.destination="Rishikesh" —
-    # the traveler's typed destination ("Goa") must still win, since it's set
-    # after the extraction-only Scout call merges its delta.
-    repository = MemoryTripRepository()
-    engine = FakeCommandEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "known_destination_entry",
-            "destination": "Goa",
-            "trip_context": {"origin": "Delhi"},
-            "message": "We want a relaxed beach trip",
-            "expected_version": 1,
-            "idempotency_key": str(uuid4()),
-        },
-    )
-
-    assert response.status_code == 200
-    assert [call[0] for call in engine.calls] == ["scout", "guide"]
-    saved = response.json()["trip"]
-    assert saved["trip_state"]["trip_context"]["destination"] == "Goa"
-    assert saved["trip_state"]["trip_context"]["origin"] == "Delhi"
     assert saved["trip_state"]["active_agent"] == "guide"
 
 

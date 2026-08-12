@@ -102,19 +102,10 @@ TripCommandName = Literal[
 ]
 
 _MESSAGE_COMMANDS = {"traveler_message", "scout_entry"}
-# discover_entry/known_destination_entry may optionally carry a free-text
-# message too (Plan-a-trip's "anything else" field) — unlike the commands
-# above, it's never required, and Scout's own intent-based handoff is
-# discarded when it's used this way (see apply_scout_extraction_only).
-_OPTIONAL_MESSAGE_COMMANDS = {"discover_entry", "known_destination_entry"}
-
-# UI-owned deterministic intake (TWM-140-plan-trip): the "Plan a trip" flow
-# collects these fixed, common fields itself before handing off to Meridian
-# or Guide, so the agent never has to ask for them again. This is a narrow,
-# explicit ownership carve-out from trip_context's normal Scout/Meridian
-# extraction — bounded to exactly these keys so the UI cannot inject
-# arbitrary trip_context via this path.
-ALLOWED_ENTRY_CONTEXT_KEYS = {"origin", "budget", "travelers", "duration", "travel_window"}
+# discover_entry may optionally carry the traveler's first message (e.g. an
+# answer to "where are you traveling from?") — unlike the commands above,
+# it's never required, since Meridian can still be invoked cold.
+_OPTIONAL_MESSAGE_COMMANDS = {"discover_entry"}
 
 
 class TripCommandRequest(BaseModel):
@@ -128,7 +119,6 @@ class TripCommandRequest(BaseModel):
     message: BoundedMessage | None = None
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
     destination: str | None = Field(default=None, min_length=1, max_length=200)
-    trip_context: dict[str, NonEmptyString] | None = None
     refinement: MeridianRefinement | None = None
     logistics_confirmation: LogisticsConfirmationInput | None = None
 
@@ -153,23 +143,13 @@ class TripCommandRequest(BaseModel):
                 "logistics_confirmation is allowed only for confirm_logistics"
             )
         if self.command not in _MESSAGE_COMMANDS and self.command not in _OPTIONAL_MESSAGE_COMMANDS and self.message is not None:
-            raise ValueError(
-                "message is allowed only for traveler_message, scout_entry, discover_entry, or known_destination_entry"
-            )
+            raise ValueError("message is allowed only for traveler_message, scout_entry, or discover_entry")
         if self.command != "select_destination" and self.option_id is not None:
             raise ValueError("option_id is allowed only for select_destination")
         if self.command != "known_destination_entry" and self.destination is not None:
             raise ValueError("destination is allowed only for known_destination_entry")
         if self.command != "more_like_this" and self.refinement is not None:
             raise ValueError("refinement is allowed only for more_like_this")
-        if self.trip_context is not None:
-            if self.command not in {"discover_entry", "known_destination_entry"}:
-                raise ValueError(
-                    "trip_context is allowed only for discover_entry or known_destination_entry"
-                )
-            unknown_keys = set(self.trip_context) - ALLOWED_ENTRY_CONTEXT_KEYS
-            if unknown_keys:
-                raise ValueError(f"trip_context has unsupported keys: {sorted(unknown_keys)}")
         return self
 
 
