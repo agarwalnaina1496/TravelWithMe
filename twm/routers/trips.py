@@ -24,9 +24,16 @@ def _response(record: TripRecord) -> TripResponse:
 
 
 @router.get("", response_model=TripListResponse)
-async def list_trips(request: Request, response: Response, persistence: Persistence):
+async def list_trips(request: Request, response: Response, persistence: Persistence, logger: Logger):
     guest = await persistence.guest(request, response)
     trips = await persistence.repository.list_trips(guest.id)
+    logger.info(
+        "Listed guest trips.",
+        event="be.trip.listed",
+        source="http",
+        guest_id=str(guest.id),
+        count=len(trips),
+    )
     return TripListResponse(trips=[TripSummary.model_validate(t, from_attributes=True) for t in trips])
 
 
@@ -41,11 +48,13 @@ async def create_trip(payload: TripCreateRequest, request: Request, response: Re
 
 
 @router.get("/{trip_id}", response_model=TripResponse)
-async def get_trip(trip_id: UUID, request: Request, response: Response, persistence: Persistence):
+async def get_trip(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger):
     guest = await persistence.guest(request, response)
     trip = await persistence.repository.get_trip(guest.id, trip_id)
     if trip is None:
+        logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
         raise HTTPException(status_code=404, detail="Trip not found.")
+    logger.info("Fetched guest trip.", event="be.trip.fetched", source="http", trip_id=str(trip_id), version=trip.version)
     return _response(trip)
 
 
@@ -62,7 +71,9 @@ async def rename_trip(trip_id: UUID, payload: TripRenameRequest, request: Reques
         logger.warning("Rejected stale trip rename.", event="be.trip.version_conflict", source="http", trip_id=str(trip_id), current_version=error.current_version)
         raise _conflict(error) from error
     if trip is None:
+        logger.warning("Trip not found for guest rename.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
         raise HTTPException(status_code=404, detail="Trip not found.")
+    logger.info("Renamed guest trip.", event="be.trip.renamed", source="http", trip_id=str(trip_id), version=trip.version)
     return _response(trip)
 
 
