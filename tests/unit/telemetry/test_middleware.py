@@ -38,6 +38,24 @@ def telemetry_app(sink, request_id_factory=lambda: "generated-request") -> FastA
     async def meridian() -> None:
         raise RuntimeError("unexpected route failure")
 
+    @app.post("/guide")
+    async def guide() -> dict:
+        context = get_correlation_context()
+        return {
+            "request_id": context.request_id,
+            "trip_id": context.trip_id,
+            "turn_id": context.turn_id,
+        }
+
+    @app.get("/trips/{trip_id}")
+    async def get_trip(trip_id: str) -> dict:
+        context = get_correlation_context()
+        return {"request_id": context.request_id}
+
+    @app.get("/health")
+    async def health() -> dict:
+        return {"correlated": get_correlation_context() is not None}
+
     return app
 
 
@@ -135,6 +153,63 @@ def test_middleware_logs_only_unexpected_request_failures() -> None:
     assert event["event"] == "be.http.request.failed"
     assert event["request_id"] == "request-failure"
     assert event["fields"]["component"] == "fastapi"
+
+
+def test_correlation_applies_beyond_scout_and_meridian() -> None:
+    """Guide/Atlas/trip-command routes must get the same correlation context
+    Scout and Meridian already do — this used to be a hardcoded allowlist
+    that silently excluded every route added after TWM-71."""
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=telemetry_app(InMemorySink()))
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/guide",
+                headers={"X-TWM-Trip-ID": "trip-1", "X-TWM-Turn-ID": "turn-1"},
+            )
+
+        assert response.status_code == 200
+        assert response.headers["X-TWM-Request-ID"] == "generated-request"
+        assert response.headers["X-TWM-Trip-ID"] == "trip-1"
+        assert response.json() == {
+            "request_id": "generated-request",
+            "trip_id": "trip-1",
+            "turn_id": "turn-1",
+        }
+
+    asyncio.run(exercise())
+
+
+def test_correlation_applies_to_get_requests_too() -> None:
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=telemetry_app(InMemorySink()))
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            response = await client.get("/trips/abc")
+
+        assert response.status_code == 200
+        assert response.headers["X-TWM-Request-ID"] == "generated-request"
+        assert response.json() == {"request_id": "generated-request"}
+
+    asyncio.run(exercise())
+
+
+def test_health_checks_are_not_correlated() -> None:
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=telemetry_app(InMemorySink()))
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            response = await client.get("/health")
+
+        assert response.status_code == 200
+        assert "X-TWM-Request-ID" not in response.headers
+        assert response.json() == {"correlated": False}
+
+    asyncio.run(exercise())
 
 
 def test_broken_sink_does_not_change_api_response() -> None:

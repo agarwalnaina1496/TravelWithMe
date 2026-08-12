@@ -154,11 +154,37 @@ def set_engine(api_client: TestClient, engine: object) -> None:
     api_client.app.dependency_overrides[trip_planner.get_engine] = lambda: engine
 
 
-def logger_for_test() -> TelemetryLogger:
+def logger_for_test(sink: InMemorySink | None = None) -> TelemetryLogger:
     return TelemetryLogger(
         TelemetrySettings(True, "test", PayloadMode.FULL, 16_384),
-        InMemorySink(),
+        sink if sink is not None else InMemorySink(),
     )
+
+
+def test_guide_request_logs_share_one_correlated_request_id(
+    api_client: TestClient,
+) -> None:
+    """Regression for TWM-124: before the correlation middleware covered
+    /guide, every log line in one request got its own random request_id and
+    could not be correlated as a single turn in Axiom."""
+    engine = async_engine()
+    engine.guide.return_value = AgentExecution(
+        response=guide_places_output(),
+        prompt_release=PromptRelease("guide", "1.1.0", "prompt"),
+    )
+    set_engine(api_client, engine)
+    sink = InMemorySink()
+    api_client.app.dependency_overrides[trip_planner.get_logger] = lambda: logger_for_test(sink)
+
+    response = api_client.post(
+        "/guide",
+        json={"event": "START", "trip_state": {"trip_context": {}}},
+    )
+
+    assert response.status_code == 200
+    assert len(sink.events) >= 2
+    request_ids = {event["request_id"] for event in sink.events}
+    assert len(request_ids) == 1
 
 
 def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> None:
