@@ -22,7 +22,9 @@ REQUEST_ID_HEADER = "X-TWM-Request-ID"
 TRIP_ID_HEADER = "X-TWM-Trip-ID"
 TURN_ID_HEADER = "X-TWM-Turn-ID"
 CORRELATION_HEADERS = (REQUEST_ID_HEADER, TRIP_ID_HEADER, TURN_ID_HEADER)
-_AGENT_PATHS = {"/scout", "/meridian"}
+# Every route gets a correlation context except the two health-check probes,
+# which are high-frequency and have nothing to correlate.
+_UNCORRELATED_PATHS = {"/", "/health"}
 
 
 class TelemetryContextMiddleware:
@@ -39,11 +41,7 @@ class TelemetryContextMiddleware:
         self.clock = clock
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if (
-            scope["type"] != "http"
-            or scope["path"] not in _AGENT_PATHS
-            or scope["method"] != "POST"
-        ):
+        if scope["type"] != "http" or scope["path"] in _UNCORRELATED_PATHS:
             await self.app(scope, receive, send)
             return
 
