@@ -1,5 +1,16 @@
 # Guide prompt changelog
 
+## Guide 1.4.0 — 2026-08-13
+
+- START and APPROVE_PLACES now require asking for `duration_days` (via
+  NEEDS_CLARIFICATION) before proposing a day plan, instead of deferring
+  the check to APPROVE_PLACES only — Guide no longer jumps straight to a
+  PLACES_DRAFT/day plan while duration is still unknown.
+- TRAVELER_MESSAGE asks a single "anything else to add or change?" question
+  once the last absolutely-necessary input (most commonly duration) is
+  supplied, before the day plan is built — keeps input-gathering as a chat
+  conversation rather than a silent jump to itinerary generation.
+
 ## Guide 1.3.0 — 2026-08-12
 
 - Adds a required `pace` signal (`relaxed`/`balanced`/`packed`) to every day
