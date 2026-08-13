@@ -1,5 +1,24 @@
 # Meridian prompt changelog
 
+## Meridian 1.10.0 — 2026-08-14
+
+- When `awaiting` names one of the five shared `trip_context` facts,
+  Meridian now uses the exact trip_context key name as the slug
+  (`origin_city`, `num_travelers`, `trip_duration`, `travel_dates`,
+  `budget`) instead of an ad hoc synonym (previously e.g. `"origin"`).
+  Matches Guide's `GuideAwaiting` enum, which is renamed the same way in
+  this release (`"duration"` -> `"trip_duration"`), so every awaiting slug
+  is now identical to its trip_context key with no exceptions, and the
+  UI's quick-reply lookup keys off one shared name per fact.
+- Rewrites several behavioral instructions from negative ("do not X") to
+  positive framing where the rule has no specific failure mode to warn
+  against. Kept the original explicit warning where it did (never replay a
+  More like this reference unchanged, a hard budget boundary never gets
+  quietly relaxed). Kept the Ownership Boundary's negative framing as-is:
+  it describes what Meridian itself does not do, and rephrasing it would
+  require naming what Scout/Planner do instead, which is their scope to
+  state, not Meridian's. Safety/injection guardrails unchanged.
+
 ## Meridian 1.9.0 — 2026-08-11
 
 - Required Circuit Feasibility to validate the return leg against any stated return-timing constraint (a fixed return date, a weekend-only window, or needing to be back by a specific day), not only outbound and inter-stop legs.

@@ -5,10 +5,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 4,
+          "origin_city": "Delhi",
+          "trip_duration": 4,
           "budget": "INR 40000",
-          "travelers": 2
+          "num_travelers": 2
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -31,8 +31,8 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 10
+          "origin_city": "Delhi",
+          "trip_duration": 10
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -54,10 +54,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 4,
+          "origin_city": "Delhi",
+          "trip_duration": 4,
           "budget": "INR 8000",
-          "travelers": 2
+          "num_travelers": 2
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -78,10 +78,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 4,
+          "origin_city": "Delhi",
+          "trip_duration": 4,
           "budget": "INR 40000",
-          "travelers": 2
+          "num_travelers": 2
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -102,10 +102,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Bengaluru",
-          "duration_days": 4,
+          "origin_city": "Bengaluru",
+          "trip_duration": 4,
           "budget": "INR 30000 total for the group",
-          "travelers": 3
+          "num_travelers": 3
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -129,10 +129,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Mumbai",
-          "duration_days": 5,
+          "origin_city": "Mumbai",
+          "trip_duration": 5,
           "budget": "INR 25000 per person",
-          "travelers": 2
+          "num_travelers": 2
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -155,9 +155,9 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "duration_days": 4,
+          "trip_duration": 4,
           "budget": "INR 20000 total",
-          "travelers": 2
+          "num_travelers": 2
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -179,10 +179,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Chennai",
-          "duration_days": 3,
+          "origin_city": "Chennai",
+          "trip_duration": 3,
           "budget": "INR 12000 total",
-          "travelers": 4
+          "num_travelers": 4
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -204,10 +204,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 10,
+          "origin_city": "Delhi",
+          "trip_duration": 10,
           "budget": "INR 90000 total",
-          "travelers": 2,
+          "num_travelers": 2,
           "circuit_cities": ["Jaipur", "Udaipur", "Jodhpur"],
           "circuit_flexibility": "flexible stop order"
         },
@@ -233,10 +233,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 4,
+          "origin_city": "Delhi",
+          "trip_duration": 4,
           "budget": "INR 40000",
-          "travelers": 2
+          "num_travelers": 2
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -267,10 +267,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 10,
+          "origin_city": "Delhi",
+          "trip_duration": 10,
           "budget": "INR 90000",
-          "travelers": 2
+          "num_travelers": 2
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -302,10 +302,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 4,
+          "origin_city": "Delhi",
+          "trip_duration": 4,
           "budget": "INR 35000 total",
-          "travelers": 2,
+          "num_travelers": 2,
           "circuit_cities": ["Jaipur", "Udaipur"],
           "return_by": "Monday morning, ready for work"
         },
@@ -330,10 +330,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 3,
+          "origin_city": "Delhi",
+          "trip_duration": 3,
           "budget": "INR 40000 total",
-          "travelers": 2,
+          "num_travelers": 2,
           "circuit_cities": ["Jaipur", "Udaipur", "Jodhpur"],
           "return_by": "Sunday night, must be back for an early Monday flight"
         },
@@ -356,10 +356,10 @@
     "input": {
       "trip_state": {
         "trip_context": {
-          "origin": "Delhi",
-          "duration_days": 10,
+          "origin_city": "Delhi",
+          "trip_duration": 10,
           "budget": "INR 90000 total",
-          "travelers": 2,
+          "num_travelers": 2,
           "circuit_cities": ["Jaipur", "Udaipur", "Jodhpur"],
           "circuit_flexibility": "flexible stop order"
         },

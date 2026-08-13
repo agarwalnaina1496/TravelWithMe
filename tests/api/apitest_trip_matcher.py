@@ -118,15 +118,15 @@ def test_active_phase_prompt_releases_are_complete() -> None:
     validate_prompt_release_files()
 
     assert load_prompt_versions() == {
-        "scout": "1.8.0",
-        "meridian": "1.9.0",
-        "guide": "2.1.0",
+        "scout": "1.9.0",
+        "meridian": "1.10.0",
+        "guide": "2.2.0",
         "atlas": "1.4.0",
     }
     guide_prompt = load_prompt_release("guide").content
     assert "Traveler authority" in guide_prompt
     assert "APPROVE_PLACES" in guide_prompt
-    assert "Atlas owns researched itinerary details" in guide_prompt
+    assert "booking links, reservations, or detailed transport" in guide_prompt
     assert "reopen_destination_discovery" in guide_prompt
     meridian_prompt = load_prompt_release("meridian").content
     assert "conversation_context.awaiting" in meridian_prompt
@@ -368,7 +368,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     assert response.status_code == 200
     assert response.json()["agent_meta"] == {
         "agent": "meridian",
-        "prompt_version": "1.9.0",
+        "prompt_version": "1.10.0",
     }
     release = load_prompt_release("meridian")
     agent, invocation = adapter.invoke.await_args.args
@@ -673,7 +673,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         "message": "A mountain trip can work well.",
         "state_delta": {"trip_context": {"destination_scope": "mountains"}},
         "intent": "advise",
-        "agent_meta": {"agent": "scout", "prompt_version": "1.8.0"},
+        "agent_meta": {"agent": "scout", "prompt_version": "1.9.0"},
     }
     assert meridian_response.status_code == 200
     assert meridian_response.json() == {
@@ -689,7 +689,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         },
         "message": "What budget should I use?",
         "options": [],
-        "agent_meta": {"agent": "meridian", "prompt_version": "1.9.0"},
+        "agent_meta": {"agent": "meridian", "prompt_version": "1.10.0"},
     }
 
 

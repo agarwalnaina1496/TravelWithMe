@@ -41,7 +41,7 @@ def test_scout_evaluation_corpus_covers_fixed_shared_keys() -> None:
     assert invariants["fixed_keys_present_verbatim"] == {
         "origin_city": "Delhi",
         "num_travelers": "me and my partner",
-        "duration_days": 5,
+        "trip_duration": 5,
         "travel_dates": "sometime in October",
         "budget": "flexible",
     }

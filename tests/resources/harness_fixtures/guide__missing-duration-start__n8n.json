@@ -2,7 +2,7 @@
   "agent": "guide",
   "case_id": "missing-duration-start",
   "execution_path": "n8n",
-  "prompt_version": "2.0.0",
+  "prompt_version": "2.2.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"How many days will your trip to Ladakh be?\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": \"duration\"}}}, \"outcome\": \"continue\"}"
+  "raw_output": "{\"message\": \"How many days will your trip to Ladakh be?\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": \"trip_duration\"}}}, \"outcome\": \"continue\"}"
 }

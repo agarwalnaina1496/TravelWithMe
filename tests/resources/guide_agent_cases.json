@@ -5,10 +5,10 @@
       "event": "START",
       "message": "I want a three-day trip to Rishikesh from Delhi for three friends within INR 50,000.",
       "trip_context": {
-        "origin": "Delhi",
+        "origin_city": "Delhi",
         "destinations": ["Rishikesh"],
-        "duration_days": 3,
-        "travelers": 3,
+        "trip_duration": 3,
+        "num_travelers": 3,
         "budget": "INR 50000"
       },
       "planner_state": {}
@@ -16,7 +16,7 @@
     "invariants": {
       "awaiting": null,
       "destinations": ["Rishikesh"],
-      "duration_days": 3,
+      "trip_duration": 3,
       "day_plan_length": 0
     }
   },
@@ -27,7 +27,7 @@
       "message": "I do not like rafting. Remove it and add a pilgrimage place.",
       "trip_context": {
         "destinations": ["Rishikesh"],
-        "duration_days": 3
+        "trip_duration": 3
       },
       "planner_state": {
         "conversation_context": { "awaiting": null },
@@ -54,7 +54,7 @@
       "message": null,
       "trip_context": {
         "destinations": ["Rishikesh"],
-        "duration_days": 3,
+        "trip_duration": 3,
         "preferences": ["pilgrimage"],
         "exclusions": ["river rafting"]
       },
@@ -70,7 +70,7 @@
       }
     },
     "invariants": {
-      "duration_days": 3,
+      "trip_duration": 3,
       "day_plan_length": 3,
       "preserve_all_places": true,
       "place_only_day_plan": true,
@@ -84,7 +84,7 @@
       "message": "Actually, drop Neelkanth Mahadev Temple from day 3, I don't want to do anything that day.",
       "trip_context": {
         "destinations": ["Rishikesh"],
-        "duration_days": 3
+        "trip_duration": 3
       },
       "planner_state": {
         "conversation_context": { "awaiting": null },
@@ -109,14 +109,14 @@
       "message": "Plan Delhi, Agra and Jaipur for seven days in that order.",
       "trip_context": {
         "destinations": ["Delhi", "Agra", "Jaipur"],
-        "duration_days": 7,
+        "trip_duration": 7,
         "route_order_fixed": true
       },
       "planner_state": {}
     },
     "invariants": {
       "preserve_destination_order": ["Delhi", "Agra", "Jaipur"],
-      "duration_days": 7,
+      "trip_duration": 7,
       "must_not_add_destinations": true
     }
   },
@@ -131,7 +131,7 @@
       "planner_state": {}
     },
     "invariants": {
-      "awaiting": "duration",
+      "awaiting": "trip_duration",
       "day_plan_length": 0,
       "places_omitted_from_delta": true
     }
@@ -151,7 +151,7 @@
       }
     },
     "invariants": {
-      "awaiting": "duration",
+      "awaiting": "trip_duration",
       "day_plan_length": 0
     }
   },
@@ -162,7 +162,7 @@
       "message": "Plan a five day trip to Ladakh.",
       "trip_context": {
         "destinations": ["Ladakh"],
-        "duration_days": 5
+        "trip_duration": 5
       },
       "planner_state": {}
     },
@@ -179,7 +179,7 @@
       "message": "Plan a five day trip to Ladakh from Delhi.",
       "trip_context": {
         "destinations": ["Ladakh"],
-        "duration_days": 5,
+        "trip_duration": 5,
         "origin_city": "Delhi"
       },
       "planner_state": {}
@@ -197,7 +197,7 @@
       "message": "Two of us are going from Delhi to Ladakh for five days.",
       "trip_context": {
         "destinations": ["Ladakh"],
-        "duration_days": 5,
+        "trip_duration": 5,
         "origin_city": "Delhi",
         "num_travelers": 2
       },
@@ -216,7 +216,7 @@
       "message": "We're not sure of exact dates, maybe sometime in October.",
       "trip_context": {
         "destinations": ["Ladakh"],
-        "duration_days": 5,
+        "trip_duration": 5,
         "origin_city": "Delhi",
         "num_travelers": 2,
         "travel_dates": "October, tentative"
@@ -236,7 +236,7 @@
       "message": "Budget is flexible, around 60 to 70k.",
       "trip_context": {
         "destinations": ["Ladakh"],
-        "duration_days": 5,
+        "trip_duration": 5,
         "origin_city": "Delhi",
         "num_travelers": 2,
         "travel_dates": "October, tentative",

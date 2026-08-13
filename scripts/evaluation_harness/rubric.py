@@ -303,12 +303,12 @@ def _guide_destinations(
         raise RubricFailure(f"expected destinations {expected!r}, got {actual!r}")
 
 
-def _guide_duration_days(
+def _guide_trip_duration(
     case: EvaluationCase, response: dict[str, Any], expected: int
 ) -> None:
-    actual = _guide_effective_trip_context(case, response).get("duration_days")
+    actual = _guide_effective_trip_context(case, response).get("trip_duration")
     if actual != expected:
-        raise RubricFailure(f"expected duration_days {expected!r}, got {actual!r}")
+        raise RubricFailure(f"expected trip_duration {expected!r}, got {actual!r}")
 
 
 def _guide_day_plan_length(
@@ -407,14 +407,14 @@ def _atlas_destinations(
         raise RubricFailure(f"expected destinations {expected!r}, got {actual!r}")
 
 
-def _atlas_duration_days(
+def _atlas_trip_duration(
     case: EvaluationCase, response: dict[str, Any], expected: int
 ) -> None:
     actual = response.get("final_itinerary", {}).get("trip_summary", {}).get(
-        "duration_days"
+        "trip_duration"
     )
     if actual != expected:
-        raise RubricFailure(f"expected duration_days {expected!r}, got {actual!r}")
+        raise RubricFailure(f"expected trip_duration {expected!r}, got {actual!r}")
 
 
 def _atlas_preserve_approved_places(
@@ -646,7 +646,7 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "awaiting": _guide_awaiting,
         "places_omitted_from_delta": _guide_places_omitted_from_delta,
         "destinations": _guide_destinations,
-        "duration_days": _guide_duration_days,
+        "trip_duration": _guide_trip_duration,
         "day_plan_length": _guide_day_plan_length,
         "must_exclude_places": _guide_must_exclude_places,
         "must_include_exclusions": _guide_must_include_exclusions,
@@ -659,7 +659,7 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
     },
     "atlas": {
         "destinations": _atlas_destinations,
-        "duration_days": _atlas_duration_days,
+        "trip_duration": _atlas_trip_duration,
         "preserve_approved_places": _atlas_preserve_approved_places,
         "exclude": _atlas_exclude,
         "requires_day_timeline": _atlas_requires_day_timeline,

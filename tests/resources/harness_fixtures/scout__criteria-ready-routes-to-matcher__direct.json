@@ -4,5 +4,5 @@
   "execution_path": "direct",
   "prompt_version": "1.7.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"Great, let's find matching destinations for you.\", \"state_delta\": {\"trip_context\": {\"origin\": \"Delhi\", \"budget\": \"INR 40000\", \"duration_days\": 5, \"travel_month\": \"December\"}}, \"intent\": \"matcher\"}"
+  "raw_output": "{\"message\": \"Great, let's find matching destinations for you.\", \"state_delta\": {\"trip_context\": {\"origin\": \"Delhi\", \"budget\": \"INR 40000\", \"trip_duration\": 5, \"travel_month\": \"December\"}}, \"intent\": \"matcher\"}"
 }

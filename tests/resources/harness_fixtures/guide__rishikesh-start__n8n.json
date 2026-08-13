@@ -4,5 +4,5 @@
   "execution_path": "n8n",
   "prompt_version": "2.0.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"Here is a starting places draft for a three-day Rishikesh trip.\", \"state_delta\": {\"trip_context\": {\"destinations\": [\"Rishikesh\"], \"duration_days\": 3}, \"planner_state\": {\"conversation_context\": {\"awaiting\": null}, \"places\": [\"Ram Jhula\", \"Triveni Ghat\", \"Neer Garh Waterfall\"]}}, \"outcome\": \"continue\"}"
+  "raw_output": "{\"message\": \"Here is a starting places draft for a three-day Rishikesh trip.\", \"state_delta\": {\"trip_context\": {\"destinations\": [\"Rishikesh\"], \"trip_duration\": 3}, \"planner_state\": {\"conversation_context\": {\"awaiting\": null}, \"places\": [\"Ram Jhula\", \"Triveni Ghat\", \"Neer Garh Waterfall\"]}}, \"outcome\": \"continue\"}"
 }

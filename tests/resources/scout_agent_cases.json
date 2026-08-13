@@ -25,7 +25,7 @@
     "input": {
       "trip_state": {
         "stage": "new",
-        "trip_context": { "origin": "Delhi" },
+        "trip_context": { "origin_city": "Delhi" },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
         }
@@ -45,9 +45,9 @@
       "trip_state": {
         "stage": "matched",
         "trip_context": {
-          "origin": "Delhi",
+          "origin_city": "Delhi",
           "destinations": ["Goa"],
-          "duration_days": 4
+          "trip_duration": 4
         },
         "advisor_state": {
           "conversation_context": { "last_advisor_message": null }
@@ -67,7 +67,7 @@
     "input": {
       "trip_state": {
         "stage": "new",
-        "trip_context": { "origin": "Delhi" },
+        "trip_context": { "origin_city": "Delhi" },
         "advisor_state": {
           "conversation_context": {
             "last_advisor_message": "Do you prefer beaches or mountains?"
@@ -99,7 +99,7 @@
       "fixed_keys_present_verbatim": {
         "origin_city": "Delhi",
         "num_travelers": "me and my partner",
-        "duration_days": 5,
+        "trip_duration": 5,
         "travel_dates": "sometime in October",
         "budget": "flexible"
       },

@@ -59,7 +59,7 @@ def build_working_plan(guide_state: dict[str, Any]) -> AtlasWorkingPlan:
     return AtlasWorkingPlan.model_validate(
         {
             "destinations": guide_state["destinations"],
-            "duration_days": guide_state["duration_days"],
+            "trip_duration": guide_state["trip_duration"],
             "start_date": guide_state.get("start_date"),
             "approved_places": guide_state["places"],
             "days": [

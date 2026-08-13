@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, model_serializer
 
-_FIXED_KEYS = ("origin_city", "num_travelers", "duration_days", "travel_dates", "budget")
+_FIXED_KEYS = ("origin_city", "num_travelers", "trip_duration", "travel_dates", "budget")
 
 
 class TripContext(BaseModel):
@@ -20,7 +20,7 @@ class TripContext(BaseModel):
 
     origin_city: Optional[Any] = None
     num_travelers: Optional[Any] = None
-    duration_days: Optional[Any] = None
+    trip_duration: Optional[Any] = None
     travel_dates: Optional[Any] = None
     budget: Optional[Any] = None
 

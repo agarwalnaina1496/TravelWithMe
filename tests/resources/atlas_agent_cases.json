@@ -4,14 +4,14 @@
     "scenario": "Domestic places-first plan with an explicit rafting exclusion",
     "input": {
       "trip_context": {
-        "origin": "Delhi",
-        "travelers": 3,
+        "origin_city": "Delhi",
+        "num_travelers": 3,
         "budget": "INR 50000",
         "exclusions": ["river rafting"]
       },
       "working_plan": {
         "destinations": ["Rishikesh"],
-        "duration_days": 3,
+        "trip_duration": 3,
         "start_date": null,
         "approved_places": [
           "Ram Jhula",
@@ -27,7 +27,7 @@
     },
     "invariants": {
       "destinations": ["Rishikesh"],
-      "duration_days": 3,
+      "trip_duration": 3,
       "preserve_approved_places": true,
       "exclude": ["river rafting"],
       "requires_day_timeline": true,
@@ -39,12 +39,12 @@
     "scenario": "Traveler explicitly fixes a seven-day circuit and route order",
     "input": {
       "trip_context": {
-        "origin": "Delhi",
+        "origin_city": "Delhi",
         "route_order_fixed": true
       },
       "working_plan": {
         "destinations": ["Delhi", "Agra", "Jaipur"],
-        "duration_days": 7,
+        "trip_duration": 7,
         "start_date": null,
         "approved_places": [],
         "days": [
@@ -60,7 +60,7 @@
     },
     "invariants": {
       "destinations": ["Delhi", "Agra", "Jaipur"],
-      "duration_days": 7,
+      "trip_duration": 7,
       "preserve_destination_order": true,
       "do_not_add_destinations": true
     }
@@ -70,12 +70,12 @@
     "scenario": "International plan where permits, border rules and operators are time-sensitive",
     "input": {
       "trip_context": {
-        "origin": "Delhi",
+        "origin_city": "Delhi",
         "international": true
       },
       "working_plan": {
         "destinations": ["Kathmandu"],
-        "duration_days": 2,
+        "trip_duration": 2,
         "start_date": null,
         "approved_places": [],
         "days": [
@@ -96,12 +96,12 @@
     "scenario": "A named stay cannot be confidently resolved",
     "input": {
       "trip_context": {
-        "origin": "Delhi",
+        "origin_city": "Delhi",
         "requested_stay": "Hillcrest Boutique Inn"
       },
       "working_plan": {
         "destinations": ["Manali"],
-        "duration_days": 2,
+        "trip_duration": 2,
         "start_date": null,
         "approved_places": [],
         "days": [
@@ -122,12 +122,12 @@
     "scenario": "Returned model totals conflict with category ranges",
     "input": {
       "trip_context": {
-        "origin": "Delhi",
+        "origin_city": "Delhi",
         "budget": "INR 30000"
       },
       "working_plan": {
         "destinations": ["Jaipur"],
-        "duration_days": 2,
+        "trip_duration": 2,
         "start_date": null,
         "approved_places": [],
         "days": [

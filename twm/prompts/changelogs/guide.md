@@ -1,5 +1,24 @@
 # Guide prompt changelog
 
+## Guide 2.2.0 — 2026-08-14
+
+- Renames the `duration` awaiting slug to `trip_duration` so every
+  `GuideAwaiting` value is identical to its `trip_context` key name with
+  no exceptions (previously `duration` was the one field whose slug
+  didn't match its trip_context key). Meridian's `awaiting` is renamed the
+  same way in this release, and the UI's quick-reply lookup is updated to
+  match.
+- Rewrites several self-contained behavioral instructions from negative
+  ("do not X") to positive framing (conversational glue handling, delta
+  omission semantics, the START/APPROVE_PLACES gate wording, ambiguous
+  reconsideration handling, buffer_note). Left the Ownership Boundary and
+  every other instruction that describes what Atlas does unchanged: Guide
+  can only state its own scope, not Atlas's, so those stay negative
+  ("Guide does not...", "do not invent..."). Kept the original explicit
+  warning wherever it named a specific failure mode Guide itself must
+  avoid (never reintroduce a removed place, never second-guess an
+  explicit traveler instruction). Safety/injection guardrails unchanged.
+
 ## Guide 2.1.0 — 2026-08-14
 
 - Expands the START/TRAVELER_MESSAGE `awaiting` gate from `duration` alone

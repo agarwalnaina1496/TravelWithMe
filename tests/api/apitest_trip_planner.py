@@ -21,7 +21,7 @@ def guide_places_output() -> dict:
         "state_delta": {
             "trip_context": {
                 "destinations": ["Rishikesh"],
-                "duration_days": 3,
+                "trip_duration": 3,
                 "preferences": ["relaxed"],
                 "exclusions": ["river rafting"],
             },
@@ -56,8 +56,8 @@ def atlas_output() -> dict:
             "trip_summary": {
                 "title": "Three friends in Rishikesh",
                 "destinations": ["Rishikesh"],
-                "duration_days": 1,
-                "travelers": 3,
+                "trip_duration": 1,
+                "num_travelers": 3,
                 "date_range": None,
                 "overview": "A calm day around the approved riverside places.",
                 "route_rationale": "The day keeps nearby places together.",
@@ -171,10 +171,10 @@ def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> N
         "event": "START",
         "trip_state": {
             "trip_context": {
-                "origin": "Delhi",
+                "origin_city": "Delhi",
                 "destinations": ["Rishikesh"],
-                "duration_days": 3,
-                "travelers": 3,
+                "trip_duration": 3,
+                "num_travelers": 3,
                 "budget": "INR 50000",
                 "exclusions": ["river rafting"],
             }
@@ -210,7 +210,7 @@ def test_guide_api_accepts_expanded_awaiting_values(api_client: TestClient) -> N
         response={
             "message": "Where are you starting your trip from?",
             "state_delta": {
-                "trip_context": {"duration_days": 5},
+                "trip_context": {"trip_duration": 5},
                 "planner_state": {
                     "conversation_context": {"awaiting": "origin_city"},
                 },
@@ -222,7 +222,7 @@ def test_guide_api_accepts_expanded_awaiting_values(api_client: TestClient) -> N
     payload = {
         "event": "START",
         "trip_state": {
-            "trip_context": {"destinations": ["Ladakh"], "duration_days": 5},
+            "trip_context": {"destinations": ["Ladakh"], "trip_duration": 5},
         },
         "message": "Plan a five day trip to Ladakh.",
     }
@@ -255,7 +255,7 @@ def test_guide_api_uses_prompt_schema_and_common_validation(
             "trip_state": {
                 "trip_context": {
                     "destinations": ["Rishikesh"],
-                    "duration_days": 3,
+                    "trip_duration": 3,
                 }
             },
         },
@@ -273,7 +273,7 @@ def test_guide_api_uses_prompt_schema_and_common_validation(
     assert framed_input["trip_state"]["guide_event"] == "START"
     assert framed_input["trip_state"]["trip_context"] == {
         "destinations": ["Rishikesh"],
-        "duration_days": 3,
+        "trip_duration": 3,
     }
 
 
@@ -303,14 +303,14 @@ def test_atlas_api_forwards_finalized_context_and_plan(
     set_engine(api_client, engine)
     payload = {
         "trip_context": {
-            "origin": "Delhi",
-            "travelers": 3,
+            "origin_city": "Delhi",
+            "num_travelers": 3,
             "budget": "INR 50000",
             "exclusions": ["river rafting"],
         },
         "working_plan": {
             "destinations": ["Rishikesh"],
-            "duration_days": 1,
+            "trip_duration": 1,
             "approved_places": ["Ram Jhula", "Triveni Ghat"],
             "days": [
                 {
@@ -347,10 +347,10 @@ def test_atlas_api_uses_prompt_schema_and_common_validation(
     response = api_client.post(
         "/atlas",
         json={
-            "trip_context": {"origin": "Delhi", "travelers": 3},
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
             "working_plan": {
                 "destinations": ["Rishikesh"],
-                "duration_days": 1,
+                "trip_duration": 1,
                 "approved_places": ["Ram Jhula"],
                 "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
             },
@@ -391,10 +391,10 @@ def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
     response = api_client.post(
         "/atlas",
         json={
-            "trip_context": {"origin": "Delhi", "travelers": 3},
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
             "working_plan": {
                 "destinations": ["Rishikesh"],
-                "duration_days": 1,
+                "trip_duration": 1,
                 "approved_places": ["Ram Jhula"],
                 "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
             },
@@ -416,7 +416,7 @@ def test_atlas_rejects_plan_that_does_not_allocate_approved_places(
         json={
             "working_plan": {
                 "destinations": ["Rishikesh"],
-                "duration_days": 1,
+                "trip_duration": 1,
                 "approved_places": ["Ram Jhula", "Triveni Ghat"],
                 "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
             }
