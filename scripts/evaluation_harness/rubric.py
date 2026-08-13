@@ -585,12 +585,6 @@ def _atlas_has_general_reference(response: dict[str, Any]) -> bool:
 def _atlas_all_references(response: dict[str, Any]) -> list[dict[str, Any]]:
     itinerary = response.get("final_itinerary", {})
     references = [
-        option.get("reference", {}) for option in itinerary.get("travel_options", [])
-    ]
-    references += [
-        option.get("reference", {}) for option in itinerary.get("stay_options", [])
-    ]
-    references += [
         item.get("reference", {})
         for day in itinerary.get("days", [])
         for item in day.get("timeline", [])

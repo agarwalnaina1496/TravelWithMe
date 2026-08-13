@@ -1,5 +1,16 @@
 # Atlas prompt changelog
 
+## Atlas 1.4.0 — 2026-08-13
+
+- Removes the `travel_options`/`stay_options` suggested-option lists entirely.
+  Atlas never had live inventory to back these with, so they were always
+  `GENERAL_GUIDANCE` placeholders presented as if they were real, bookable
+  options — misleading to travelers. Transport/stay guidance is now woven
+  narratively into the day timeline and practical notes only (general,
+  non-bookable). Live, bookable transport/stay search is a separate future
+  capability, not Atlas's job. The budget breakdown still includes an
+  indicative transport/stay estimate line, unaffected by this change.
+
 ## Atlas 1.3.0 — 2026-08-12
 
 - Adds handling for `confirmed_anchors`: fixed, application-owned logistics
