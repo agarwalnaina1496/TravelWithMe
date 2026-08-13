@@ -98,7 +98,7 @@ def test_n8n_adapter_maps_timeout() -> None:
     assert error.upstream_response is None
 
 
-def test_n8n_adapter_returns_empty_model_content_for_common_repair() -> None:
+def test_n8n_adapter_returns_empty_model_content_as_is() -> None:
     client = httpx.AsyncClient(
         transport=httpx.MockTransport(
             lambda request: httpx.Response(200, json={"raw_output": ""})

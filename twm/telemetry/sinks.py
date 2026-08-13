@@ -112,6 +112,14 @@ class OtlpHttpSink:
             self._provider.shutdown()
 
 
+# The two recognized deployment environments (see properties-dev.ini /
+# properties-prod.ini) each ship to their own Axiom dataset via a
+# per-environment OTEL_EXPORTER_OTLP_LOGS_HEADERS x-axiom-dataset value.
+# Anything outside this set (a test run, an unset/misconfigured value) stays
+# stdout-only even if an OTLP endpoint is accidentally present.
+_OTLP_ELIGIBLE_ENVIRONMENTS = frozenset({"dev", "prod"})
+
+
 def build_telemetry_sink(
     *,
     environment: str,
@@ -121,7 +129,7 @@ def build_telemetry_sink(
 ) -> TelemetrySink:
     stdout = stdout_sink or JsonStdoutSink()
     endpoint = os.getenv(OTLP_LOGS_ENDPOINT_ENV, "").strip()
-    if environment != "prod" or not endpoint:
+    if environment not in _OTLP_ELIGIBLE_ENVIRONMENTS or not endpoint:
         return stdout
     try:
         otlp = otlp_factory(service)

@@ -103,7 +103,7 @@ def test_langgraph_adapter_preserves_provider_telemetry() -> None:
     }
 
 
-def test_langgraph_adapter_returns_malformed_content_for_common_repair() -> None:
+def test_langgraph_adapter_returns_malformed_content_as_is() -> None:
     adapter = LangGraphAgentAdapter(
         runtime=LangGraphRuntime(model=FakeChatModel(["not-json"]))
     )

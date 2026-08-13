@@ -1,4 +1,4 @@
-"""Common agent execution, parsing, validation, and repair."""
+"""Common agent execution, parsing, and validation."""
 
 import json
 import time
@@ -32,12 +32,6 @@ OUTPUT_CONTRACT_INSTRUCTION = (
     "\n\nOUTPUT CONTRACT:\n"
     "Return exactly one complete JSON object and no markdown, commentary, or "
     "code fences. The object must match this JSON Schema:\n"
-)
-REGENERATION_SYSTEM_INSTRUCTION = (
-    "The previous completion failed the required output contract. Repair that "
-    "response by generating a fresh answer from the original traveler request. "
-    "Do not invent generic replacement content. Return only the regenerated "
-    "JSON object. Sanitized validation failures from the previous attempt: "
 )
 REDACTED_LOCATION = "<redacted>"
 
@@ -120,58 +114,27 @@ class AgentExecutionService:
         )
         try:
             response = _parse_and_validate(invocation_result.raw_output, definition)
-        except _OutputValidationFailure as first_failure:
-            self._log_validation_failure(
-                agent,
-                1,
-                first_failure.failures,
-                invocation_result.raw_output,
-            )
-            self._logger.warning(
-                f"Starting {agent.capitalize()} repair attempt",
-                event="be.agent.repair.started",
+        except _OutputValidationFailure as failure:
+            self._logger.error(
+                f"FastAPI rejected {agent.capitalize()} response from "
+                f"{self._engine_name}. Detail - AgentOutputValidationError: "
+                f"{len(failure.failures)} contract violation(s). Response - "
+                f"{self._logger.format_json(invocation_result.raw_output)}",
+                event="be.agent.output.invalid",
                 source="agent_engine",
                 agent=agent,
                 engine=self._engine_name,
-                attempt=2,
-                validation_failures=first_failure.failures,
+                component="fastapi",
+                operation=f"{agent}.response.validate",
+                failure_stage="agent_output_validation",
+                error_type="AgentOutputValidationError",
+                attempt=1,
+                status="failed",
+                raw_output_chars=len(invocation_result.raw_output),
+                validation_failures=failure.failures,
+                response=invocation_result.raw_output,
             )
-            invocation_result = await self._invoke(
-                agent,
-                _build_regeneration_invocation(invocation, first_failure.failures),
-                attempt=2,
-                prompt_version=release.version,
-                traveler_message=message,
-            )
-            try:
-                response = _parse_and_validate(
-                    invocation_result.raw_output, definition
-                )
-            except _OutputValidationFailure as final_failure:
-                self._log_validation_failure(
-                    agent,
-                    2,
-                    final_failure.failures,
-                    invocation_result.raw_output,
-                )
-                self._logger.error(
-                    f"FastAPI could not validate {agent.capitalize()} response "
-                    f"from {self._engine_name} after repair. Detail - "
-                    f"AgentOutputValidationError: "
-                    f"{len(final_failure.failures)} contract violation(s).",
-                    event="be.agent.output.invalid",
-                    source="agent_engine",
-                    agent=agent,
-                    engine=self._engine_name,
-                    component="fastapi",
-                    operation=f"{agent}.response.validate",
-                    failure_stage="agent_output_validation",
-                    error_type="AgentOutputValidationError",
-                    attempt=2,
-                    status="failed",
-                    validation_failures=final_failure.failures,
-                )
-                raise AgentOutputError(agent, final_failure.failures) from None
+            raise AgentOutputError(agent, failure.failures) from None
 
         self._logger.info(
             f"{agent.capitalize()} agent response received from "
@@ -264,33 +227,6 @@ class AgentExecutionService:
             metadata=response_fields,
         )
 
-    def _log_validation_failure(
-        self,
-        agent: AgentName,
-        attempt: int,
-        failures: list[dict[str, Any]],
-        raw_output: str,
-    ) -> None:
-        self._logger.warning(
-            f"FastAPI rejected {agent.capitalize()} response from "
-            f"{self._engine_name}. Detail - AgentOutputValidationError: "
-            f"{len(failures)} contract violation(s). Response - "
-            f"{self._logger.format_json(raw_output)}",
-            event="be.agent.output.validation_failed",
-            source="agent_engine",
-            agent=agent,
-            engine=self._engine_name,
-            component="fastapi",
-            operation=f"{agent}.response.validate",
-            failure_stage="agent_output_validation",
-            error_type="AgentOutputValidationError",
-            attempt=attempt,
-            status="failed",
-            raw_output_chars=len(raw_output),
-            validation_failures=failures,
-            response=raw_output,
-        )
-
 
 def _quoted_message(message: str | None) -> str:
     return json.dumps(_bounded_single_line(message or "", 1_024), ensure_ascii=False)
@@ -343,23 +279,6 @@ def _build_invocation(
         ),
         user_prompt=frame_untrusted_payload(trip_state, message),
         generation=generation,
-    )
-
-
-def _build_regeneration_invocation(
-    original: AgentInvocation,
-    failures: list[dict[str, Any]],
-) -> AgentInvocation:
-    failure_summary = json.dumps(
-        {"validation_failures": failures}, ensure_ascii=False, separators=(",", ":")
-    )
-    return AgentInvocation(
-        system_prompt=(
-            f"{original.system_prompt}\n\n{REGENERATION_SYSTEM_INSTRUCTION}"
-            f"{failure_summary}"
-        ),
-        user_prompt=original.user_prompt,
-        generation=original.generation,
     )
 
 

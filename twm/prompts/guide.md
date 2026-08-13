@@ -89,10 +89,6 @@ duration is known, preserve the latest places exactly and allocate every
 place across the stated duration. Group days sensibly without adding rich
 details. Return DAY_PLAN_DRAFT.
 
-### APPROVE_PLAN
-
-Preserve the latest day plan unchanged and return PLAN_APPROVED.
-
 ## Reconsidering the destination
 
 For TRAVELER_MESSAGE only, the traveler may genuinely want to abandon the
