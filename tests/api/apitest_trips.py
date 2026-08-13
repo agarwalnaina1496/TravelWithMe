@@ -238,26 +238,17 @@ class FakePlannerIntentEngine(FakeCommandEngine):
 
 
 class FakeGuideLifecycleEngine(FakeCommandEngine):
-    def __init__(self, *, change_plan_on_approval=False):
-        super().__init__()
-        self.change_plan_on_approval = change_plan_on_approval
-
     async def guide(self, trip_state, message):
         self.calls.append(("guide", trip_state, message))
         guide_state = dict(trip_state["guide_state"])
         event = trip_state["guide_event"]
+        # APPROVE_PLAN never reaches the engine — Backend applies it
+        # deterministically — so there is no branch for it here.
         if event == "APPROVE_PLACES":
             guide_state["phase"] = "DAY_PLAN_DRAFT"
             guide_state["day_plan"] = [
                 {"day_number": 1, "date": None, "places": list(guide_state["places"]), "pace": "balanced", "buffer_note": None}
             ]
-        elif event == "APPROVE_PLAN":
-            guide_state["phase"] = "PLAN_APPROVED"
-            if self.change_plan_on_approval:
-                guide_state["places"] = ["Unexpected place"]
-                guide_state["day_plan"] = [
-                    {"day_number": 1, "date": None, "places": ["Unexpected place"], "pace": "balanced", "buffer_note": None}
-                ]
         return AgentExecution(
             response={
                 "message": "Guide revision ready.",
@@ -984,7 +975,10 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
 
     assert first.status_code == 200
     assert replay.json() == first.json()
-    assert len(engine.calls) == 1
+    # approve_plan is a deterministic Backend transition — Guide is never
+    # invoked for it, since preserving the day plan unchanged needs no
+    # judgment.
+    assert len(engine.calls) == 0
     saved = first.json()["trip"]["trip_state"]
     assert saved["stage"] == "planned"
     assert saved["active_agent"] is None
@@ -999,7 +993,7 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
               "expected_version": 2, "idempotency_key": str(uuid4())},
     )
     assert rejected.status_code == 422
-    assert len(engine.calls) == 1
+    assert len(engine.calls) == 0
     assert api_client.get(f"/trips/{trip['id']}").json()["version"] == 2
 
 
@@ -1382,23 +1376,25 @@ def test_keep_current_itinerary_requires_pending_proposal(api_client: TestClient
     assert response.status_code == 422
 
 
-def test_approval_rejects_agent_changes_to_confirmed_plan(api_client: TestClient):
+def test_approve_plan_rejects_wrong_phase_without_invoking_guide(api_client: TestClient):
     repository = MemoryTripRepository()
-    engine = FakeGuideLifecycleEngine(change_plan_on_approval=True)
+    engine = FakeGuideLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
+    # approve_plan is only valid from DAY_PLAN_DRAFT — a PLACES_DRAFT session
+    # (day plan not built yet) must be rejected deterministically, without
+    # ever calling Guide.
     guide_state = {
-        "phase": "DAY_PLAN_DRAFT", "destinations": ["Rishikesh"],
+        "phase": "PLACES_DRAFT", "destinations": ["Rishikesh"],
         "duration_days": 1, "start_date": None, "places": ["Triveni Ghat"],
-        "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}],
-        "preferences": [], "exclusions": [], "applied_changes": [],
+        "day_plan": [], "preferences": [], "exclusions": [], "applied_changes": [],
         "pending_clarification": None,
     }
     state = {
-            "stage": "planning", "active_agent": "guide",
-            "trip_context": {"destination": "Rishikesh"},
-            "planner_state": {"guide_session": {"revision": 2, "state": guide_state}},
-        }
+        "stage": "planning", "active_agent": "guide",
+        "trip_context": {"destination": "Rishikesh"},
+        "planner_state": {"guide_session": {"revision": 1, "state": guide_state}},
+    }
     trip = _create_seeded_trip(api_client, repository, trip_state=state)
 
     response = api_client.post(
@@ -1408,6 +1404,7 @@ def test_approval_rejects_agent_changes_to_confirmed_plan(api_client: TestClient
     )
 
     assert response.status_code == 422
+    assert len(engine.calls) == 0
     persisted = api_client.get(f"/trips/{trip['id']}").json()
     assert persisted["version"] == 1
     assert persisted["trip_state"]["planner_state"]["guide_session"]["state"] == guide_state

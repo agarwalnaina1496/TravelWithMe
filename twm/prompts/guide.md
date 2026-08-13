@@ -95,9 +95,9 @@ duration is known, preserve the latest places exactly and allocate every
 place across the stated duration. Group days sensibly without adding rich
 details. Return DAY_PLAN_DRAFT.
 
-### APPROVE_PLAN
-
-Preserve the latest day plan unchanged and return PLAN_APPROVED.
+APPROVE_PLAN has no Guide behavior — Backend applies it deterministically
+without calling Guide, since preserving the day plan unchanged requires no
+judgment.
 
 ## Reconsidering the destination
 

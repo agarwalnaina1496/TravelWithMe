@@ -4,6 +4,7 @@ import copy
 from typing import Any
 
 from ...persistence.contracts import RecommendationRecord
+from ...prompt_registry import load_prompt_release
 from ...schemas.guide import GuideRequest
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
@@ -31,48 +32,69 @@ async def apply_guide(
     clarification_resume_phase = session.get("clarification_resume_phase")
     clarification_base_state = session.get("clarification_base_state")
     _validate_guide_event(event, prior_phase)
-    guide_input_state = prior_state
-    if prior_phase == "NEEDS_CLARIFICATION" and isinstance(
-        clarification_base_state, dict
-    ):
-        guide_input_state = copy.deepcopy(clarification_base_state)
-        guide_input_state["phase"] = "NEEDS_CLARIFICATION"
-        guide_input_state["pending_clarification"] = prior_state.get(
-            "pending_clarification"
+
+    if event == "APPROVE_PLAN":
+        # Guide has nothing to decide here — the day plan is preserved
+        # exactly and the phase moves to PLAN_APPROVED. Doing this
+        # deterministically instead of round-tripping through the LLM only
+        # to have Backend validate the plan came back unchanged saves a
+        # call with no loss of quality: there is no traveler input for
+        # Guide to interpret at this event.
+        response_message = "Your plan is approved. Generating the detailed itinerary next."
+        replacement = copy.deepcopy(prior_state)
+        replacement["phase"] = "PLAN_APPROVED"
+        explicit_changes: list[str] = []
+        agent_meta = {
+            "agent": "guide",
+            "prompt_version": load_prompt_release("guide").version,
+        }
+    else:
+        guide_input_state = prior_state
+        if prior_phase == "NEEDS_CLARIFICATION" and isinstance(
+            clarification_base_state, dict
+        ):
+            guide_input_state = copy.deepcopy(clarification_base_state)
+            guide_input_state["phase"] = "NEEDS_CLARIFICATION"
+            guide_input_state["pending_clarification"] = prior_state.get(
+                "pending_clarification"
+            )
+        phase = {
+            "trip_context": state["trip_context"],
+            "guide_state": guide_input_state,
+            "guide_event": event,
+        }
+        request = GuideRequest.model_validate(
+            {"event": event, "trip_state": {"trip_context": phase["trip_context"], "guide_state": phase["guide_state"]}, "message": message}
         )
-    phase = {
-        "trip_context": state["trip_context"],
-        "guide_state": guide_input_state,
-        "guide_event": event,
-    }
-    request = GuideRequest.model_validate(
-        {"event": event, "trip_state": {"trip_context": phase["trip_context"], "guide_state": phase["guide_state"]}, "message": message}
-    )
-    agent_state = request.trip_state.model_dump(mode="json")
-    agent_state["guide_event"] = request.event
-    response = _normalize_guide_response(
-        await engine.guide(agent_state, request.message)
-    )
+        agent_state = request.trip_state.model_dump(mode="json")
+        agent_state["guide_event"] = request.event
+        response = _normalize_guide_response(
+            await engine.guide(agent_state, request.message)
+        )
 
-    if event == "TRAVELER_MESSAGE" and response.outcome == "reopen_destination_discovery":
-        return await _reopen_destination_discovery(engine, logger, state, session, message, latest_recommendation)
+        if event == "TRAVELER_MESSAGE" and response.outcome == "reopen_destination_discovery":
+            return await _reopen_destination_discovery(engine, logger, state, session, message, latest_recommendation)
 
-    replacement = response.guide_state.model_dump(mode="json")
+        replacement = response.guide_state.model_dump(mode="json")
+        response_message = response.message
+        explicit_changes = list(response.explicit_changes)
+        agent_meta = response.agent_meta.model_dump(mode="json")
+
     _validate_guide_transition(
         event,
         prior_state,
         replacement,
         clarification_resume_phase=clarification_resume_phase,
         clarification_base_state=clarification_base_state,
-        explicit_changes=response.explicit_changes,
+        explicit_changes=explicit_changes,
     )
     revision = int(session.get("revision", 0)) + 1
     next_session = {
         "state": replacement,
         "revision": revision,
-        "explicit_changes": list(response.explicit_changes),
+        "explicit_changes": explicit_changes,
     }
-    if response.guide_state.phase == "NEEDS_CLARIFICATION":
+    if replacement["phase"] == "NEEDS_CLARIFICATION":
         next_session["clarification_resume_phase"] = (
             clarification_resume_phase
             or ("DAY_PLAN_DRAFT" if event == "APPROVE_PLACES" else None)
@@ -88,13 +110,13 @@ async def apply_guide(
             else copy.deepcopy(prior_state)
         )
         if event == "TRAVELER_MESSAGE":
-            for field in response.explicit_changes:
+            for field in explicit_changes:
                 if field != "day_plan":
                     base_state[field] = copy.deepcopy(replacement[field])
         if base_state.get("phase") in {"PLACES_DRAFT", "DAY_PLAN_DRAFT"}:
             next_session["clarification_base_state"] = base_state
     planner["guide_session"] = next_session
-    if response.guide_state.phase == "PLAN_APPROVED":
+    if replacement["phase"] == "PLAN_APPROVED":
         planner["frozen_plan"] = {
             "guide_revision": revision,
             "guide_state": copy.deepcopy(replacement),
@@ -110,14 +132,14 @@ async def apply_guide(
         source="application",
         trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
         guide_event=event,
-        guide_phase=response.guide_state.phase,
+        guide_phase=replacement["phase"],
         guide_revision=revision,
-        frozen=response.guide_state.phase == "PLAN_APPROVED",
-        explicit_changes=list(response.explicit_changes),
+        frozen=replacement["phase"] == "PLAN_APPROVED",
+        explicit_changes=explicit_changes,
     )
     return {
-        "message": response.message,
-        "agent_meta": response.agent_meta.model_dump(mode="json"),
+        "message": response_message,
+        "agent_meta": agent_meta,
     }
 
 
