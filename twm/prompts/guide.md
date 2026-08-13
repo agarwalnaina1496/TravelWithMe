@@ -89,10 +89,6 @@ duration is known, preserve the latest places exactly and allocate every
 place across the stated duration. Group days sensibly without adding rich
 details. Return DAY_PLAN_DRAFT.
 
-APPROVE_PLAN has no Guide behavior — Backend applies it deterministically
-without calling Guide, since preserving the day plan unchanged requires no
-judgment.
-
 ## Reconsidering the destination
 
 For TRAVELER_MESSAGE only, the traveler may genuinely want to abandon the
