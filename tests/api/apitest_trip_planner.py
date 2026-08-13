@@ -62,33 +62,6 @@ def atlas_output() -> dict:
                 "overview": "A calm day around the approved riverside places.",
                 "route_rationale": "The day keeps nearby places together.",
             },
-            "travel_options": [
-                {
-                    "from_place": "Delhi",
-                    "to_place": "Rishikesh",
-                    "mode": "Bus",
-                    "suggestion": "Overnight Volvo bus.",
-                    "duration_guidance": "About 7 hours.",
-                    "estimated_cost_low": 600,
-                    "estimated_cost_high": 900,
-                    "reference": general_reference,
-                    "booking_readiness": "needs_advance_booking",
-                }
-            ],
-            "stay_options": [
-                {
-                    "location": "Rishikesh",
-                    "suggestion": "Riverside guesthouse near Ram Jhula.",
-                    "nights": 1,
-                    "check_in_day": 1,
-                    "check_out_day": 2,
-                    "why_it_fits": "Central, budget-friendly, walkable to the ghats.",
-                    "estimated_cost_low": 800,
-                    "estimated_cost_high": 1500,
-                    "reference": general_reference,
-                    "booking_readiness": "suggested",
-                }
-            ],
             "days": [
                 {
                     "day_number": 1,

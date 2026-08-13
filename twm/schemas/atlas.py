@@ -122,47 +122,6 @@ class AtlasTripSummary(BaseModel):
     route_rationale: AtlasText
 
 
-class AtlasTravelOption(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    from_place: AtlasText
-    to_place: AtlasText
-    mode: AtlasText
-    suggestion: AtlasText
-    duration_guidance: Optional[AtlasText] = None
-    estimated_cost_low: Optional[int] = Field(default=None, ge=0)
-    estimated_cost_high: Optional[int] = Field(default=None, ge=0)
-    reference: AtlasReference
-    booking_readiness: AtlasBookingReadiness
-
-    @model_validator(mode="after")
-    def validate_cost_range(self) -> "AtlasTravelOption":
-        _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
-        return self
-
-
-class AtlasStayOption(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    location: AtlasText
-    suggestion: AtlasText
-    nights: int = Field(ge=1)
-    check_in_day: int = Field(ge=1)
-    check_out_day: int = Field(ge=1)
-    why_it_fits: AtlasText
-    estimated_cost_low: Optional[int] = Field(default=None, ge=0)
-    estimated_cost_high: Optional[int] = Field(default=None, ge=0)
-    reference: AtlasReference
-    booking_readiness: AtlasBookingReadiness
-
-    @model_validator(mode="after")
-    def validate_stay(self) -> "AtlasStayOption":
-        if self.check_out_day <= self.check_in_day:
-            raise ValueError("stay check_out_day must follow check_in_day")
-        _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
-        return self
-
-
 class AtlasTimelineItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -270,8 +229,6 @@ class AtlasFinalItinerary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trip_summary: AtlasTripSummary
-    travel_options: list[AtlasTravelOption]
-    stay_options: list[AtlasStayOption]
     days: list[AtlasDay]
     budget_summary: AtlasBudgetSummary
     practical_notes: list[AtlasPracticalNote]

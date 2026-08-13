@@ -283,8 +283,6 @@ class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
                         "overview": "Overview.",
                         "route_rationale": "Rationale.",
                     },
-                    "travel_options": [],
-                    "stay_options": [],
                     "days": [
                         {
                             "day_number": day["day_number"],
