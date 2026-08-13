@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .common import AgentMeta
+from .trip_context import TripContext
 from ..trust_boundary import MAX_MESSAGE_CHARACTERS, validate_phase_state
 
 
@@ -40,7 +41,7 @@ class ScoutTripState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     stage: ScoutStage = "new"
-    trip_context: dict[str, Any] = Field(default_factory=dict)
+    trip_context: TripContext = Field(default_factory=TripContext)
     advisor_state: ScoutAdvisorState = Field(default_factory=ScoutAdvisorState)
 
 
@@ -59,11 +60,11 @@ class ScoutRequest(BaseModel):
 class ScoutStateDelta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_context: dict[str, Any] = Field(default_factory=dict)
+    trip_context: TripContext = Field(default_factory=TripContext)
 
     @model_validator(mode="after")
     def reject_ui_owned_state(self) -> "ScoutStateDelta":
-        if "selected_option" in self.trip_context:
+        if "selected_option" in (self.trip_context.model_extra or {}):
             raise ValueError("selected_option is UI-owned")
         return self
 

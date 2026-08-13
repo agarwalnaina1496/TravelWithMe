@@ -81,5 +81,29 @@
       "must_not_set_selected_option": true,
       "advisor_message_stored_in_conversation_context": true
     }
+  },
+  {
+    "id": "extracts-fixed-shared-keys-verbatim",
+    "scenario": "Traveler gives origin, party size, duration, tentative dates, and a flexible budget in one message",
+    "input": {
+      "trip_state": {
+        "stage": "new",
+        "trip_context": {},
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        }
+      },
+      "message": "It's me and my partner, from Delhi, for about five days, sometime in October, budget is flexible."
+    },
+    "invariants": {
+      "fixed_keys_present_verbatim": {
+        "origin_city": "Delhi",
+        "num_travelers": "me and my partner",
+        "duration_days": 5,
+        "travel_dates": "sometime in October",
+        "budget": "flexible"
+      },
+      "must_not_invent_synonym_keys": ["origin", "travelers", "party_size", "dates"]
+    }
   }
 ]

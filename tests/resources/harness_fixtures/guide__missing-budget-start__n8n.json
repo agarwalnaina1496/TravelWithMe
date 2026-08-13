@@ -1,0 +1,8 @@
+{
+  "agent": "guide",
+  "case_id": "missing-budget-start",
+  "execution_path": "n8n",
+  "prompt_version": "2.1.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Roughly what's your budget for this trip?\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": \"budget\"}}}, \"outcome\": \"continue\"}"
+}

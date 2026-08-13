@@ -1,0 +1,8 @@
+{
+  "agent": "scout",
+  "case_id": "extracts-fixed-shared-keys-verbatim",
+  "execution_path": "direct",
+  "prompt_version": "1.8.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": null, \"state_delta\": {\"trip_context\": {\"origin_city\": \"Delhi\", \"num_travelers\": \"me and my partner\", \"duration_days\": 5, \"travel_dates\": \"sometime in October\", \"budget\": \"flexible\"}}, \"intent\": \"matcher\"}"
+}

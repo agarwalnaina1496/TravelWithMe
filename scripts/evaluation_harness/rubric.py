@@ -119,6 +119,26 @@ def _scout_preserves_trip_context(
         raise RubricFailure("scout cleared destinations while claiming to preserve context")
 
 
+def _scout_fixed_keys_present_verbatim(
+    case: EvaluationCase, response: dict[str, Any], expected: dict[str, Any]
+) -> None:
+    delta = response.get("state_delta", {}).get("trip_context", {})
+    for key, value in expected.items():
+        if delta.get(key) != value:
+            raise RubricFailure(
+                f"expected fixed key {key!r} to equal {value!r} verbatim, got {delta.get(key)!r}"
+            )
+
+
+def _scout_must_not_invent_synonym_keys(
+    case: EvaluationCase, response: dict[str, Any], expected: list[str]
+) -> None:
+    delta = response.get("state_delta", {}).get("trip_context", {})
+    present = [key for key in expected if key in delta]
+    if present:
+        raise RubricFailure(f"expected no synonym keys in trip_context, found {present!r}")
+
+
 # ---- meridian --------------------------------------------------------------
 
 
@@ -605,6 +625,8 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "routes_to_meridian": _scout_routes_to_meridian,
         "routes_to_guide": _scout_routes_to_guide,
         "preserves_trip_context": _scout_preserves_trip_context,
+        "fixed_keys_present_verbatim": _scout_fixed_keys_present_verbatim,
+        "must_not_invent_synonym_keys": _scout_must_not_invent_synonym_keys,
     },
     "meridian": {
         "status": _meridian_status,

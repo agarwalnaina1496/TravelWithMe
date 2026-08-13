@@ -1,0 +1,8 @@
+{
+  "agent": "guide",
+  "case_id": "all-fixed-inputs-known-start",
+  "execution_path": "n8n",
+  "prompt_version": "2.1.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Here are some places worth considering for your Ladakh trip. Tell me what to change.\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": null}, \"places\": [\"Leh Palace\", \"Shanti Stupa\", \"Pangong Lake\"]}}, \"outcome\": \"continue\"}"
+}

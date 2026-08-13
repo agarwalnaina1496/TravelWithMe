@@ -83,7 +83,7 @@ async def apply_guide(
         )
 
     delta = response.state_delta
-    merge_trip_context(state["trip_context"], delta.trip_context)
+    merge_trip_context(state["trip_context"], delta.trip_context.model_dump(mode="json"))
 
     planner_delta = delta.planner_state
     if planner_delta.conversation_context is not None:
