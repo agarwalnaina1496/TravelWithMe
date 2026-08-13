@@ -63,6 +63,7 @@ class TripCommandService:
         touched = touched_branches(state, before)
         shaped_trip_state = shape_command_trip_state(state, touched)
         new_recommendation = result.pop("new_recommendation", None)
+        new_itinerary_version = result.pop("new_itinerary_version", None)
         response_without_trip = {
             "message": result["message"],
             "agent_meta": result["agent_meta"],
@@ -77,6 +78,7 @@ class TripCommandService:
             shaped_trip_state,
             response_without_trip,
             new_recommendation,
+            new_itinerary_version,
         )
         if committed is None:
             raise LookupError("Trip not found.")
@@ -112,6 +114,15 @@ class TripCommandService:
                 trip_id=str(trip.id),
                 version=new_recommendation["version"],
                 option_count=len(new_recommendation.get("options") or []),
+            )
+        if new_itinerary_version is not None:
+            self.logger.info(
+                "Archived an itinerary version.",
+                event="be.trip.itinerary_versions.archived",
+                source="application",
+                trip_id=str(trip.id),
+                version=new_itinerary_version["version"],
+                source_guide_revision=new_itinerary_version["source_guide_revision"],
             )
         return response
 

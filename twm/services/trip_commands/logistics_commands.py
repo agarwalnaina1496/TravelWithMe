@@ -106,11 +106,13 @@ def apply_accept_itinerary_revision(
     if not proposed:
         raise InvalidTripCommandError("No proposed itinerary revision to accept.")
 
-    history = itinerary.setdefault("history", [])
-    history.append(itinerary["current_version"])
+    # The outgoing current_version is archived to itinerary_versions (TWM-155)
+    # instead of appending to itinerary_state.history — trip_state keeps only
+    # the active current_version/proposed_revision.
+    outgoing = itinerary["current_version"]
     itinerary["current_version"] = {
         "version": proposed["version"],
-        "source_guide_revision": itinerary["current_version"]["source_guide_revision"],
+        "source_guide_revision": outgoing["source_guide_revision"],
         "result": proposed["result"],
     }
     itinerary["proposed_revision"] = None
@@ -121,7 +123,15 @@ def apply_accept_itinerary_revision(
         trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
         version=itinerary["current_version"]["version"],
     )
-    return {"message": None, "agent_meta": None}
+    return {
+        "message": None,
+        "agent_meta": None,
+        "new_itinerary_version": {
+            "version": outgoing["version"],
+            "source_guide_revision": outgoing["source_guide_revision"],
+            "result": outgoing["result"],
+        },
+    }
 
 
 def apply_keep_current_itinerary(

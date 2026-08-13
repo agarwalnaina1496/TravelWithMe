@@ -39,7 +39,6 @@ async def apply_atlas(
             "source_guide_revision": frozen_plan["guide_revision"],
             "result": response.model_dump(mode="json"),
         },
-        "history": [],
         "proposed_revision": None,
     }
     logger.info(
