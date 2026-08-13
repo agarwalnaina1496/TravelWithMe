@@ -1,5 +1,14 @@
 # Scout prompt changelog
 
+## Scout 1.8.0 — 2026-08-14
+
+- Restored fixed shared keys for five facts (`origin_city`, `num_travelers`,
+  `duration_days`, `travel_dates`, `budget`) instead of an invented
+  semantic key, since Meridian and Guide now also read/write them under
+  these exact names. Values stay free-form and verbatim as before; only
+  the key name is fixed for these five. Everything else Scout extracts
+  keeps a freely chosen semantic key.
+
 ## Scout 1.7.0 — 2026-07-18
 
 - Treats brief conversational turns as valid conversation rather than adversarial or clearly off topic.

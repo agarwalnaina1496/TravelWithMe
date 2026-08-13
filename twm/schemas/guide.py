@@ -13,15 +13,18 @@ from pydantic import (
 from ..trust_boundary import validate_phase_state
 from .common import AgentMeta
 from .scout import BoundedMessage
+from .trip_context import TripContext
 
 
 GuideText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 GuidePace = Literal["relaxed", "balanced", "packed"]
 GuideEvent = Literal["START", "TRAVELER_MESSAGE", "APPROVE_PLACES", "APPROVE_PLAN"]
-# The only trip-context input currently required before a day plan can be
-# built. Kept as a small enum (like Meridian's `awaiting`) rather than free
-# text so the UI can drive it with a fixed quick-reply set.
-GuideAwaiting = Literal["duration"]
+# Fixed trip-context inputs Guide gates on before a day plan can be built.
+# Kept as a small enum (like Meridian's `awaiting`) rather than free text so
+# the UI can drive it with a fixed quick-reply set. Values stay verbatim in
+# trip_context under the matching key (duration_days, origin_city,
+# num_travelers, travel_dates, budget) — only the gate slug is fixed here.
+GuideAwaiting = Literal["duration", "origin_city", "num_travelers", "travel_dates", "budget"]
 
 
 class GuideDay(BaseModel):
@@ -55,7 +58,7 @@ class GuidePlannerState(BaseModel):
 class GuideTripState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_context: dict[str, Any] = Field(default_factory=dict)
+    trip_context: TripContext = Field(default_factory=TripContext)
     planner_state: GuidePlannerState = Field(default_factory=GuidePlannerState)
 
 
@@ -100,12 +103,12 @@ class GuidePlannerStateDelta(BaseModel):
 class GuideStateDelta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_context: dict[str, Any] = Field(default_factory=dict)
+    trip_context: TripContext = Field(default_factory=TripContext)
     planner_state: GuidePlannerStateDelta = Field(default_factory=GuidePlannerStateDelta)
 
     @model_validator(mode="after")
     def reject_ui_owned_state(self) -> "GuideStateDelta":
-        if "selected_option" in self.trip_context:
+        if "selected_option" in (self.trip_context.model_extra or {}):
             raise ValueError("selected_option is UI-owned")
         return self
 

@@ -50,7 +50,7 @@ async def apply_meridian(
     response = _normalize_meridian_response(
         await engine.meridian(request.trip_state.model_dump(mode="json"), request.message)
     )
-    trip_delta = dict(response.state_delta.trip_context)
+    trip_delta = response.state_delta.trip_context.model_dump(mode="json")
     trip_delta.pop("selected_option", None)
     merge_trip_context(state["trip_context"], trip_delta)
     matcher_delta = dict(response.state_delta.matcher_state)

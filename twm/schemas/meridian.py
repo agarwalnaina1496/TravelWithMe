@@ -11,6 +11,7 @@ from .scout import (
     ScoutAdvisorConversationContext,
     ScoutAdvisorState,
 )
+from .trip_context import TripContext
 from ..trust_boundary import validate_phase_state
 
 
@@ -21,7 +22,7 @@ MeridianAdvisorState = ScoutAdvisorState
 class MeridianTripState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_context: dict[str, Any] = Field(default_factory=dict)
+    trip_context: TripContext = Field(default_factory=TripContext)
     advisor_state: ScoutAdvisorState = Field(default_factory=ScoutAdvisorState)
     matcher_state: dict[str, Any] = Field(default_factory=dict)
 
@@ -41,12 +42,12 @@ class MeridianRequest(BaseModel):
 class MeridianStateDelta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_context: dict[str, Any] = Field(default_factory=dict)
+    trip_context: TripContext = Field(default_factory=TripContext)
     matcher_state: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def reject_ui_owned_state(self) -> "MeridianStateDelta":
-        if "selected_option" in self.trip_context:
+        if "selected_option" in (self.trip_context.model_extra or {}):
             raise ValueError("selected_option is UI-owned")
         if "recommendations" in self.matcher_state:
             raise ValueError("recommendation history is UI-owned")

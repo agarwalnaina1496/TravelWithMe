@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 from ..trust_boundary import validate_phase_state
 from .common import AgentMeta
+from .trip_context import TripContext
 
 
 AtlasText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -100,13 +101,13 @@ class AtlasWorkingPlan(BaseModel):
 class AtlasRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    trip_context: dict[str, Any] = Field(default_factory=dict)
+    trip_context: TripContext = Field(default_factory=TripContext)
     working_plan: AtlasWorkingPlan
     confirmed_anchors: list[AtlasConfirmedAnchor] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_request(self) -> "AtlasRequest":
-        validate_phase_state({"trip_context": self.trip_context})
+        validate_phase_state({"trip_context": self.trip_context.model_dump(mode="json")})
         return self
 
 

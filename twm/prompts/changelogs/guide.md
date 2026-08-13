@@ -1,5 +1,19 @@
 # Guide prompt changelog
 
+## Guide 2.1.0 — 2026-08-14
+
+- Expands the START/TRAVELER_MESSAGE `awaiting` gate from `duration` alone
+  to five fixed trip_context inputs: `duration`, `origin_city`,
+  `num_travelers`, `travel_dates`, `budget` (checked and asked for in that
+  order, one at a time). `GuideAwaiting` grows from `Literal["duration"]`
+  to a five-value enum. `travel_dates` and `budget` accept any verbatim
+  form the traveler gives (a range, "flexible", a month, tentative dates,
+  "don't know yet") — never coerced to a fixed type. `budget_unit` is
+  intentionally not part of the fixed key set.
+- Aligns Guide's shared `trip_context` fixed-key set with Scout's restored
+  `origin_city`/`num_travelers`/`duration_days`/`travel_dates`/`budget`
+  keys.
+
 ## Guide 2.0.0 — 2026-08-13
 
 - Breaking contract change: Guide now returns `state_delta` (only the

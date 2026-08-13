@@ -30,7 +30,7 @@ async def apply_scout(
     response = _normalize_scout_response(
         await engine.scout(request.trip_state.model_dump(mode="json"), request.message)
     )
-    delta = dict(response.state_delta.trip_context)
+    delta = response.state_delta.trip_context.model_dump(mode="json")
     delta.pop("selected_option", None)
     merge_trip_context(state["trip_context"], delta)
     if response.message:

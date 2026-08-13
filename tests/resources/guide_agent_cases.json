@@ -154,5 +154,99 @@
       "awaiting": "duration",
       "day_plan_length": 0
     }
+  },
+  {
+    "id": "missing-origin-start",
+    "input": {
+      "event": "START",
+      "message": "Plan a five day trip to Ladakh.",
+      "trip_context": {
+        "destinations": ["Ladakh"],
+        "duration_days": 5
+      },
+      "planner_state": {}
+    },
+    "invariants": {
+      "awaiting": "origin_city",
+      "day_plan_length": 0,
+      "places_omitted_from_delta": true
+    }
+  },
+  {
+    "id": "missing-travelers-start",
+    "input": {
+      "event": "START",
+      "message": "Plan a five day trip to Ladakh from Delhi.",
+      "trip_context": {
+        "destinations": ["Ladakh"],
+        "duration_days": 5,
+        "origin_city": "Delhi"
+      },
+      "planner_state": {}
+    },
+    "invariants": {
+      "awaiting": "num_travelers",
+      "day_plan_length": 0,
+      "places_omitted_from_delta": true
+    }
+  },
+  {
+    "id": "missing-dates-start",
+    "input": {
+      "event": "START",
+      "message": "Two of us are going from Delhi to Ladakh for five days.",
+      "trip_context": {
+        "destinations": ["Ladakh"],
+        "duration_days": 5,
+        "origin_city": "Delhi",
+        "num_travelers": 2
+      },
+      "planner_state": {}
+    },
+    "invariants": {
+      "awaiting": "travel_dates",
+      "day_plan_length": 0,
+      "places_omitted_from_delta": true
+    }
+  },
+  {
+    "id": "missing-budget-start",
+    "input": {
+      "event": "START",
+      "message": "We're not sure of exact dates, maybe sometime in October.",
+      "trip_context": {
+        "destinations": ["Ladakh"],
+        "duration_days": 5,
+        "origin_city": "Delhi",
+        "num_travelers": 2,
+        "travel_dates": "October, tentative"
+      },
+      "planner_state": {}
+    },
+    "invariants": {
+      "awaiting": "budget",
+      "day_plan_length": 0,
+      "places_omitted_from_delta": true
+    }
+  },
+  {
+    "id": "all-fixed-inputs-known-start",
+    "input": {
+      "event": "START",
+      "message": "Budget is flexible, around 60 to 70k.",
+      "trip_context": {
+        "destinations": ["Ladakh"],
+        "duration_days": 5,
+        "origin_city": "Delhi",
+        "num_travelers": 2,
+        "travel_dates": "October, tentative",
+        "budget": "flexible, around INR 60000-70000"
+      },
+      "planner_state": {}
+    },
+    "invariants": {
+      "awaiting": null,
+      "day_plan_length": 0
+    }
   }
 ]

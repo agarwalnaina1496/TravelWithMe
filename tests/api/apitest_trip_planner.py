@@ -204,6 +204,38 @@ def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> N
     )
 
 
+def test_guide_api_accepts_expanded_awaiting_values(api_client: TestClient) -> None:
+    engine = async_engine()
+    engine.guide.return_value = AgentExecution(
+        response={
+            "message": "Where are you starting your trip from?",
+            "state_delta": {
+                "trip_context": {"duration_days": 5},
+                "planner_state": {
+                    "conversation_context": {"awaiting": "origin_city"},
+                },
+            },
+        },
+        prompt_release=PromptRelease("guide", "2.1.0", "prompt"),
+    )
+    set_engine(api_client, engine)
+    payload = {
+        "event": "START",
+        "trip_state": {
+            "trip_context": {"destinations": ["Ladakh"], "duration_days": 5},
+        },
+        "message": "Plan a five day trip to Ladakh.",
+    }
+
+    response = api_client.post("/guide", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state_delta"]["planner_state"]["conversation_context"][
+        "awaiting"
+    ] == "origin_city"
+
+
 def test_guide_api_uses_prompt_schema_and_common_validation(
     api_client: TestClient,
 ) -> None:
