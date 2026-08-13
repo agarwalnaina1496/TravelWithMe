@@ -36,7 +36,7 @@ def _build_invocation_state(
     if case.agent == "guide":
         trip_state = {
             "trip_context": case.input["trip_context"],
-            "guide_state": case.input.get("guide_state", {}),
+            "planner_state": case.input.get("planner_state", {}),
         }
         trip_state["guide_event"] = case.input["event"]
         return trip_state, case.input.get("message")

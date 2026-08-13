@@ -7,7 +7,7 @@ from ...schemas.meridian import MeridianRequest
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_meridian_response
 from .errors import InvalidTripCommandError
-from .state import deep_merge, merge_operational_state
+from .state import merge_operational_state, merge_trip_context
 
 
 def _prior_options(latest: RecommendationRecord | None) -> list[dict[str, Any]]:
@@ -52,7 +52,7 @@ async def apply_meridian(
     )
     trip_delta = dict(response.state_delta.trip_context)
     trip_delta.pop("selected_option", None)
-    deep_merge(state["trip_context"], trip_delta)
+    merge_trip_context(state["trip_context"], trip_delta)
     matcher_delta = dict(response.state_delta.matcher_state)
     matcher_delta.pop("recommendations", None)
     merge_operational_state(state["matcher_state"], matcher_delta)

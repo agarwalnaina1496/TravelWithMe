@@ -10,10 +10,11 @@
         "duration_days": 3,
         "travelers": 3,
         "budget": "INR 50000"
-      }
+      },
+      "planner_state": {}
     },
     "invariants": {
-      "phase": "PLACES_DRAFT",
+      "awaiting": null,
       "destinations": ["Rishikesh"],
       "duration_days": 3,
       "day_plan_length": 0
@@ -28,37 +29,22 @@
         "destinations": ["Rishikesh"],
         "duration_days": 3
       },
-      "guide_state": {
-        "phase": "PLACES_DRAFT",
-        "destinations": ["Rishikesh"],
-        "duration_days": 3,
-        "start_date": null,
+      "planner_state": {
+        "conversation_context": { "awaiting": null },
         "places": [
           "Ram Jhula",
           "River Rafting",
           "Triveni Ghat",
           "Neer Garh Waterfall"
         ],
-        "day_plan": [],
-        "preferences": [],
-        "exclusions": [],
-        "applied_changes": [],
-        "pending_clarification": null
+        "day_plan": []
       }
     },
     "invariants": {
-      "phase": "PLACES_DRAFT",
-      "must_exclude_places": [
-        "River Rafting"
-      ],
-      "must_include_exclusions": [
-        "river rafting"
-      ],
-      "preserve_places": [
-        "Ram Jhula",
-        "Triveni Ghat",
-        "Neer Garh Waterfall"
-      ]
+      "must_exclude_places": ["River Rafting"],
+      "must_include_exclusions": ["river rafting"],
+      "preserve_places": ["Ram Jhula", "Triveni Ghat", "Neer Garh Waterfall"],
+      "day_plan_length": 0
     }
   },
   {
@@ -68,32 +54,22 @@
       "message": null,
       "trip_context": {
         "destinations": ["Rishikesh"],
-        "duration_days": 3
-      },
-      "guide_state": {
-        "phase": "PLACES_DRAFT",
-        "destinations": ["Rishikesh"],
         "duration_days": 3,
-        "start_date": null,
+        "preferences": ["pilgrimage"],
+        "exclusions": ["river rafting"]
+      },
+      "planner_state": {
+        "conversation_context": { "awaiting": null },
         "places": [
           "Ram Jhula",
           "Triveni Ghat",
           "Neer Garh Waterfall",
           "Neelkanth Mahadev Temple"
         ],
-        "day_plan": [],
-        "preferences": [
-          "pilgrimage"
-        ],
-        "exclusions": [
-          "river rafting"
-        ],
-        "applied_changes": [],
-        "pending_clarification": null
+        "day_plan": []
       }
     },
     "invariants": {
-      "phase": "DAY_PLAN_DRAFT",
       "duration_days": 3,
       "day_plan_length": 3,
       "preserve_all_places": true,
@@ -110,32 +86,38 @@
         "destinations": ["Rishikesh"],
         "duration_days": 3
       },
-      "guide_state": {
-        "phase": "DAY_PLAN_DRAFT",
-        "destinations": ["Rishikesh"],
-        "duration_days": 3,
-        "start_date": null,
-        "places": [
-          "Ram Jhula",
-          "Triveni Ghat",
-          "Neelkanth Mahadev Temple"
-        ],
+      "planner_state": {
+        "conversation_context": { "awaiting": null },
+        "places": ["Ram Jhula", "Triveni Ghat", "Neelkanth Mahadev Temple"],
         "day_plan": [
           { "day_number": 1, "date": null, "places": ["Ram Jhula"], "pace": "relaxed", "buffer_note": null },
           { "day_number": 2, "date": null, "places": ["Triveni Ghat"], "pace": "relaxed", "buffer_note": null },
           { "day_number": 3, "date": null, "places": ["Neelkanth Mahadev Temple"], "pace": "balanced", "buffer_note": null }
-        ],
-        "preferences": [],
-        "exclusions": [],
-        "applied_changes": [],
-        "pending_clarification": null
+        ]
       }
     },
     "invariants": {
-      "phase": "DAY_PLAN_DRAFT",
       "day_plan_length": 3,
       "requires_day_pace": true,
       "must_exclude_places": ["Neelkanth Mahadev Temple"]
+    }
+  },
+  {
+    "id": "preserve-explicit-circuit",
+    "input": {
+      "event": "START",
+      "message": "Plan Delhi, Agra and Jaipur for seven days in that order.",
+      "trip_context": {
+        "destinations": ["Delhi", "Agra", "Jaipur"],
+        "duration_days": 7,
+        "route_order_fixed": true
+      },
+      "planner_state": {}
+    },
+    "invariants": {
+      "preserve_destination_order": ["Delhi", "Agra", "Jaipur"],
+      "duration_days": 7,
+      "must_not_add_destinations": true
     }
   },
   {
@@ -145,11 +127,13 @@
       "message": "I want to go to Ladakh.",
       "trip_context": {
         "destinations": ["Ladakh"]
-      }
+      },
+      "planner_state": {}
     },
     "invariants": {
-      "phase": "NEEDS_CLARIFICATION",
-      "day_plan_length": 0
+      "awaiting": "duration",
+      "day_plan_length": 0,
+      "places_omitted_from_delta": true
     }
   },
   {
@@ -160,47 +144,15 @@
       "trip_context": {
         "destinations": ["Ladakh"]
       },
-      "guide_state": {
-        "phase": "PLACES_DRAFT",
-        "destinations": ["Ladakh"],
-        "duration_days": null,
-        "start_date": null,
+      "planner_state": {
+        "conversation_context": { "awaiting": null },
         "places": ["Leh Palace", "Shanti Stupa"],
-        "day_plan": [],
-        "preferences": [],
-        "exclusions": [],
-        "applied_changes": [],
-        "pending_clarification": null
+        "day_plan": []
       }
     },
     "invariants": {
-      "phase": "NEEDS_CLARIFICATION",
+      "awaiting": "duration",
       "day_plan_length": 0
-    }
-  },
-  {
-    "id": "preserve-explicit-circuit",
-    "input": {
-      "event": "START",
-      "message": "Plan Delhi, Agra and Jaipur for seven days in that order.",
-      "trip_context": {
-        "destinations": [
-          "Delhi",
-          "Agra",
-          "Jaipur"
-        ],
-        "duration_days": 7,
-        "route_order_fixed": true
-      }
-    },
-    "invariants": {
-      "preserve_destination_order": [
-        "Delhi",
-        "Agra",
-        "Jaipur"
-      ],
-      "duration_days": 7,
-      "must_not_add_destinations": true
     }
   }
 ]

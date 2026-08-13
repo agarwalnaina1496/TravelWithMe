@@ -7,7 +7,7 @@ from ...schemas.scout import ScoutRequest
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_scout_response
-from .state import deep_merge
+from .state import merge_trip_context
 
 
 async def apply_scout(
@@ -32,7 +32,7 @@ async def apply_scout(
     )
     delta = dict(response.state_delta.trip_context)
     delta.pop("selected_option", None)
-    deep_merge(state["trip_context"], delta)
+    merge_trip_context(state["trip_context"], delta)
     if response.message:
         advisor = state["advisor_state"]
         advisor.setdefault("conversation_context", {})[

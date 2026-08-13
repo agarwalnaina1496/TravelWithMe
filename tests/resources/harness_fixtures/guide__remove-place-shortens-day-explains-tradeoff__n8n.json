@@ -2,7 +2,7 @@
   "agent": "guide",
   "case_id": "remove-place-shortens-day-explains-tradeoff",
   "execution_path": "n8n",
-  "prompt_version": "1.3.0",
+  "prompt_version": "2.0.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"Removed Neelkanth Mahadev Temple from Day 3 as asked — that leaves Day 3 completely open with no planned activity.\", \"guide_state\": {\"phase\": \"DAY_PLAN_DRAFT\", \"destinations\": [\"Rishikesh\"], \"duration_days\": 3, \"start_date\": null, \"places\": [\"Ram Jhula\", \"Triveni Ghat\"], \"day_plan\": [{\"day_number\": 1, \"date\": null, \"places\": [\"Ram Jhula\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 2, \"date\": null, \"places\": [\"Triveni Ghat\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 3, \"date\": null, \"places\": [], \"pace\": \"relaxed\", \"buffer_note\": \"Fully open day after removing the temple visit.\"}], \"preferences\": [], \"exclusions\": [], \"applied_changes\": [], \"pending_clarification\": null}, \"explicit_changes\": [\"places\", \"day_plan\"]}"
+  "raw_output": "{\"message\": \"Removed Neelkanth Mahadev Temple from day 3, which now opens up the whole afternoon.\", \"state_delta\": {\"planner_state\": {\"places\": [\"Ram Jhula\", \"Triveni Ghat\"], \"day_plan\": [{\"day_number\": 1, \"date\": null, \"places\": [\"Ram Jhula\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 2, \"date\": null, \"places\": [\"Triveni Ghat\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 3, \"date\": null, \"places\": [], \"pace\": \"relaxed\", \"buffer_note\": \"Free day with no planned places\"}]}}, \"outcome\": \"continue\"}"
 }

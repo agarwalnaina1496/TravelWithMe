@@ -4,14 +4,32 @@ import copy
 from typing import Any
 
 
-def deep_merge(target: dict[str, Any], source: dict[str, Any]) -> None:
+# trip_context fields every specialist (Scout, Meridian, Guide) can extract
+# into independently — a later specialist's delta must accumulate onto an
+# earlier one's instead of silently dropping it, so these merge as a
+# case-insensitive-deduplicated union rather than a plain overwrite.
+_TRIP_CONTEXT_UNION_FIELDS = ("preferences", "exclusions")
+
+
+def merge_trip_context(target: dict[str, Any], source: dict[str, Any]) -> None:
     for key, value in source.items():
-        if isinstance(value, dict):
+        if key in _TRIP_CONTEXT_UNION_FIELDS and isinstance(value, list):
+            current = target.setdefault(key, [])
+            if not isinstance(current, list):
+                current = []
+                target[key] = current
+            seen = {item.casefold() for item in current if isinstance(item, str)}
+            for item in value:
+                if not isinstance(item, str) or item.casefold() in seen:
+                    continue
+                current.append(item)
+                seen.add(item.casefold())
+        elif isinstance(value, dict):
             current = target.get(key)
             if not isinstance(current, dict):
                 current = {}
                 target[key] = current
-            deep_merge(current, value)
+            merge_trip_context(current, value)
         else:
             target[key] = copy.deepcopy(value)
 
