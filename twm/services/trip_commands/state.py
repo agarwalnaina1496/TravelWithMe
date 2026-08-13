@@ -3,13 +3,6 @@
 import copy
 from typing import Any
 
-from ...persistence.contracts import TripRecord
-from ...schemas.trips import TripResponse
-
-
-def trip_response(record: TripRecord) -> TripResponse:
-    return TripResponse.model_validate(record, from_attributes=True)
-
 
 def deep_merge(target: dict[str, Any], source: dict[str, Any]) -> None:
     for key, value in source.items():
@@ -47,7 +40,10 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
     state.setdefault("active_agent", "scout")
     object_branches = {
         "trip_context": {},
-        "advisor_state": {"conversation_context": {}, "artifacts": []},
+        # advisor_state carries only read-back handoff context (Scout/
+        # Meridian's own prompts read conversation_context) — no artifacts
+        # log; nothing reads it back and it grew unbounded for no reason.
+        "advisor_state": {"conversation_context": {}},
         "matcher_state": {"conversation_context": {}, "recommendations": []},
         "planner_state": {},
         "itinerary_state": {},
@@ -57,3 +53,33 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(state.get(name), dict):
             state[name] = copy.deepcopy(default)
     return state
+
+
+# Sub-state branches large/variable enough to matter for command-response
+# size; response shaping includes a branch only when a command actually
+# touched it. advisor_state is deliberately excluded from this set — it
+# never appears in a command response at all (see shape_command_trip_state).
+TOUCHABLE_BRANCHES = ("matcher_state", "planner_state", "itinerary_state", "logistics_state")
+
+# Always-present fields a command response needs regardless of what a
+# command touched — everything resume/CTA logic and the next command's
+# routing decision (service.py's stage/active_agent dispatch) depends on.
+_CORE_FIELDS = ("trip_id", "status", "stage", "active_agent", "trip_context")
+
+
+def snapshot_touchable_branches(state: dict[str, Any]) -> dict[str, Any]:
+    """Deep copy of the touchable branches, taken before a command runs."""
+    return {key: copy.deepcopy(state[key]) for key in TOUCHABLE_BRANCHES}
+
+
+def touched_branches(state: dict[str, Any], before: dict[str, Any]) -> set[str]:
+    return {key for key in TOUCHABLE_BRANCHES if state[key] != before[key]}
+
+
+def shape_command_trip_state(state: dict[str, Any], touched: set[str]) -> dict[str, Any]:
+    """Core fields always; touchable branches only when this command touched them."""
+    shaped = {field: state[field] for field in _CORE_FIELDS}
+    for key in TOUCHABLE_BRANCHES:
+        if key in touched:
+            shaped[key] = state[key]
+    return shaped

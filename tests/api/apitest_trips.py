@@ -82,7 +82,7 @@ class MemoryTripRepository:
     async def get_command(self, guest_id, trip_id, idempotency_key):
         return self.commands.get((guest_id, trip_id, idempotency_key))
 
-    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response):
+    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response):
         key = (guest_id, trip_id, idempotency_key)
         if key in self.commands:
             return self.commands[key]
@@ -94,7 +94,8 @@ class MemoryTripRepository:
         updated = replace(trip, trip_state=trip_state, version=trip.version + 1, updated_at=datetime.now(timezone.utc))
         self.trips[trip_id] = updated
         stored = dict(response)
-        stored["trip"] = TripResponse.model_validate(updated, from_attributes=True).model_dump(mode="json")
+        response_record = replace(updated, trip_state=response_trip_state)
+        stored["trip"] = TripResponse.model_validate(response_record, from_attributes=True).model_dump(mode="json")
         record = TripCommandRecord(request_hash, stored)
         self.commands[key] = record
         return updated
@@ -683,6 +684,47 @@ def test_trip_command_loads_owned_state_and_replays_idempotently(api_client: Tes
     assert "matcher_state" not in engine.calls[0][1]
 
 
+def test_command_response_omits_untouched_branches_and_advisor_state(api_client: TestClient):
+    """A scout-only turn must not carry planner/itinerary/logistics/matcher
+    state it never touched, or advisor_state (never read by anyone, TWM-154).
+    Core fields (stage/active_agent/trip_context) and the touched branch
+    (advisor_state.conversation_context lives only server-side; nothing
+    scout-only touches is included) still round-trip correctly.
+    """
+    repository = MemoryTripRepository()
+    engine = FakeCommandEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = api_client.post("/trips", json={"title": "Rishikesh"}).json()
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "I want to visit Rishikesh",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    state = response.json()["trip"]["trip_state"]
+    assert state["stage"] == "new"
+    assert state["active_agent"] == "scout"
+    assert state["trip_context"] == {"destination": "Rishikesh"}
+    assert "advisor_state" not in state
+    assert "matcher_state" not in state
+    assert "planner_state" not in state
+    assert "itinerary_state" not in state
+    assert "logistics_state" not in state
+    # But the full state is still fully persisted and resumable via GET —
+    # advisor_state.conversation_context is written server-side (Scout reads
+    # it back), just never returned in a command response.
+    persisted = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]
+    assert persisted["advisor_state"]["conversation_context"]["last_advisor_message"] == "Rishikesh context saved."
+    assert "artifacts" not in persisted["advisor_state"]
+
+
 def test_trip_command_rejects_browser_state_and_reused_key(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeCommandEngine()
@@ -1012,8 +1054,13 @@ def test_start_itinerary_is_idempotent_and_does_not_rerun_atlas(api_client: Test
     assert second.status_code == 200
     assert len(engine.calls) == 1
     first_itinerary = first.json()["trip"]["trip_state"]["itinerary_state"]
-    second_itinerary = second.json()["trip"]["trip_state"]["itinerary_state"]
-    assert first_itinerary["current_version"]["result"] == second_itinerary["current_version"]["result"]
+    # The second call is a genuine no-op (itinerary already ready, apply_atlas
+    # returns without touching itinerary_state) — the trimmed response
+    # correctly omits an untouched branch, so fetch the persisted state to
+    # confirm nothing changed instead of expecting it inline.
+    assert "itinerary_state" not in second.json()["trip"]["trip_state"]
+    persisted_itinerary = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["itinerary_state"]
+    assert first_itinerary["current_version"]["result"] == persisted_itinerary["current_version"]["result"]
 
 
 def test_start_itinerary_rejects_browser_supplied_plan_fields(api_client: TestClient):
@@ -1218,7 +1265,12 @@ def test_keep_current_itinerary_discards_proposal_but_keeps_anchor(api_client: T
     assert itinerary["proposed_revision"] is None
     assert itinerary["current_version"]["version"] == 1
     assert len(itinerary["history"]) == 0
-    assert len(saved["logistics_state"]["anchors"]) == 1
+    # keep_current_itinerary only touches itinerary_state — logistics_state
+    # (the anchor from the earlier confirm_logistics call) is correctly
+    # absent from this trimmed response; confirm it's still persisted.
+    assert "logistics_state" not in saved
+    persisted_anchors = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["logistics_state"]["anchors"]
+    assert len(persisted_anchors) == 1
 
 
 def test_keep_current_itinerary_requires_pending_proposal(api_client: TestClient):
@@ -1595,8 +1647,11 @@ def test_start_planning_invokes_guide_from_backend_owned_destination(api_client:
     saved = first.json()["trip"]["trip_state"]
     assert saved["stage"] == "planning"
     assert saved["active_agent"] == "guide"
-    assert saved["advisor_state"] == {"conversation_context": {}, "artifacts": []}
-    assert saved["matcher_state"] == {"conversation_context": {}, "recommendations": []}
+    # advisor_state is never included in a command response (dead weight,
+    # never read back); matcher_state is untouched by start_planning, so the
+    # trimmed response correctly omits it too — only planner_state changed.
+    assert "advisor_state" not in saved
+    assert "matcher_state" not in saved
     assert saved["planner_state"]["guide_session"]["revision"] == 1
 
 
