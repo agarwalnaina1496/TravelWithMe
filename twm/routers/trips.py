@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from ..dependencies import get_engine, get_logger, get_trip_persistence
 from ..persistence.contracts import TripRecord, VersionConflictError
 from ..persistence.service import TripPersistenceService
-from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRenameRequest, TripResponse, TripSummary, TripUiStateRequest
+from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRecommendationsResponse, TripRenameRequest, TripResponse, TripSummary, TripUiStateRequest
 from ..services import AgentEngine
 from ..services.trip_commands import IdempotencyConflictError, InvalidTripCommandError, TripCommandService
 from ..telemetry import TelemetryLogger
@@ -56,6 +56,34 @@ async def get_trip(trip_id: UUID, request: Request, response: Response, persiste
         raise HTTPException(status_code=404, detail="Trip not found.")
     logger.info("Fetched guest trip.", event="be.trip.fetched", source="http", trip_id=str(trip_id), version=trip.version)
     return _response(trip)
+
+
+@router.get("/{trip_id}/recommendations", response_model=TripRecommendationsResponse)
+async def get_latest_recommendations(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger):
+    guest = await persistence.guest(request, response)
+    trip = await persistence.repository.get_trip(guest.id, trip_id)
+    if trip is None:
+        logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    latest = await persistence.repository.get_latest_recommendation(guest.id, trip_id)
+    if latest is None:
+        logger.info(
+            "No matcher recommendations yet for trip.",
+            event="be.trip.recommendations.fetched",
+            source="http",
+            trip_id=str(trip_id),
+            found=False,
+        )
+        raise HTTPException(status_code=404, detail="No recommendations yet.")
+    logger.info(
+        "Fetched latest matcher recommendations.",
+        event="be.trip.recommendations.fetched",
+        source="http",
+        trip_id=str(trip_id),
+        found=True,
+        version=latest.version,
+    )
+    return TripRecommendationsResponse.model_validate(latest, from_attributes=True)
 
 
 def _conflict(error: VersionConflictError) -> HTTPException:

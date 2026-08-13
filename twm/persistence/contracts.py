@@ -31,6 +31,24 @@ class TripCommandRecord:
     response: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class RecommendationRecord:
+    """A single archived matcher round (TWM-153) — success, soft-fail, or a
+    terminal failure outcome; trip_type/traveler_criteria/suggestions are
+    None for failure outcomes that never had ranked options."""
+
+    trip_id: UUID
+    version: int
+    status: str
+    message: str
+    trip_type: str | None
+    options: list[dict[str, Any]]
+    traveler_criteria: list[dict[str, Any]] | None
+    constraint_adjustment_suggestions: list[str] | None
+    agent_meta: dict[str, Any]
+    created_at: datetime
+
+
 class VersionConflictError(Exception):
     def __init__(self, current_version: int):
         self.current_version = current_version
@@ -47,4 +65,5 @@ class TripRepository(Protocol):
     async def rename_trip(self, guest_id: UUID, trip_id: UUID, expected_version: int, title: str) -> TripRecord | None: ...
     async def update_ui_state(self, guest_id: UUID, trip_id: UUID, expected_version: int, ui_state: dict[str, Any]) -> TripRecord | None: ...
     async def get_command(self, guest_id: UUID, trip_id: UUID, idempotency_key: UUID) -> TripCommandRecord | None: ...
-    async def commit_command(self, guest_id: UUID, trip_id: UUID, expected_version: int, idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any], response_trip_state: dict[str, Any], response: dict[str, Any]) -> TripRecord | TripCommandRecord | None: ...
+    async def get_latest_recommendation(self, guest_id: UUID, trip_id: UUID) -> RecommendationRecord | None: ...
+    async def commit_command(self, guest_id: UUID, trip_id: UUID, expected_version: int, idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any], response_trip_state: dict[str, Any], response: dict[str, Any], new_recommendation: dict[str, Any] | None = None) -> TripRecord | TripCommandRecord | None: ...

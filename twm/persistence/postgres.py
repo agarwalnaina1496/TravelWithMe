@@ -7,11 +7,15 @@ from uuid import UUID
 
 import asyncpg
 
-from .contracts import GuestSession, TripCommandRecord, TripRecord, VersionConflictError
+from .contracts import GuestSession, RecommendationRecord, TripCommandRecord, TripRecord, VersionConflictError
 
 
 def _json_object(value: str | dict[str, Any]) -> dict[str, Any]:
     return json.loads(value) if isinstance(value, str) else dict(value)
+
+
+def _json_value(value: Any) -> Any:
+    return json.loads(value) if isinstance(value, str) else value
 
 
 def _record(row: asyncpg.Record) -> TripRecord:
@@ -19,6 +23,16 @@ def _record(row: asyncpg.Record) -> TripRecord:
         id=row["id"], guest_session_id=row["guest_session_id"], title=row["title"],
         product_mode=row["product_mode"], trip_state=_json_object(row["trip_state"]), ui_state=_json_object(row["ui_state"]),
         version=row["version"], created_at=row["created_at"], updated_at=row["updated_at"],
+    )
+
+
+def _recommendation_record(row: asyncpg.Record) -> RecommendationRecord:
+    return RecommendationRecord(
+        trip_id=row["trip_id"], version=row["version"], status=row["status"], message=row["message"],
+        trip_type=row["trip_type"], options=_json_value(row["options"]),
+        traveler_criteria=_json_value(row["traveler_criteria"]) if row["traveler_criteria"] is not None else None,
+        constraint_adjustment_suggestions=_json_value(row["constraint_adjustment_suggestions"]) if row["constraint_adjustment_suggestions"] is not None else None,
+        agent_meta=_json_object(row["agent_meta"]), created_at=row["created_at"],
     )
 
 
@@ -93,10 +107,21 @@ class PostgresTripRepository:
         )
         return TripCommandRecord(row["request_hash"], _json_object(row["response"])) if row else None
 
+    async def get_latest_recommendation(self, guest_id: UUID, trip_id: UUID) -> RecommendationRecord | None:
+        row = await self.pool.fetchrow(
+            f"""SELECT r.* FROM {self.schema}.matcher_recommendations r
+            JOIN {self.schema}.trips t ON t.id = r.trip_id
+            WHERE r.trip_id=$1 AND t.guest_session_id=$2
+            ORDER BY r.version DESC LIMIT 1""",
+            trip_id, guest_id,
+        )
+        return _recommendation_record(row) if row else None
+
     async def commit_command(
         self, guest_id: UUID, trip_id: UUID, expected_version: int,
         idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any],
         response_trip_state: dict[str, Any], response: dict[str, Any],
+        new_recommendation: dict[str, Any] | None = None,
     ) -> TripRecord | TripCommandRecord | None:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
@@ -129,6 +154,18 @@ class PostgresTripRepository:
                     if current is None:
                         return None
                     raise VersionConflictError(current)
+                if new_recommendation is not None:
+                    await connection.execute(
+                        f"""INSERT INTO {self.schema}.matcher_recommendations
+                        (trip_id,version,status,message,trip_type,options,traveler_criteria,constraint_adjustment_suggestions,agent_meta)
+                        VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb)""",
+                        trip_id, new_recommendation["version"], new_recommendation["status"],
+                        new_recommendation["message"], new_recommendation.get("trip_type"),
+                        json.dumps(new_recommendation.get("options") or []),
+                        json.dumps(new_recommendation.get("traveler_criteria")) if new_recommendation.get("traveler_criteria") is not None else None,
+                        json.dumps(new_recommendation.get("constraint_adjustment_suggestions")) if new_recommendation.get("constraint_adjustment_suggestions") is not None else None,
+                        json.dumps(new_recommendation["agent_meta"]),
+                    )
                 stored_response = dict(response)
                 response_record = _record(row).__dict__.copy()
                 response_record["trip_state"] = response_trip_state

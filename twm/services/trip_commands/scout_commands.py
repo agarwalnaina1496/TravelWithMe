@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from ...persistence.contracts import RecommendationRecord
 from ...schemas.scout import ScoutRequest
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
@@ -14,6 +15,7 @@ async def apply_scout(
     logger: TelemetryLogger,
     state: dict[str, Any],
     message: str | None,
+    latest_recommendation: RecommendationRecord | None = None,
 ) -> dict[str, Any]:
     phase = {
         "stage": state["stage"],
@@ -42,7 +44,7 @@ async def apply_scout(
         state["active_agent"] = "meridian"
         from .matcher_commands import apply_meridian
 
-        return await apply_meridian(engine, state, message)
+        return await apply_meridian(engine, state, message, latest_recommendation)
     if response.intent == "planner":
         state["stage"] = "planning"
         state["active_agent"] = "guide"

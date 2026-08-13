@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from ...persistence.contracts import RecommendationRecord
 from ...schemas.meridian import MeridianRequest
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_meridian_response
@@ -9,21 +10,27 @@ from .errors import InvalidTripCommandError
 from .state import deep_merge, merge_operational_state
 
 
-async def apply_meridian(
-    engine: AgentEngine,
-    state: dict[str, Any],
-    message: str | None,
-    refinement: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    latest = (state["matcher_state"].get("recommendations") or [None])[-1]
-    prior_options = [] if not latest else [
+def _prior_options(latest: RecommendationRecord | None) -> list[dict[str, Any]]:
+    if not latest:
+        return []
+    return [
         {
             "rank": option["rank"], "name": option["name"],
             "type": option["type"],
             **({"circuit_id": option["circuit_id"]} if option["type"] == "circuit" else {"destination_id": option["destination_id"]}),
         }
-        for option in latest.get("options", [])
+        for option in latest.options
     ]
+
+
+async def apply_meridian(
+    engine: AgentEngine,
+    state: dict[str, Any],
+    message: str | None,
+    latest: RecommendationRecord | None,
+    refinement: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    prior_options = _prior_options(latest)
     matcher_state: dict[str, Any] = {
         "conversation_context": state["matcher_state"].get("conversation_context", {}),
         "prior_recommendations": prior_options,
@@ -49,18 +56,20 @@ async def apply_meridian(
     matcher_delta = dict(response.state_delta.matcher_state)
     matcher_delta.pop("recommendations", None)
     merge_operational_state(state["matcher_state"], matcher_delta)
+    result: dict[str, Any] = {
+        "message": response.message,
+        "agent_meta": response.agent_meta.model_dump(mode="json"),
+    }
     if response.status == "NEEDS_CLARIFICATION":
         state["stage"] = "matching"
         state["active_agent"] = "meridian"
     else:
         payload = response.model_dump(mode="json", exclude={"state_delta"}, exclude_none=True)
-        state["matcher_state"].setdefault("recommendations", []).append(payload)
+        payload["version"] = (latest.version if latest else 0) + 1
+        result["new_recommendation"] = payload
         state["stage"] = "recommended"
         state["active_agent"] = None
-    return {
-        "message": response.message,
-        "agent_meta": response.agent_meta.model_dump(mode="json"),
-    }
+    return result
 
 
 def _validate_refinement_reference(
@@ -81,14 +90,13 @@ def _validate_refinement_reference(
         )
 
 
-def select_destination(state: dict[str, Any], option_id: str) -> dict[str, Any]:
-    recommendations = state["matcher_state"].get("recommendations") or []
-    if not recommendations:
+def select_destination(state: dict[str, Any], option_id: str, latest: RecommendationRecord | None) -> dict[str, Any]:
+    if not latest:
         raise InvalidTripCommandError("No recommendation is available to select.")
     option = next(
         (
             item
-            for item in recommendations[-1].get("options", [])
+            for item in latest.options
             if option_id in {item.get("destination_id"), item.get("circuit_id")}
         ),
         None,

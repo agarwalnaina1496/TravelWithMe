@@ -3,6 +3,7 @@
 import copy
 from typing import Any
 
+from ...persistence.contracts import RecommendationRecord
 from ...schemas.guide import GuideRequest
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
@@ -16,6 +17,7 @@ async def apply_guide(
     state: dict[str, Any],
     event: str,
     message: str | None,
+    latest_recommendation: RecommendationRecord | None = None,
 ) -> dict[str, Any]:
     planner = state["planner_state"]
     if planner.get("frozen_plan"):
@@ -53,7 +55,7 @@ async def apply_guide(
     )
 
     if event == "TRAVELER_MESSAGE" and response.outcome == "reopen_destination_discovery":
-        return await _reopen_destination_discovery(engine, logger, state, session, message)
+        return await _reopen_destination_discovery(engine, logger, state, session, message, latest_recommendation)
 
     replacement = response.guide_state.model_dump(mode="json")
     _validate_guide_transition(
@@ -125,6 +127,7 @@ async def _reopen_destination_discovery(
     state: dict[str, Any],
     session: dict[str, Any],
     message: str | None,
+    latest_recommendation: RecommendationRecord | None,
 ) -> dict[str, Any]:
     """Backend-validated pre-itinerary Guide -> Meridian reversal.
 
@@ -154,7 +157,7 @@ async def _reopen_destination_discovery(
     )
     from .matcher_commands import apply_meridian
 
-    return await apply_meridian(engine, state, message)
+    return await apply_meridian(engine, state, message, latest_recommendation)
 
 
 def _validate_guide_event(event: str, prior_phase: str | None) -> None:

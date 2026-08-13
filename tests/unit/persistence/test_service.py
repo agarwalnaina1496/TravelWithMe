@@ -52,7 +52,10 @@ class FakeTripRepository(TripRepository):
     async def get_command(self, guest_id, trip_id, idempotency_key):
         raise NotImplementedError
 
-    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response):
+    async def get_latest_recommendation(self, guest_id, trip_id):
+        raise NotImplementedError
+
+    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, new_recommendation=None):
         raise NotImplementedError
 
 
