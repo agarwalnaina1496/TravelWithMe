@@ -828,7 +828,7 @@ def test_guide_approval_requires_the_backend_owned_current_phase(api_client: Tes
         "active_agent": "guide",
         "trip_context": {"destinations": ["Rishikesh"], "duration_days": 1},
         "planner_state": {
-            "conversation_context": {"awaiting": "duration"},
+            "conversation_context": {"awaiting": "duration_days"},
             "places": [],
             "day_plan": [],
             "revision": 1,
@@ -1396,7 +1396,7 @@ def test_approve_places_requires_duration_without_invoking_guide(
         "active_agent": "guide",
         "trip_context": {"destinations": ["Rishikesh"]},
         "planner_state": {
-            "conversation_context": {"awaiting": "duration"},
+            "conversation_context": {"awaiting": "duration_days"},
             "places": ["Triveni Ghat"],
             "day_plan": [],
             "revision": 1,

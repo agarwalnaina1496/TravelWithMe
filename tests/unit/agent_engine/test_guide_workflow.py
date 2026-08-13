@@ -48,7 +48,7 @@ def test_guide_evaluation_corpus_covers_missing_duration_clarification() -> None
 
     for case_id in ("missing-duration-start", "missing-duration-approve-places"):
         invariants = cases_by_id[case_id]["invariants"]
-        assert invariants["awaiting"] == "duration"
+        assert invariants["awaiting"] == "duration_days"
         assert invariants["day_plan_length"] == 0
 
     assert cases_by_id["missing-duration-start"]["invariants"][

@@ -131,7 +131,7 @@
       "planner_state": {}
     },
     "invariants": {
-      "awaiting": "duration",
+      "awaiting": "duration_days",
       "day_plan_length": 0,
       "places_omitted_from_delta": true
     }
@@ -151,7 +151,7 @@
       }
     },
     "invariants": {
-      "awaiting": "duration",
+      "awaiting": "duration_days",
       "day_plan_length": 0
     }
   },

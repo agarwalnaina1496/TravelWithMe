@@ -1,14 +1,15 @@
 # Meridian prompt changelog
 
-## Meridian 1.10.0 — 2026-08-14
+## Meridian 1.11.0 — 2026-08-14
 
 - When `awaiting` names one of the five shared `trip_context` facts,
-  Meridian now uses the same slug Guide's fixed `GuideAwaiting` enum uses
-  for it (`origin_city`, `num_travelers`, `duration`, `travel_dates`,
+  Meridian now uses the exact trip_context key name as the slug
+  (`origin_city`, `num_travelers`, `duration_days`, `travel_dates`,
   `budget`) instead of an ad hoc synonym (previously e.g. `"origin"`).
-  `duration` intentionally does not match the `duration_days` trip_context
-  key name — it mirrors Guide's existing slug so the UI's quick-reply
-  lookup keys off one shared name per fact instead of two.
+  Matches Guide's `GuideAwaiting` enum, which is renamed the same way in
+  this release (`"duration"` -> `"duration_days"`), so every awaiting slug
+  is now identical to its trip_context key with no exceptions, and the
+  UI's quick-reply lookup keys off one shared name per fact.
 
 ## Meridian 1.9.0 — 2026-08-11
 

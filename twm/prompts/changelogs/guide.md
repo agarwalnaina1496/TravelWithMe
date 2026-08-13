@@ -1,5 +1,14 @@
 # Guide prompt changelog
 
+## Guide 2.2.0 — 2026-08-14
+
+- Renames the `duration` awaiting slug to `duration_days` so every
+  `GuideAwaiting` value is identical to its `trip_context` key name with
+  no exceptions (previously `duration` was the one field whose slug
+  didn't match its trip_context key). Meridian's `awaiting` is renamed the
+  same way in this release, and the UI's quick-reply lookup is updated to
+  match.
+
 ## Guide 2.1.0 — 2026-08-14
 
 - Expands the START/TRAVELER_MESSAGE `awaiting` gate from `duration` alone

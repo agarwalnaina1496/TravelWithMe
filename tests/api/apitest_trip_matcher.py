@@ -119,8 +119,8 @@ def test_active_phase_prompt_releases_are_complete() -> None:
 
     assert load_prompt_versions() == {
         "scout": "1.8.0",
-        "meridian": "1.10.0",
-        "guide": "2.1.0",
+        "meridian": "1.11.0",
+        "guide": "2.2.0",
         "atlas": "1.4.0",
     }
     guide_prompt = load_prompt_release("guide").content
@@ -368,7 +368,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     assert response.status_code == 200
     assert response.json()["agent_meta"] == {
         "agent": "meridian",
-        "prompt_version": "1.10.0",
+        "prompt_version": "1.11.0",
     }
     release = load_prompt_release("meridian")
     agent, invocation = adapter.invoke.await_args.args
@@ -689,7 +689,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         },
         "message": "What budget should I use?",
         "options": [],
-        "agent_meta": {"agent": "meridian", "prompt_version": "1.10.0"},
+        "agent_meta": {"agent": "meridian", "prompt_version": "1.11.0"},
     }
 
 
