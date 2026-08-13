@@ -2,7 +2,7 @@
   "agent": "guide",
   "case_id": "preserve-explicit-circuit",
   "execution_path": "n8n",
-  "prompt_version": "1.3.0",
+  "prompt_version": "2.0.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"Here is a starting places draft for the fixed Delhi, Agra, Jaipur circuit.\", \"guide_state\": {\"phase\": \"PLACES_DRAFT\", \"destinations\": [\"Delhi\", \"Agra\", \"Jaipur\"], \"duration_days\": 7, \"start_date\": null, \"places\": [\"Red Fort\", \"Taj Mahal\", \"Amber Fort\"], \"day_plan\": [], \"preferences\": [], \"exclusions\": [], \"applied_changes\": [], \"pending_clarification\": null}, \"explicit_changes\": []}"
+  "raw_output": "{\"message\": \"Here is a starting places draft for Delhi, Agra and Jaipur over seven days, in that order.\", \"state_delta\": {\"trip_context\": {\"destinations\": [\"Delhi\", \"Agra\", \"Jaipur\"], \"duration_days\": 7}, \"planner_state\": {\"conversation_context\": {\"awaiting\": null}, \"places\": [\"Red Fort\", \"Taj Mahal\", \"Agra Fort\", \"Hawa Mahal\", \"Amber Fort\"]}}, \"outcome\": \"continue\"}"
 }

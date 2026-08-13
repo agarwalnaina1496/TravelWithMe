@@ -18,22 +18,22 @@ from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetryS
 def guide_places_output() -> dict:
     return {
         "message": "Here are the places I suggest. Tell me what to change.",
-        "explicit_changes": [],
-        "guide_state": {
-            "phase": "PLACES_DRAFT",
-            "destinations": ["Rishikesh"],
-            "duration_days": 3,
-            "start_date": None,
-            "places": [
-                "Ram Jhula",
-                "Triveni Ghat",
-                "Neer Garh Waterfall",
-            ],
-            "day_plan": [],
-            "preferences": ["relaxed"],
-            "exclusions": ["river rafting"],
-            "applied_changes": [],
-            "pending_clarification": None,
+        "state_delta": {
+            "trip_context": {
+                "destinations": ["Rishikesh"],
+                "duration_days": 3,
+                "preferences": ["relaxed"],
+                "exclusions": ["river rafting"],
+            },
+            "planner_state": {
+                "conversation_context": {"awaiting": None},
+                "places": [
+                    "Ram Jhula",
+                    "Triveni Ghat",
+                    "Neer Garh Waterfall",
+                ],
+                "day_plan": None,
+            },
         },
     }
 
@@ -220,17 +220,10 @@ def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> N
     engine.guide.assert_awaited_once_with(
         {
             "trip_context": payload["trip_state"]["trip_context"],
-            "guide_state": {
-                "phase": None,
-                "destinations": [],
-                "duration_days": None,
-                "start_date": None,
+            "planner_state": {
+                "conversation_context": {"awaiting": None},
                 "places": [],
                 "day_plan": [],
-                "preferences": [],
-                "exclusions": [],
-                "applied_changes": [],
-                "pending_clarification": None,
             },
             "guide_event": "START",
         },
@@ -270,7 +263,7 @@ def test_guide_api_uses_prompt_schema_and_common_validation(
     assert invocation.system_prompt.startswith(
         f"{release.content}\n\nOUTPUT CONTRACT:\n"
     )
-    assert '"guide_state"' in invocation.system_prompt
+    assert '"state_delta"' in invocation.system_prompt
     framed_input = json.loads(invocation.user_prompt.split("\n", 1)[1])
     assert framed_input["trip_state"]["guide_event"] == "START"
     assert framed_input["trip_state"]["trip_context"] == {

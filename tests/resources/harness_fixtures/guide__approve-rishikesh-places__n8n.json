@@ -2,7 +2,7 @@
   "agent": "guide",
   "case_id": "approve-rishikesh-places",
   "execution_path": "n8n",
-  "prompt_version": "1.3.0",
+  "prompt_version": "2.0.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"Places are approved. Here is a three-day allocation.\", \"guide_state\": {\"phase\": \"DAY_PLAN_DRAFT\", \"destinations\": [\"Rishikesh\"], \"duration_days\": 3, \"start_date\": null, \"places\": [\"Ram Jhula\", \"Triveni Ghat\", \"Neer Garh Waterfall\", \"Neelkanth Mahadev Temple\"], \"day_plan\": [{\"day_number\": 1, \"date\": null, \"places\": [\"Ram Jhula\", \"Triveni Ghat\"], \"pace\": \"balanced\", \"buffer_note\": null}, {\"day_number\": 2, \"date\": null, \"places\": [\"Neer Garh Waterfall\"], \"pace\": \"balanced\", \"buffer_note\": null}, {\"day_number\": 3, \"date\": null, \"places\": [\"Neelkanth Mahadev Temple\"], \"pace\": \"balanced\", \"buffer_note\": null}], \"preferences\": [\"pilgrimage\"], \"exclusions\": [\"river rafting\"], \"applied_changes\": [], \"pending_clarification\": null}, \"explicit_changes\": []}"
+  "raw_output": "{\"message\": \"Here is your three-day plan for Rishikesh.\", \"state_delta\": {\"planner_state\": {\"day_plan\": [{\"day_number\": 1, \"date\": null, \"places\": [\"Ram Jhula\", \"Triveni Ghat\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 2, \"date\": null, \"places\": [\"Neer Garh Waterfall\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 3, \"date\": null, \"places\": [\"Neelkanth Mahadev Temple\"], \"pace\": \"balanced\", \"buffer_note\": null}]}}, \"outcome\": \"continue\"}"
 }

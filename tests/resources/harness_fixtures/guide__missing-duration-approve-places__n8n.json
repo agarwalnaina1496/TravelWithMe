@@ -2,7 +2,7 @@
   "agent": "guide",
   "case_id": "missing-duration-approve-places",
   "execution_path": "n8n",
-  "prompt_version": "1.5.0",
+  "prompt_version": "2.0.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"How many days will your trip to Ladakh be?\", \"guide_state\": {\"phase\": \"NEEDS_CLARIFICATION\", \"destinations\": [\"Ladakh\"], \"duration_days\": null, \"start_date\": null, \"places\": [\"Leh Palace\", \"Shanti Stupa\"], \"day_plan\": [], \"preferences\": [], \"exclusions\": [], \"applied_changes\": [], \"pending_clarification\": \"How many days will your trip to Ladakh be?\"}, \"explicit_changes\": []}"
+  "raw_output": "{\"message\": \"How many days will your trip to Ladakh be?\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": \"duration\"}}}, \"outcome\": \"continue\"}"
 }

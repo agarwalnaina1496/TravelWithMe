@@ -27,14 +27,9 @@ def _normalize_scout_response(execution: AgentExecution) -> ScoutResponse:
 
 def _normalize_guide_response(execution: AgentExecution) -> GuideResponse:
     response = execution.response
-    guide_state = dict(response.get("guide_state") or {})
-    guide_state.setdefault("duration_days", None)
-    guide_state.setdefault("start_date", None)
-    guide_state.setdefault("pending_clarification", None)
     return GuideResponse(
         message=response.get("message") or "",
-        guide_state=guide_state,
-        explicit_changes=response.get("explicit_changes"),
+        state_delta=response.get("state_delta") or {},
         outcome=response.get("outcome") or "continue",
         agent_meta=_agent_meta(execution),
     )

@@ -227,17 +227,58 @@ def _meridian_reject_written_selected_option(
 
 
 # ---- guide -------------------------------------------------------------
+#
+# Guide returns a state_delta (only what changed this turn) rather than a
+# full-state echo — an omitted field means Backend keeps the prior value.
+# These checks evaluate the *effective* post-turn state (input state with
+# the delta applied on top), matching what planner_commands.py actually
+# produces, so a check like "preserve_places" correctly passes whether
+# Guide re-sent the places list unchanged or simply omitted it.
 
 
-def _guide_phase(case: EvaluationCase, response: dict[str, Any], expected: str) -> None:
-    if response.get("guide_state", {}).get("phase") != expected:
-        raise RubricFailure(f"expected guide phase {expected!r}")
+def _guide_effective_trip_context(
+    case: EvaluationCase, response: dict[str, Any]
+) -> dict[str, Any]:
+    effective = dict(case.input.get("trip_context", {}))
+    effective.update(response.get("state_delta", {}).get("trip_context", {}))
+    return effective
+
+
+def _guide_effective_planner_state(
+    case: EvaluationCase, response: dict[str, Any]
+) -> dict[str, Any]:
+    effective = dict(case.input.get("planner_state", {}))
+    delta = response.get("state_delta", {}).get("planner_state", {})
+    for key in ("places", "day_plan", "conversation_context"):
+        if key in delta:
+            effective[key] = delta[key]
+    return effective
+
+
+def _guide_awaiting(
+    case: EvaluationCase, response: dict[str, Any], expected: str | None
+) -> None:
+    actual = _guide_effective_planner_state(case, response).get(
+        "conversation_context", {}
+    ).get("awaiting")
+    if actual != expected:
+        raise RubricFailure(f"expected awaiting {expected!r}, got {actual!r}")
+
+
+def _guide_places_omitted_from_delta(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    has_places = "places" in response.get("state_delta", {}).get("planner_state", {})
+    if expected and has_places:
+        raise RubricFailure(
+            "expected places to be omitted from the delta (untouched this turn)"
+        )
 
 
 def _guide_destinations(
     case: EvaluationCase, response: dict[str, Any], expected: list[str]
 ) -> None:
-    actual = response.get("guide_state", {}).get("destinations", [])
+    actual = _guide_effective_trip_context(case, response).get("destinations", [])
     if _casefold_set(actual) != _casefold_set(expected):
         raise RubricFailure(f"expected destinations {expected!r}, got {actual!r}")
 
@@ -245,14 +286,15 @@ def _guide_destinations(
 def _guide_duration_days(
     case: EvaluationCase, response: dict[str, Any], expected: int
 ) -> None:
-    if response.get("guide_state", {}).get("duration_days") != expected:
-        raise RubricFailure(f"expected duration_days {expected!r}")
+    actual = _guide_effective_trip_context(case, response).get("duration_days")
+    if actual != expected:
+        raise RubricFailure(f"expected duration_days {expected!r}, got {actual!r}")
 
 
 def _guide_day_plan_length(
     case: EvaluationCase, response: dict[str, Any], expected: int
 ) -> None:
-    day_plan = response.get("guide_state", {}).get("day_plan", [])
+    day_plan = _guide_effective_planner_state(case, response).get("day_plan", [])
     if len(day_plan) != expected:
         raise RubricFailure(f"expected day_plan length {expected!r}, got {len(day_plan)}")
 
@@ -260,7 +302,7 @@ def _guide_day_plan_length(
 def _guide_must_exclude_places(
     case: EvaluationCase, response: dict[str, Any], expected: list[str]
 ) -> None:
-    places = _casefold_set(response.get("guide_state", {}).get("places", []))
+    places = _casefold_set(_guide_effective_planner_state(case, response).get("places", []))
     for place in expected:
         if place.casefold() in places:
             raise RubricFailure(f"expected {place!r} to be excluded from places")
@@ -269,7 +311,7 @@ def _guide_must_exclude_places(
 def _guide_must_include_exclusions(
     case: EvaluationCase, response: dict[str, Any], expected: list[str]
 ) -> None:
-    exclusions = _casefold_set(response.get("guide_state", {}).get("exclusions", []))
+    exclusions = _casefold_set(_guide_effective_trip_context(case, response).get("exclusions", []))
     for exclusion in expected:
         if exclusion.casefold() not in exclusions:
             raise RubricFailure(f"expected exclusions to include {exclusion!r}")
@@ -278,7 +320,7 @@ def _guide_must_include_exclusions(
 def _guide_preserve_places(
     case: EvaluationCase, response: dict[str, Any], expected: list[str]
 ) -> None:
-    places = _casefold_set(response.get("guide_state", {}).get("places", []))
+    places = _casefold_set(_guide_effective_planner_state(case, response).get("places", []))
     for place in expected:
         if place.casefold() not in places:
             raise RubricFailure(f"expected {place!r} to be preserved in places")
@@ -287,8 +329,8 @@ def _guide_preserve_places(
 def _guide_preserve_all_places(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
-    input_places = case.input.get("guide_state", {}).get("places", [])
-    actual = response.get("guide_state", {}).get("places", [])
+    input_places = case.input.get("planner_state", {}).get("places", [])
+    actual = _guide_effective_planner_state(case, response).get("places", [])
     if expected and _casefold_set(actual) != _casefold_set(input_places):
         raise RubricFailure("expected every input place to be preserved in the response")
 
@@ -296,10 +338,11 @@ def _guide_preserve_all_places(
 def _guide_place_only_day_plan(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
-    places = _casefold_set(response.get("guide_state", {}).get("places", []))
+    effective = _guide_effective_planner_state(case, response)
+    places = _casefold_set(effective.get("places", []))
     allocated = [
         place
-        for day in response.get("guide_state", {}).get("day_plan", [])
+        for day in effective.get("day_plan", [])
         for place in day.get("places", [])
     ]
     if expected and _casefold_set(allocated) != places:
@@ -309,7 +352,7 @@ def _guide_place_only_day_plan(
 def _guide_preserve_destination_order(
     case: EvaluationCase, response: dict[str, Any], expected: list[str]
 ) -> None:
-    actual = response.get("guide_state", {}).get("destinations", [])
+    actual = _guide_effective_trip_context(case, response).get("destinations", [])
     if [value.casefold() for value in actual] != [value.casefold() for value in expected]:
         raise RubricFailure(f"expected destination order {expected!r}, got {actual!r}")
 
@@ -317,7 +360,7 @@ def _guide_preserve_destination_order(
 def _guide_requires_day_pace(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
-    day_plan = response.get("guide_state", {}).get("day_plan", [])
+    day_plan = _guide_effective_planner_state(case, response).get("day_plan", [])
     if expected and any(day.get("pace") not in {"relaxed", "balanced", "packed"} for day in day_plan):
         raise RubricFailure("expected every day plan entry to carry a valid pace signal")
 
@@ -326,7 +369,7 @@ def _guide_must_not_add_destinations(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
     input_destinations = _casefold_set(case.input.get("trip_context", {}).get("destinations", []))
-    actual = _casefold_set(response.get("guide_state", {}).get("destinations", []))
+    actual = _casefold_set(_guide_effective_trip_context(case, response).get("destinations", []))
     if expected and not actual.issubset(input_destinations):
         raise RubricFailure("expected guide not to add destinations beyond trip_context")
 
@@ -584,7 +627,8 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "reject_agent_written_selected_option": _meridian_reject_written_selected_option,
     },
     "guide": {
-        "phase": _guide_phase,
+        "awaiting": _guide_awaiting,
+        "places_omitted_from_delta": _guide_places_omitted_from_delta,
         "destinations": _guide_destinations,
         "duration_days": _guide_duration_days,
         "day_plan_length": _guide_day_plan_length,

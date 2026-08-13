@@ -18,7 +18,7 @@ from .logistics_commands import (
     apply_keep_current_itinerary,
 )
 from .matcher_commands import apply_meridian, select_destination
-from .planner_commands import apply_guide
+from .planner_commands import apply_guide, guide_has_started
 from .scout_commands import apply_scout
 from .state import (
     canonical_state,
@@ -163,8 +163,7 @@ class TripCommandService:
             return {"message": None, "agent_meta": None}
         if payload.command == "continue":
             if state.get("stage") == "planning" or state.get("active_agent") == "guide":
-                session = state["planner_state"].get("guide_session", {})
-                if session.get("state"):
+                if guide_has_started(state):
                     raise InvalidTripCommandError(
                         "Send a traveler message to continue an existing Guide session."
                     )
@@ -212,7 +211,7 @@ class TripCommandService:
                     "message": "Tell us the destination before starting the plan.",
                     "agent_meta": None,
                 }
-            state["trip_context"]["destination"] = destination
+            state["trip_context"]["destinations"] = [destination]
             state["stage"] = "planning"
             state["active_agent"] = "guide"
             return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
