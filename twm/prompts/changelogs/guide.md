@@ -1,5 +1,13 @@
 # Guide prompt changelog
 
+## Guide 1.5.0 — 2026-08-13
+
+- START and TRAVELER_MESSAGE now weave a natural question about origin,
+  budget, and traveler count into the same message as the duration
+  clarification (or the places-draft invitation) instead of treating only
+  preferences as worth inviting — still non-blocking for everything except
+  duration, since answering them is the traveler's call, not a hard gate.
+
 ## Guide 1.4.0 — 2026-08-13
 
 - START and APPROVE_PLACES now require asking for `duration_days` (via
