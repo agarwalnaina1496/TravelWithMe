@@ -38,7 +38,7 @@ def test_composite_sink_isolates_delivery_and_shutdown_failures() -> None:
     assert healthy.shutdown_called is True
 
 
-def test_non_production_never_constructs_otlp_sink(monkeypatch) -> None:
+def test_unrecognized_environment_never_constructs_otlp_sink(monkeypatch) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "https://example.test/v1/logs")
     stdout = InMemorySink()
 
@@ -47,7 +47,7 @@ def test_non_production_never_constructs_otlp_sink(monkeypatch) -> None:
         service="test-service",
         stdout_sink=stdout,
         otlp_factory=lambda _: (_ for _ in ()).throw(
-            AssertionError("OTLP must remain disabled outside production")
+            AssertionError("OTLP must remain disabled outside dev/prod")
         ),
     )
 
@@ -61,6 +61,26 @@ def test_production_composes_stdout_and_otlp_when_endpoint_exists(monkeypatch) -
 
     selected = build_telemetry_sink(
         environment="prod",
+        service="test-service",
+        stdout_sink=stdout,
+        otlp_factory=lambda service: otlp,
+    )
+    selected.emit({"event": "test.event"})
+
+    assert stdout.events == [{"event": "test.event"}]
+    assert otlp.events == [{"event": "test.event"}]
+
+
+def test_dev_composes_stdout_and_otlp_when_endpoint_exists(monkeypatch) -> None:
+    # Dev ships to its own Axiom dataset (twm-dev) via a dev-specific
+    # OTEL_EXPORTER_OTLP_LOGS_HEADERS value — same code path as prod, just a
+    # different environment/header pair.
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "https://example.test/v1/logs")
+    stdout = InMemorySink()
+    otlp = RecordingSink()
+
+    selected = build_telemetry_sink(
+        environment="dev",
         service="test-service",
         stdout_sink=stdout,
         otlp_factory=lambda service: otlp,

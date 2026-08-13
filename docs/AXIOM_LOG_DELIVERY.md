@@ -1,56 +1,68 @@
-# Production Axiom Log Delivery
+# Axiom Log Delivery
 
-This runbook owns production Backend delivery to Axiom through the standard OpenTelemetry OTLP/HTTP logs protocol. Application events remain provider-neutral and continue to be written as one-line JSON to stdout.
+This runbook owns Backend delivery to Axiom through the standard OpenTelemetry OTLP/HTTP logs protocol, for both the production and dev Render services. Application events remain provider-neutral and continue to be written as one-line JSON to stdout.
 
 ```text
 TelemetryLogger
   -> CompositeSink
        -> JsonStdoutSink -> Render service logs
        -> OtlpHttpSink   -> configured OTLP/HTTP destination
-                              -> Axiom twm-production
+                              -> Axiom twm-production (prod service)
+                              -> Axiom twm-dev        (dev service)
 ```
 
-The OTLP sink is constructed only when `ENVIRONMENT=prod` and `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` is non-empty. Non-production processes never construct remote delivery, even if an OTLP endpoint is accidentally present. Removing the endpoint restores stdout-only delivery without changing event call sites.
+The OTLP sink is constructed only when `ENVIRONMENT` is `dev` or `prod` and `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` is non-empty. Any other environment value (a test run, an unset/misconfigured value) never constructs remote delivery, even if an OTLP endpoint is accidentally present. Removing the endpoint restores stdout-only delivery without changing event call sites. Dataset routing is entirely driven by each service's own `OTEL_EXPORTER_OTLP_LOGS_HEADERS` `x-axiom-dataset` value — the same code path serves both environments.
 
-## Production resources
+## Resources
 
-| Resource | Value |
-| --- | --- |
-| Axiom dataset | `twm-production` |
-| Dataset kind | Events |
-| Dataset retention | 30 days |
-| Render service | `travelwithme-api` |
-| Transport | OTLP/HTTP with protobuf |
+| Resource | Prod | Dev |
+| --- | --- | --- |
+| Axiom dataset | `twm-production` | `twm-dev` |
+| Dataset kind | Events | Events |
+| Dataset retention | 30 days | 30 days |
+| Render service | `travelwithme-api` | dev Render service |
+| Transport | OTLP/HTTP with protobuf | OTLP/HTTP with protobuf |
 
 The Backend uses the OpenTelemetry SDK and exporter; it does not use an Axiom SDK. Endpoint and authentication headers follow standard OTLP environment variables. Another OTLP-compatible provider can replace Axiom without changing application event call sites or the telemetry envelope.
 
 ## Personal-plan operating limits
 
-The July 2026 Axiom Personal limits relevant to this deployment are 25 GB always-free storage, 500 GB monthly loading, 10 GB-hours monthly query compute, 30-day retention, two datasets, 256 fields per dataset, one user, and three monitors. Check current limits before repeating this setup because plans can change. Review **Settings > Usage** weekly during active development and before enabling higher-volume event categories.
+The July 2026 Axiom Personal limits relevant to this deployment are 25 GB always-free storage, 500 GB monthly loading, 10 GB-hours monthly query compute, 30-day retention, **two datasets**, 256 fields per dataset, one user, and three monitors. `twm-production` and `twm-dev` together use both available datasets on this plan — a third dataset requires a plan upgrade. Check current limits before repeating this setup because plans can change. Review **Settings > Usage** weekly during active development and before enabling higher-volume event categories.
 
 Sources: [Axiom limits](https://axiom.co/docs/reference/limits), [Axiom usage](https://axiom.co/docs/reference/usage-billing), and [Axiom OpenTelemetry](https://axiom.co/docs/send-data/opentelemetry).
 
 ## Configure Axiom
 
-1. Create an Events dataset named `twm-production` with the Personal plan's 30-day retention.
-2. Create an API token dedicated to Render production log ingestion.
-3. Grant only ingest permission for `twm-production`; do not grant query, admin, or access to other datasets.
-4. Copy the token directly into Render's secret environment configuration. Never place it in source control, tickets, screenshots, chat, or log events.
+For each environment (prod, then dev):
+
+1. Create an Events dataset (`twm-production` or `twm-dev`) with the Personal plan's 30-day retention.
+2. Create an API token dedicated to that Render service's log ingestion.
+3. Grant only ingest permission for that one dataset; do not grant query, admin, or access to the other dataset.
+4. Copy the token directly into that Render service's secret environment configuration. Never place it in source control, tickets, screenshots, chat, or log events.
 
 Axiom accepts OTLP logs at `https://api.axiom.co/v1/logs` for the default US deployment. If the organization uses another edge deployment, use that deployment's base domain followed by `/v1/logs`.
 
-## Configure Render production
+## Configure Render
 
-Set these variables on the production Backend service:
+Set these variables on each Backend service — only `ENVIRONMENT` and the `x-axiom-dataset` header value differ between them:
 
 ```properties
+# travelwithme-api (prod)
 ENVIRONMENT=prod
 OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://api.axiom.co/v1/logs
 OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf
-OTEL_EXPORTER_OTLP_LOGS_HEADERS=Authorization=Bearer <ingest-only-token>,x-axiom-dataset=twm-production
+OTEL_EXPORTER_OTLP_LOGS_HEADERS=Authorization=Bearer <prod-ingest-token>,x-axiom-dataset=twm-production
 ```
 
-Store `OTEL_EXPORTER_OTLP_LOGS_HEADERS` as a secret. The endpoint may also remain an uncommitted Render value. `render.yaml` declares the configuration slots but contains neither value. Do not configure Render's workspace Log Stream for this path: Hobby workspace streaming would also ingest dev-service logs.
+```properties
+# dev Render service
+ENVIRONMENT=dev
+OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://api.axiom.co/v1/logs
+OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_LOGS_HEADERS=Authorization=Bearer <dev-ingest-token>,x-axiom-dataset=twm-dev
+```
+
+Store `OTEL_EXPORTER_OTLP_LOGS_HEADERS` as a secret on each service. Double-check the env var **key** is spelled exactly `OTEL_EXPORTER_OTLP_LOGS_HEADERS` — a truncated or misspelled key (e.g. a leading `O` dropped) silently leaves that service on stdout-only delivery with no error, since a missing/empty env var and a genuinely absent one look identical to the code. The endpoint may also remain an uncommitted Render value. `render.yaml` declares the prod service's configuration slots but contains neither value; the dev service's variables are configured directly in the Render dashboard. Do not configure Render's workspace Log Stream for this path: Hobby workspace streaming would also ingest dev-service logs.
 
 The exporter batches records in-process. The FastAPI lifespan shuts the provider down so pending records are flushed during an orderly stop. Remote failures remain isolated from stdout and traveler-facing API behavior.
 
@@ -68,7 +80,7 @@ Stdout remains one-line JSON and contains both `message` and the structured fiel
 
 ## Configure the readable Stream view
 
-This is a one-time Axiom explorer setup, not a query investigators must rewrite:
+This is a one-time Axiom explorer setup, not a query investigators must rewrite. Repeat it once for `twm-dev` as well — same steps, different dataset.
 
 1. Open **Stream** and select `twm-production`.
 2. Open the Stream view settings.
@@ -107,7 +119,7 @@ Then submit one valid Scout turn and one valid Meridian turn from the production
 
 ## APL query templates
 
-Save the following queries after the smoke test. Axiom may expose OpenTelemetry attributes with an `attributes.` prefix; use the exact field path shown by the first ingested event.
+Save the following queries after the smoke test. Axiom may expose OpenTelemetry attributes with an `attributes.` prefix; use the exact field path shown by the first ingested event. Swap `twm-production` for `twm-dev` to run the same queries against dev.
 
 ### TWM - Request timeline
 
@@ -165,7 +177,8 @@ To replace Axiom, configure the endpoint, protocol, and headers required by anot
 
 ## Troubleshooting
 
-- No remote events: confirm `ENVIRONMENT=prod`, the logs endpoint includes `/v1/logs`, protocol is `http/protobuf`, headers contain both authorization and dataset routing, and the token has ingest permission.
+- No remote events: confirm `ENVIRONMENT` is exactly `dev` or `prod` on that service, the logs endpoint includes `/v1/logs`, protocol is `http/protobuf`, headers contain both authorization and dataset routing, and the token has ingest permission.
+- No remote events but the endpoint/headers look right in Render: re-check the env var **keys**, not just the values — a truncated key (e.g. `TEL_EXPORTER_OTLP_LOGS_HEADERS` missing its leading `O`) is silently treated as the header simply being unset, with no startup error.
 - Stdout exists but Axiom does not: inspect Render service logs for exporter transport errors; API behavior should remain unaffected.
 - Fields are not queryable: inspect the event's body and attributes in Axiom and update query paths only after confirming the structured values exist.
 - Duplicate events: confirm only one OTLP sink is configured and Render workspace Log Streams remain disabled.
