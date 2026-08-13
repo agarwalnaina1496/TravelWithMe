@@ -1,20 +1,12 @@
 # Guide prompt changelog
 
-## Guide 1.6.0 — 2026-08-13
+## Guide 1.5.0 — 2026-08-13
 
 - APPROVE_PLAN no longer reaches Guide at all — Backend applies the
   preserve-day-plan-and-freeze transition deterministically
   (`planner_commands.py`), since the LLM was only ever being asked to
   confirm state Backend already validated unchanged. Saves one LLM call
   per completed Guide session with no behavior change.
-
-## Guide 1.5.0 — 2026-08-13
-
-- START and TRAVELER_MESSAGE now weave a natural question about origin,
-  budget, and traveler count into the same message as the duration
-  clarification (or the places-draft invitation) instead of treating only
-  preferences as worth inviting — still non-blocking for everything except
-  duration, since answering them is the traveler's call, not a hard gate.
 
 ## Guide 1.4.0 — 2026-08-13
 

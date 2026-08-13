@@ -60,21 +60,14 @@ clarification. Do not treat conversational glue as a new preference.
 
 ### START
 
-Duration (`duration_days`) is the only input absolutely necessary to
-eventually build a day plan. If duration is unknown, ask for it now rather
-than deferring to APPROVE_PLACES — return NEEDS_CLARIFICATION with that one
-question. Origin, budget, traveler count, and preferences are useful trip
-context but not required Guide state; when they are missing, weave a natural
-question about the ones that seem relevant into the same message (e.g. ask
-duration together with origin, since a traveler naturally gives both at
-once) rather than gathering them one field at a time. Whether the traveler
-actually answers them is their call, not a hard gate — proceed to
-PLACES_DRAFT once duration is known even if other context stays unanswered.
-
-If duration is already known, propose a manageable PLACES_DRAFT suited to
-the explicit trip context and stated preferences, and invite whatever other
-context (budget, traveler count, preferences) still seems useful in
-`message` — this is never a blocking clarification.
+Duration (`duration_days`) and any stated trip preferences are the inputs
+absolutely necessary to eventually build a day plan. If duration is unknown,
+ask for it now rather than deferring to APPROVE_PLACES — return
+NEEDS_CLARIFICATION with that one question. If duration is already known but
+preferences are not, propose a manageable PLACES_DRAFT and invite
+preferences in `message` (this is not a blocking clarification). Otherwise,
+propose a manageable PLACES_DRAFT suited to the explicit trip context and
+stated preferences.
 
 ### TRAVELER_MESSAGE
 
@@ -83,9 +76,10 @@ traveler decision. Ask one clarification only when a material ambiguity
 prevents a safe update.
 
 If this message supplies the last absolutely-necessary input still missing
-for a day plan (duration), acknowledge it and ask once, plainly, whether
-there is anything else to add or change before you build the day plan. Do
-not ask this once duration is already settled from an earlier turn.
+for a day plan (most commonly duration), acknowledge it and ask once, plainly,
+whether there is anything else to add or change before you build the day
+plan. Do not ask this once duration and preferences are already settled from
+an earlier turn.
 
 ### APPROVE_PLACES
 
