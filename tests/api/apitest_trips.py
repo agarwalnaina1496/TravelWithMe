@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from twm.dependencies import get_engine, get_logger, get_trip_persistence
 from twm.main import app
-from twm.persistence.contracts import GuestSession, TripCommandRecord, TripRecord, VersionConflictError
+from twm.persistence.contracts import GuestSession, RecommendationRecord, TripCommandRecord, TripRecord, VersionConflictError
 from twm.persistence.service import TripPersistenceService
 from twm.persistence.settings import DatabaseSettings
 from twm.prompt_registry import PromptRelease
@@ -22,6 +22,7 @@ class MemoryTripRepository:
         self.guests = {}
         self.trips = {}
         self.commands = {}
+        self.recommendations = {}  # trip_id -> list[RecommendationRecord], latest last
 
     async def resolve_guest(self, token_hash, lifetime_days):
         guest = self.guests.get(token_hash)
@@ -82,7 +83,14 @@ class MemoryTripRepository:
     async def get_command(self, guest_id, trip_id, idempotency_key):
         return self.commands.get((guest_id, trip_id, idempotency_key))
 
-    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response):
+    async def get_latest_recommendation(self, guest_id, trip_id):
+        trip = await self.get_trip(guest_id, trip_id)
+        if not trip:
+            return None
+        rounds = self.recommendations.get(trip_id) or []
+        return rounds[-1] if rounds else None
+
+    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, new_recommendation=None):
         key = (guest_id, trip_id, idempotency_key)
         if key in self.commands:
             return self.commands[key]
@@ -93,6 +101,19 @@ class MemoryTripRepository:
             raise VersionConflictError(trip.version)
         updated = replace(trip, trip_state=trip_state, version=trip.version + 1, updated_at=datetime.now(timezone.utc))
         self.trips[trip_id] = updated
+        if new_recommendation is not None:
+            self.recommendations.setdefault(trip_id, []).append(RecommendationRecord(
+                trip_id=trip_id,
+                version=new_recommendation["version"],
+                status=new_recommendation["status"],
+                message=new_recommendation["message"],
+                trip_type=new_recommendation.get("trip_type"),
+                options=new_recommendation.get("options") or [],
+                traveler_criteria=new_recommendation.get("traveler_criteria"),
+                constraint_adjustment_suggestions=new_recommendation.get("constraint_adjustment_suggestions"),
+                agent_meta=new_recommendation["agent_meta"],
+                created_at=datetime.now(timezone.utc),
+            ))
         stored = dict(response)
         response_record = replace(updated, trip_state=response_trip_state)
         stored["trip"] = TripResponse.model_validate(response_record, from_attributes=True).model_dump(mode="json")
@@ -513,6 +534,29 @@ def _create_seeded_trip(
     return created
 
 
+def _seed_recommendation(
+    repository: MemoryTripRepository,
+    trip_id: UUID,
+    *,
+    version: int = 1,
+    status: str = "SUCCESS",
+    message: str = "Here are your matches.",
+    trip_type: str | None = "single",
+    options=(),
+    traveler_criteria=None,
+    agent_meta=None,
+):
+    """Seeds a matcher_recommendations row directly (TWM-153) — recommendations
+    are no longer part of trip_state, so tests that need a prior round for
+    select_destination/more_like_this seed the repository's own table."""
+    repository.recommendations.setdefault(trip_id, []).append(RecommendationRecord(
+        trip_id=trip_id, version=version, status=status, message=message, trip_type=trip_type,
+        options=list(options), traveler_criteria=traveler_criteria, constraint_adjustment_suggestions=None,
+        agent_meta=agent_meta or {"agent": "meridian", "prompt_version": "1.0.0"},
+        created_at=datetime.now(timezone.utc),
+    ))
+
+
 def test_guest_trip_crud_without_delete_and_version_conflict(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -747,11 +791,11 @@ def test_deterministic_selection_uses_latest_backend_recommendation(api_client: 
         "stage": "recommended",
         "active_agent": None,
         "trip_context": {},
-        "matcher_state": {"recommendations": [{"options": [
-            {"rank": 1, "type": "single", "destination_id": "rishikesh", "name": "Rishikesh"}
-        ]}]},
     }
     trip = _create_seeded_trip(api_client, repository, trip_state=state)
+    _seed_recommendation(repository, UUID(trip["id"]), options=[
+        {"rank": 1, "type": "single", "destination_id": "rishikesh", "name": "Rishikesh"}
+    ])
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
         json={
@@ -1865,6 +1909,49 @@ def test_discover_entry_invokes_meridian_with_no_scout_call(api_client: TestClie
     assert saved["trip_state"]["stage"] in {"matching", "recommended"}
 
 
+def test_matcher_round_archives_to_dedicated_table_not_trip_state(api_client: TestClient):
+    """TWM-153: any terminal matcher outcome (including a failure status,
+    not just SUCCESS) is archived to matcher_recommendations, never appended
+    to trip_state — and idempotent replay does not duplicate the row."""
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()  # meridian returns HARD_FAIL
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip_id = UUID(trip["id"])
+    payload = {"command": "discover_entry", "message": "Delhi", "expected_version": 1, "idempotency_key": str(uuid4())}
+
+    first = api_client.post(f"/trips/{trip['id']}/commands", json=payload)
+    replay = api_client.post(f"/trips/{trip['id']}/commands", json=payload)
+
+    assert first.status_code == 200
+    assert "recommendations" not in first.json()["trip"]["trip_state"].get("matcher_state", {})
+    assert replay.json() == first.json()
+    assert len(repository.recommendations[trip_id]) == 1
+    archived = repository.recommendations[trip_id][0]
+    assert archived.status == "HARD_FAIL"
+    assert archived.version == 1
+
+
+def test_get_recommendations_404_before_any_matcher_round(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+
+    response = api_client.get(f"/trips/{trip['id']}/recommendations")
+
+    assert response.status_code == 404
+
+
+def test_get_recommendations_404_for_unknown_trip(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    response = api_client.get(f"/trips/{uuid4()}/recommendations")
+
+    assert response.status_code == 404
+
+
 def test_known_destination_entry_invokes_guide_with_no_scout_or_meridian_call(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeCommandEngine()
@@ -1950,10 +2037,17 @@ def _recommended_state_with_goa_option():
         "stage": "recommended",
         "active_agent": None,
         "trip_context": {},
-        "matcher_state": {"recommendations": [{"options": [
-            {"rank": 1, "type": "single", "destination_id": "goa", "name": "Goa"}
-        ]}]},
     }
+
+
+def _seed_recommended_trip_with_goa_option(api_client, repository):
+    trip = _create_seeded_trip(
+        api_client, repository, trip_state=_recommended_state_with_goa_option()
+    )
+    _seed_recommendation(repository, UUID(trip["id"]), options=[
+        {"rank": 1, "type": "single", "destination_id": "goa", "name": "Goa"}
+    ])
+    return trip
 
 
 def test_more_like_this_refines_around_the_referenced_option(api_client: TestClient):
@@ -1961,9 +2055,7 @@ def test_more_like_this_refines_around_the_referenced_option(api_client: TestCli
     engine = FakeMoreLikeThisEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(
-        api_client, repository, trip_state=_recommended_state_with_goa_option()
-    )
+    trip = _seed_recommended_trip_with_goa_option(api_client, repository)
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1990,9 +2082,14 @@ def test_more_like_this_refines_around_the_referenced_option(api_client: TestCli
     assert engine.calls[0][2] == "Somewhere quieter"
     saved = response.json()["trip"]["trip_state"]
     assert saved["stage"] == "recommended"
-    assert saved["matcher_state"]["recommendations"][-1]["options"][0][
-        "destination_id"
-    ] == "gokarna"
+    # recommendations live in the matcher_recommendations table now (TWM-153),
+    # not in trip_state — check the archived round and the lazy GET endpoint.
+    latest_round = repository.recommendations[UUID(trip["id"])][-1]
+    assert latest_round.options[0]["destination_id"] == "gokarna"
+    fetched = api_client.get(f"/trips/{trip['id']}/recommendations")
+    assert fetched.status_code == 200
+    assert fetched.json()["options"][0]["destination_id"] == "gokarna"
+    assert fetched.json()["version"] == 2
 
 
 def test_more_like_this_rejects_unknown_reference_without_mutating_state(
@@ -2002,9 +2099,7 @@ def test_more_like_this_rejects_unknown_reference_without_mutating_state(
     engine = FakeMoreLikeThisEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(
-        api_client, repository, trip_state=_recommended_state_with_goa_option()
-    )
+    trip = _seed_recommended_trip_with_goa_option(api_client, repository)
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2028,9 +2123,7 @@ def test_more_like_this_requires_refinement_field(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: FakeMoreLikeThisEngine()
-    trip = _create_seeded_trip(
-        api_client, repository, trip_state=_recommended_state_with_goa_option()
-    )
+    trip = _seed_recommended_trip_with_goa_option(api_client, repository)
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import AgentMeta
 from .logistics import LogisticsConfirmationInput
-from .recommendations import NonEmptyString
+from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
 from .scout import BoundedMessage
 
 
@@ -76,6 +76,21 @@ class TripSummary(BaseModel):
 
 class TripListResponse(BaseModel):
     trips: list[TripSummary]
+
+
+class TripRecommendationsResponse(BaseModel):
+    """The latest archived matcher round (TWM-153) — success/soft-fail
+    (ranked options) or a terminal failure outcome (empty options)."""
+
+    version: int
+    status: str
+    message: str
+    trip_type: Literal["single", "circuit", "mixed"] | None = None
+    options: list[RecommendationOption] = Field(default_factory=list)
+    traveler_criteria: list[TravelerCriterion] | None = None
+    constraint_adjustment_suggestions: list[NonEmptyString] | None = None
+    agent_meta: AgentMeta
+    created_at: datetime
 
 
 class TripConflictResponse(BaseModel):

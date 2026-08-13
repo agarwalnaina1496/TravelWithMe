@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from ...persistence.contracts import TripCommandRecord, TripRecord, TripRepository
+from ...persistence.contracts import RecommendationRecord, TripCommandRecord, TripRecord, TripRepository
 from ...schemas.trips import TripCommandRequest, TripCommandResponse, TripResponse
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
@@ -57,10 +57,12 @@ class TripCommandService:
 
         state = canonical_state(trip.trip_state)
         state["trip_id"] = str(trip.id)
+        latest_recommendation = await self.repository.get_latest_recommendation(guest_id, trip.id)
         before = snapshot_touchable_branches(state)
-        result = await self._apply(state, payload)
+        result = await self._apply(state, payload, latest_recommendation)
         touched = touched_branches(state, before)
         shaped_trip_state = shape_command_trip_state(state, touched)
+        new_recommendation = result.pop("new_recommendation", None)
         response_without_trip = {
             "message": result["message"],
             "agent_meta": result["agent_meta"],
@@ -74,6 +76,7 @@ class TripCommandService:
             state,
             shaped_trip_state,
             response_without_trip,
+            new_recommendation,
         )
         if committed is None:
             raise LookupError("Trip not found.")
@@ -101,6 +104,15 @@ class TripCommandService:
             command=payload.command,
             version=committed.version,
         )
+        if new_recommendation is not None:
+            self.logger.info(
+                "Archived a new matcher recommendation round.",
+                event="be.trip.recommendations.created",
+                source="application",
+                trip_id=str(trip.id),
+                version=new_recommendation["version"],
+                option_count=len(new_recommendation.get("options") or []),
+            )
         return response
 
     @staticmethod
@@ -112,7 +124,10 @@ class TripCommandService:
         return TripCommandResponse.model_validate(record.response)
 
     async def _apply(
-        self, state: dict[str, Any], payload: TripCommandRequest
+        self,
+        state: dict[str, Any],
+        payload: TripCommandRequest,
+        latest_recommendation: RecommendationRecord | None,
     ) -> dict[str, Any]:
         if (
             state["planner_state"].get("frozen_plan")
@@ -142,14 +157,14 @@ class TripCommandService:
                     raise InvalidTripCommandError(
                         "Send a traveler message to continue an existing Guide session."
                     )
-                return await apply_guide(self.engine, self.logger, state, "START", None)
+                return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
             if state.get("active_agent") == "meridian" or state.get("stage") in {
                 "matching", "recommendation_ready", "recommended"
             }:
-                return await apply_meridian(self.engine, state, None)
-            return await apply_scout(self.engine, self.logger, state, None)
+                return await apply_meridian(self.engine, state, None, latest_recommendation)
+            return await apply_scout(self.engine, self.logger, state, None, latest_recommendation)
         if payload.command == "select_destination":
-            return select_destination(state, payload.option_id or "")
+            return select_destination(state, payload.option_id or "", latest_recommendation)
         if payload.command == "start_planning":
             if not self._has_planning_destination(state["trip_context"]):
                 raise InvalidTripCommandError(
@@ -157,23 +172,24 @@ class TripCommandService:
                 )
             state["stage"] = "planning"
             state["active_agent"] = "guide"
-            return await apply_guide(self.engine, self.logger, state, "START", None)
+            return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
         if payload.command == "approve_places":
-            return await apply_guide(self.engine, self.logger, state, "APPROVE_PLACES", None)
+            return await apply_guide(self.engine, self.logger, state, "APPROVE_PLACES", None, latest_recommendation)
         if payload.command == "approve_plan":
-            return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None)
+            return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None, latest_recommendation)
         if payload.command == "scout_entry":
-            return await apply_scout(self.engine, self.logger, state, payload.message or "")
+            return await apply_scout(self.engine, self.logger, state, payload.message or "", latest_recommendation)
         if payload.command == "discover_entry":
             state["stage"] = "matching"
             state["active_agent"] = "meridian"
-            return await apply_meridian(self.engine, state, payload.message)
+            return await apply_meridian(self.engine, state, payload.message, latest_recommendation)
         if payload.command == "more_like_this":
             refinement = payload.refinement
             return await apply_meridian(
                 self.engine,
                 state,
                 refinement.instructions if refinement else None,
+                latest_recommendation,
                 refinement=refinement.model_dump(mode="json", exclude_none=True)
                 if refinement
                 else None,
@@ -188,16 +204,16 @@ class TripCommandService:
             state["trip_context"]["destination"] = destination
             state["stage"] = "planning"
             state["active_agent"] = "guide"
-            return await apply_guide(self.engine, self.logger, state, "START", None)
+            return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
 
         message = payload.message or ""
         if state.get("stage") == "planning" or state.get("active_agent") == "guide":
-            return await apply_guide(self.engine, self.logger, state, "TRAVELER_MESSAGE", message)
+            return await apply_guide(self.engine, self.logger, state, "TRAVELER_MESSAGE", message, latest_recommendation)
         if state.get("active_agent") == "meridian" or state.get("stage") in {
             "matching", "recommendation_ready", "recommended"
         }:
-            return await apply_meridian(self.engine, state, message)
-        return await apply_scout(self.engine, self.logger, state, message)
+            return await apply_meridian(self.engine, state, message, latest_recommendation)
+        return await apply_scout(self.engine, self.logger, state, message, latest_recommendation)
 
     @staticmethod
     def _has_planning_destination(trip_context: dict[str, Any]) -> bool:

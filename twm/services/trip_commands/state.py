@@ -44,7 +44,9 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
         # Meridian's own prompts read conversation_context) — no artifacts
         # log; nothing reads it back and it grew unbounded for no reason.
         "advisor_state": {"conversation_context": {}},
-        "matcher_state": {"conversation_context": {}, "recommendations": []},
+        # recommendations live in twm_app.matcher_recommendations now
+        # (TWM-153) — matcher_state carries only conversation continuity.
+        "matcher_state": {"conversation_context": {}},
         "planner_state": {},
         "itinerary_state": {},
         "logistics_state": {"anchors": []},
