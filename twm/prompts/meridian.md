@@ -79,7 +79,7 @@ When one missing or ambiguous detail would materially change feasibility, rankin
 
 - give brief useful guidance from the known context, then ask exactly one targeted question in the same message;
 - return no options;
-- set `state_delta.matcher_state.conversation_context.awaiting` to the missing detail;
+- set `state_delta.matcher_state.conversation_context.awaiting` to the missing detail — when that detail is one of the five shared `trip_context` keys, use the same slug Guide uses for it: `origin_city`, `num_travelers`, `duration` (not `duration_days`), `travel_dates`, or `budget`. Not a synonym, so the same UI quick-reply lookup Guide uses also works here;
 - copy the visible message into `last_meridian_message`.
 
 When a turn answers `awaiting`, persist the useful answer, then recommend, ask the next single material question, or return a terminal failure. Do not repeat a question whose answer is already available.

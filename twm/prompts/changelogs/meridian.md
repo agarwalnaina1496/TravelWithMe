@@ -1,5 +1,15 @@
 # Meridian prompt changelog
 
+## Meridian 1.10.0 — 2026-08-14
+
+- When `awaiting` names one of the five shared `trip_context` facts,
+  Meridian now uses the same slug Guide's fixed `GuideAwaiting` enum uses
+  for it (`origin_city`, `num_travelers`, `duration`, `travel_dates`,
+  `budget`) instead of an ad hoc synonym (previously e.g. `"origin"`).
+  `duration` intentionally does not match the `duration_days` trip_context
+  key name — it mirrors Guide's existing slug so the UI's quick-reply
+  lookup keys off one shared name per fact instead of two.
+
 ## Meridian 1.9.0 — 2026-08-11
 
 - Required Circuit Feasibility to validate the return leg against any stated return-timing constraint (a fixed return date, a weekend-only window, or needing to be back by a specific day), not only outbound and inter-stop legs.
