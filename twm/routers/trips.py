@@ -8,7 +8,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from ..dependencies import get_engine, get_logger, get_trip_persistence
 from ..persistence.contracts import TripRecord, VersionConflictError
 from ..persistence.service import TripPersistenceService
-from ..schemas.trips import TripCommandRequest, TripCommandResponse, TripCreateRequest, TripListResponse, TripRecommendationsResponse, TripRenameRequest, TripResponse, TripSummary, TripUiStateRequest
+from ..schemas.trips import (
+    ItineraryVersionDaySummary,
+    TripCommandRequest,
+    TripCommandResponse,
+    TripCreateRequest,
+    TripItineraryVersionSummary,
+    TripItineraryVersionsResponse,
+    TripListResponse,
+    TripRecommendationsResponse,
+    TripRenameRequest,
+    TripResponse,
+    TripSummary,
+    TripUiStateRequest,
+)
 from ..services import AgentEngine
 from ..services.trip_commands import IdempotencyConflictError, InvalidTripCommandError, TripCommandService
 from ..telemetry import TelemetryLogger
@@ -84,6 +97,36 @@ async def get_latest_recommendations(trip_id: UUID, request: Request, response: 
         version=latest.version,
     )
     return TripRecommendationsResponse.model_validate(latest, from_attributes=True)
+
+
+@router.get("/{trip_id}/itinerary-versions", response_model=TripItineraryVersionsResponse)
+async def list_itinerary_versions(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger):
+    guest = await persistence.guest(request, response)
+    trip = await persistence.repository.get_trip(guest.id, trip_id)
+    if trip is None:
+        logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    records = await persistence.repository.list_itinerary_versions(guest.id, trip_id)
+    summaries = [
+        TripItineraryVersionSummary(
+            version=record.version,
+            source_guide_revision=record.source_guide_revision,
+            created_at=record.created_at,
+            days=[
+                ItineraryVersionDaySummary(day_number=day["day_number"], title=day["title"])
+                for day in record.result["final_itinerary"]["days"]
+            ],
+        )
+        for record in records
+    ]
+    logger.info(
+        "Fetched archived itinerary versions.",
+        event="be.trip.itinerary_versions.fetched",
+        source="http",
+        trip_id=str(trip_id),
+        count=len(summaries),
+    )
+    return TripItineraryVersionsResponse(versions=summaries)
 
 
 def _conflict(error: VersionConflictError) -> HTTPException:

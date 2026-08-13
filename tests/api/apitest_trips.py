@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from twm.dependencies import get_engine, get_logger, get_trip_persistence
 from twm.main import app
-from twm.persistence.contracts import GuestSession, RecommendationRecord, TripCommandRecord, TripRecord, VersionConflictError
+from twm.persistence.contracts import GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripRecord, VersionConflictError
 from twm.persistence.service import TripPersistenceService
 from twm.persistence.settings import DatabaseSettings
 from twm.prompt_registry import PromptRelease
@@ -23,6 +23,7 @@ class MemoryTripRepository:
         self.trips = {}
         self.commands = {}
         self.recommendations = {}  # trip_id -> list[RecommendationRecord], latest last
+        self.itinerary_versions = {}  # trip_id -> list[ItineraryVersionRecord], ordered
 
     async def resolve_guest(self, token_hash, lifetime_days):
         guest = self.guests.get(token_hash)
@@ -90,7 +91,13 @@ class MemoryTripRepository:
         rounds = self.recommendations.get(trip_id) or []
         return rounds[-1] if rounds else None
 
-    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, new_recommendation=None):
+    async def list_itinerary_versions(self, guest_id, trip_id):
+        trip = await self.get_trip(guest_id, trip_id)
+        if not trip:
+            return []
+        return list(self.itinerary_versions.get(trip_id) or [])
+
+    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, new_recommendation=None, new_itinerary_version=None):
         key = (guest_id, trip_id, idempotency_key)
         if key in self.commands:
             return self.commands[key]
@@ -112,6 +119,14 @@ class MemoryTripRepository:
                 traveler_criteria=new_recommendation.get("traveler_criteria"),
                 constraint_adjustment_suggestions=new_recommendation.get("constraint_adjustment_suggestions"),
                 agent_meta=new_recommendation["agent_meta"],
+                created_at=datetime.now(timezone.utc),
+            ))
+        if new_itinerary_version is not None:
+            self.itinerary_versions.setdefault(trip_id, []).append(ItineraryVersionRecord(
+                trip_id=trip_id,
+                version=new_itinerary_version["version"],
+                source_guide_revision=new_itinerary_version["source_guide_revision"],
+                result=new_itinerary_version["result"],
                 created_at=datetime.now(timezone.utc),
             ))
         stored = dict(response)
@@ -1062,7 +1077,7 @@ def test_start_itinerary_invokes_atlas_from_frozen_plan(api_client: TestClient):
     itinerary = saved["itinerary_state"]
     assert itinerary["status"] == "ready"
     assert itinerary["proposed_revision"] is None
-    assert itinerary["history"] == []
+    assert "history" not in itinerary  # archived history lives in itinerary_versions now (TWM-155)
     current = itinerary["current_version"]
     assert current["version"] == 1
     assert current["source_guide_revision"] == 5
@@ -1264,8 +1279,41 @@ def test_accept_itinerary_revision_activates_and_archives(api_client: TestClient
     itinerary = saved["itinerary_state"]
     assert itinerary["proposed_revision"] is None
     assert itinerary["current_version"]["version"] == 2
-    assert len(itinerary["history"]) == 1
-    assert itinerary["history"][0]["version"] == 1
+    assert "history" not in itinerary  # archived history lives in itinerary_versions now (TWM-155)
+    archived = repository.itinerary_versions[UUID(trip["id"])]
+    assert len(archived) == 1
+    assert archived[0].version == 1
+    fetched = api_client.get(f"/trips/{trip['id']}/itinerary-versions")
+    assert fetched.status_code == 200
+    [version_1] = fetched.json()["versions"]
+    assert version_1["version"] == 1
+    assert version_1["source_guide_revision"] == 5
+    assert version_1["days"] == [
+        {"day_number": 1, "title": "Day 1"},
+        {"day_number": 2, "title": "Day 2"},
+    ]
+
+
+def test_itinerary_versions_empty_before_any_accepted_revision(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, duration_days=2)
+
+    response = api_client.get(f"/trips/{trip['id']}/itinerary-versions")
+
+    assert response.status_code == 200
+    assert response.json() == {"versions": []}
+
+
+def test_itinerary_versions_404_for_unknown_trip(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    response = api_client.get(f"/trips/{uuid4()}/itinerary-versions")
+
+    assert response.status_code == 404
 
 
 def test_accept_itinerary_revision_requires_pending_proposal(api_client: TestClient):
@@ -1308,7 +1356,8 @@ def test_keep_current_itinerary_discards_proposal_but_keeps_anchor(api_client: T
     itinerary = saved["itinerary_state"]
     assert itinerary["proposed_revision"] is None
     assert itinerary["current_version"]["version"] == 1
-    assert len(itinerary["history"]) == 0
+    assert "history" not in itinerary
+    assert not repository.itinerary_versions.get(UUID(trip["id"]))  # keep discards, never archives
     # keep_current_itinerary only touches itinerary_state — logistics_state
     # (the anchor from the earlier confirm_logistics call) is correctly
     # absent from this trimmed response; confirm it's still persisted.

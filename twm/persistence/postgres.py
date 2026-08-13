@@ -7,7 +7,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .contracts import GuestSession, RecommendationRecord, TripCommandRecord, TripRecord, VersionConflictError
+from .contracts import GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripRecord, VersionConflictError
 
 
 def _json_object(value: str | dict[str, Any]) -> dict[str, Any]:
@@ -33,6 +33,13 @@ def _recommendation_record(row: asyncpg.Record) -> RecommendationRecord:
         traveler_criteria=_json_value(row["traveler_criteria"]) if row["traveler_criteria"] is not None else None,
         constraint_adjustment_suggestions=_json_value(row["constraint_adjustment_suggestions"]) if row["constraint_adjustment_suggestions"] is not None else None,
         agent_meta=_json_object(row["agent_meta"]), created_at=row["created_at"],
+    )
+
+
+def _itinerary_version_record(row: asyncpg.Record) -> ItineraryVersionRecord:
+    return ItineraryVersionRecord(
+        trip_id=row["trip_id"], version=row["version"], source_guide_revision=row["source_guide_revision"],
+        result=_json_object(row["result"]), created_at=row["created_at"],
     )
 
 
@@ -117,11 +124,22 @@ class PostgresTripRepository:
         )
         return _recommendation_record(row) if row else None
 
+    async def list_itinerary_versions(self, guest_id: UUID, trip_id: UUID) -> list[ItineraryVersionRecord]:
+        rows = await self.pool.fetch(
+            f"""SELECT r.* FROM {self.schema}.itinerary_versions r
+            JOIN {self.schema}.trips t ON t.id = r.trip_id
+            WHERE r.trip_id=$1 AND t.guest_session_id=$2
+            ORDER BY r.version ASC""",
+            trip_id, guest_id,
+        )
+        return [_itinerary_version_record(row) for row in rows]
+
     async def commit_command(
         self, guest_id: UUID, trip_id: UUID, expected_version: int,
         idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any],
         response_trip_state: dict[str, Any], response: dict[str, Any],
         new_recommendation: dict[str, Any] | None = None,
+        new_itinerary_version: dict[str, Any] | None = None,
     ) -> TripRecord | TripCommandRecord | None:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
@@ -165,6 +183,14 @@ class PostgresTripRepository:
                         json.dumps(new_recommendation.get("traveler_criteria")) if new_recommendation.get("traveler_criteria") is not None else None,
                         json.dumps(new_recommendation.get("constraint_adjustment_suggestions")) if new_recommendation.get("constraint_adjustment_suggestions") is not None else None,
                         json.dumps(new_recommendation["agent_meta"]),
+                    )
+                if new_itinerary_version is not None:
+                    await connection.execute(
+                        f"""INSERT INTO {self.schema}.itinerary_versions
+                        (trip_id,version,source_guide_revision,result)
+                        VALUES ($1,$2,$3,$4::jsonb)""",
+                        trip_id, new_itinerary_version["version"], new_itinerary_version["source_guide_revision"],
+                        json.dumps(new_itinerary_version["result"]),
                     )
                 stored_response = dict(response)
                 response_record = _record(row).__dict__.copy()
