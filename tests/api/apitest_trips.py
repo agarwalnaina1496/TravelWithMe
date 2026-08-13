@@ -165,7 +165,7 @@ class FakeCommandEngine:
                 "state_delta": {
                     "trip_context": {
                         "destinations": ["Rishikesh"],
-                        "duration_days": 1,
+                        "trip_duration": 1,
                     },
                     "planner_state": (
                         {
@@ -227,7 +227,7 @@ class FakePlannerIntentEngine(FakeCommandEngine):
                 "state_delta": {
                     "trip_context": {
                         "destination": "Rishikesh",
-                        "duration_days": 3,
+                        "trip_duration": 3,
                     }
                 },
                 "intent": "planner",
@@ -279,7 +279,7 @@ class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
                     "trip_summary": {
                         "title": "Trip",
                         "destinations": working_plan["destinations"],
-                        "duration_days": working_plan["duration_days"],
+                        "trip_duration": working_plan["trip_duration"],
                         "overview": "Overview.",
                         "route_rationale": "Rationale.",
                     },
@@ -505,7 +505,7 @@ def test_list_trips_includes_trip_state_and_ui_state_so_the_ui_can_render_cards_
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
 
-    state = {"stage": "matching", "trip_context": {"origin": "Delhi", "budget": "₹1,00,000"}}
+    state = {"stage": "matching", "trip_context": {"origin_city": "Delhi", "budget": "₹1,00,000"}}
     ui_state = {"destinationsOpenId": "gwalior-orchha-khajuraho-panna"}
     _create_seeded_trip(api_client, repository, title="Rishikesh", trip_state=state, ui_state=ui_state)
 
@@ -735,7 +735,7 @@ def test_approve_places_invokes_guide_from_persisted_session(api_client: TestCli
     state = {
         "stage": "planning",
         "active_agent": "guide",
-        "trip_context": {"destinations": ["Rishikesh"], "duration_days": 1},
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
         "planner_state": {
             "conversation_context": {"awaiting": None},
             "places": ["Triveni Ghat"],
@@ -783,7 +783,7 @@ def test_traveler_message_response_explains_a_meaningful_tradeoff(api_client: Te
     app.dependency_overrides[get_engine] = lambda: engine
     state = {
         "stage": "planning", "active_agent": "guide",
-        "trip_context": {"destinations": ["Rishikesh"], "duration_days": 1},
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
         "planner_state": {
             "conversation_context": {"awaiting": None},
             "places": ["Triveni Ghat", "Ram Jhula"],
@@ -826,9 +826,9 @@ def test_guide_approval_requires_the_backend_owned_current_phase(api_client: Tes
     state = {
         "stage": "planning",
         "active_agent": "guide",
-        "trip_context": {"destinations": ["Rishikesh"], "duration_days": 1},
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
         "planner_state": {
-            "conversation_context": {"awaiting": "duration_days"},
+            "conversation_context": {"awaiting": "trip_duration"},
             "places": [],
             "day_plan": [],
             "revision": 1,
@@ -864,7 +864,7 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
     state = {
         "stage": "planning", "active_agent": "guide",
         "trip_context": {
-            "destinations": ["Rishikesh"], "duration_days": 1,
+            "destinations": ["Rishikesh"], "trip_duration": 1,
             "preferences": ["pilgrimage"], "exclusions": ["rafting"],
         },
         "planner_state": {
@@ -895,7 +895,7 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
     assert frozen["guide_revision"] == 5
     assert frozen["guide_state"] == {
         "destinations": ["Rishikesh"],
-        "duration_days": 1,
+        "trip_duration": 1,
         "start_date": None,
         "places": ["Triveni Ghat"],
         "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}],
@@ -911,21 +911,21 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
     assert api_client.get(f"/trips/{trip['id']}").json()["version"] == 2
 
 
-def _frozen_plan_trip_state(*, guide_revision=5, duration_days=1, start_date=None):
+def _frozen_plan_trip_state(*, guide_revision=5, trip_duration=1, start_date=None):
     guide_state = {
         "destinations": ["Rishikesh"],
-        "duration_days": duration_days,
+        "trip_duration": trip_duration,
         "start_date": start_date,
         "places": ["Triveni Ghat"],
         "day_plan": [
             {"day_number": day, "date": None, "places": ["Triveni Ghat"] if day == 1 else [], "pace": "balanced", "buffer_note": None}
-            for day in range(1, duration_days + 1)
+            for day in range(1, trip_duration + 1)
         ],
     }
     return {
         "stage": "planned",
         "active_agent": None,
-        "trip_context": {"destinations": ["Rishikesh"], "duration_days": duration_days, "start_date": start_date},
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": trip_duration, "start_date": start_date},
         "planner_state": {
             "conversation_context": {"awaiting": None},
             "places": ["Triveni Ghat"],
@@ -946,7 +946,7 @@ def test_start_itinerary_requires_frozen_plan(api_client: TestClient):
         "trip_context": {"destination": "Rishikesh"},
         "planner_state": {"guide_session": {"revision": 1, "state": {
             "phase": "PLACES_DRAFT", "destinations": ["Rishikesh"],
-            "duration_days": None, "start_date": None, "places": [],
+            "trip_duration": None, "start_date": None, "places": [],
             "day_plan": [], "preferences": [], "exclusions": [],
             "applied_changes": [], "pending_clarification": None,
         }}},
@@ -1046,13 +1046,13 @@ def test_start_itinerary_rejects_browser_supplied_plan_fields(api_client: TestCl
     assert engine.calls == []
 
 
-def _seed_ready_itinerary(api_client, repository, engine, *, guide_revision=5, duration_days=1):
+def _seed_ready_itinerary(api_client, repository, engine, *, guide_revision=5, trip_duration=1):
     """Seeds a frozen plan, then drives the real start_itinerary command so the
     resulting itinerary_state.current_version has the exact same normalized
     shape confirm_logistics will later diff against (all Pydantic default
     fields present) — avoids a hand-written fixture drifting from the schema.
     """
-    state = _frozen_plan_trip_state(guide_revision=guide_revision, duration_days=duration_days)
+    state = _frozen_plan_trip_state(guide_revision=guide_revision, trip_duration=trip_duration)
     trip = _create_seeded_trip(api_client, repository, trip_state=state)
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1096,7 +1096,7 @@ def test_confirm_logistics_persists_anchor_and_proposes_revision(api_client: Tes
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, duration_days=2)
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1130,7 +1130,7 @@ def test_confirm_logistics_second_call_replaces_pending_proposal(api_client: Tes
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, duration_days=2)
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
 
     first = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1166,7 +1166,7 @@ def test_accept_itinerary_revision_activates_and_archives(api_client: TestClient
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, duration_days=2)
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
 
     confirm = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1205,7 +1205,7 @@ def test_itinerary_versions_empty_before_any_accepted_revision(api_client: TestC
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, duration_days=2)
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
 
     response = api_client.get(f"/trips/{trip['id']}/itinerary-versions")
 
@@ -1227,7 +1227,7 @@ def test_accept_itinerary_revision_requires_pending_proposal(api_client: TestCli
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, duration_days=2)
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1243,7 +1243,7 @@ def test_keep_current_itinerary_discards_proposal_but_keeps_anchor(api_client: T
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, duration_days=2)
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
 
     confirm = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1277,7 +1277,7 @@ def test_keep_current_itinerary_requires_pending_proposal(api_client: TestClient
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, duration_days=2)
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1298,7 +1298,7 @@ def test_approve_plan_rejects_wrong_phase_without_invoking_guide(api_client: Tes
     # calling Guide.
     state = {
         "stage": "planning", "active_agent": "guide",
-        "trip_context": {"destinations": ["Rishikesh"], "duration_days": 1},
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
         "planner_state": {
             "conversation_context": {"awaiting": None},
             "places": ["Triveni Ghat"],
@@ -1339,7 +1339,7 @@ def test_day_plan_survives_a_backend_owned_clarification_round_trip(
     state = {
         "stage": "planning",
         "active_agent": "guide",
-        "trip_context": {"destinations": ["Rishikesh"], "duration_days": 1},
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
         "planner_state": {
             "conversation_context": {"awaiting": None},
             "places": ["Triveni Ghat"],
@@ -1383,7 +1383,7 @@ def test_day_plan_survives_a_backend_owned_clarification_round_trip(
 def test_approve_places_requires_duration_without_invoking_guide(
     api_client: TestClient,
 ):
-    """Backend guards approve_places on trip_context.duration_days being
+    """Backend guards approve_places on trip_context.trip_duration being
     known before Guide is ever called — under the old contract Guide itself
     fielded this as a soft mid-flow clarification; now it's a hard
     precondition the traveler must resolve first."""
@@ -1396,7 +1396,7 @@ def test_approve_places_requires_duration_without_invoking_guide(
         "active_agent": "guide",
         "trip_context": {"destinations": ["Rishikesh"]},
         "planner_state": {
-            "conversation_context": {"awaiting": "duration_days"},
+            "conversation_context": {"awaiting": "trip_duration"},
             "places": ["Triveni Ghat"],
             "day_plan": [],
             "revision": 1,
@@ -1446,7 +1446,7 @@ def test_guide_preference_delta_unions_with_earlier_specialist_context(
         "active_agent": "guide",
         "trip_context": {
             "destinations": ["Rishikesh"],
-            "duration_days": 3,
+            "trip_duration": 3,
             "preferences": ["pilgrimage", "relaxed"],
         },
         "planner_state": {
@@ -1513,7 +1513,7 @@ def test_approve_places_rejects_day_plan_allocating_an_unapproved_place(
     state = {
         "stage": "planning",
         "active_agent": "guide",
-        "trip_context": {"destinations": ["Rishikesh"], "duration_days": 1},
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
         "planner_state": {
             "conversation_context": {"awaiting": None},
             "places": ["Triveni Ghat"],
@@ -2140,7 +2140,7 @@ def test_guide_reversal_is_rejected_once_the_plan_is_frozen(api_client: TestClie
         "guide_revision": 1,
         "guide_state": {
             "destinations": state["trip_context"]["destinations"],
-            "duration_days": None,
+            "trip_duration": None,
             "start_date": None,
             "places": state["planner_state"]["places"],
             "day_plan": [],

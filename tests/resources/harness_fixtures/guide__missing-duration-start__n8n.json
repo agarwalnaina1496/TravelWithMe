@@ -4,5 +4,5 @@
   "execution_path": "n8n",
   "prompt_version": "2.2.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"How many days will your trip to Ladakh be?\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": \"duration_days\"}}}, \"outcome\": \"continue\"}"
+  "raw_output": "{\"message\": \"How many days will your trip to Ladakh be?\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": \"trip_duration\"}}}, \"outcome\": \"continue\"}"
 }

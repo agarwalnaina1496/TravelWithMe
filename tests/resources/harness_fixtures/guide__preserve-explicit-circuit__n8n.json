@@ -4,5 +4,5 @@
   "execution_path": "n8n",
   "prompt_version": "2.0.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"Here is a starting places draft for Delhi, Agra and Jaipur over seven days, in that order.\", \"state_delta\": {\"trip_context\": {\"destinations\": [\"Delhi\", \"Agra\", \"Jaipur\"], \"duration_days\": 7}, \"planner_state\": {\"conversation_context\": {\"awaiting\": null}, \"places\": [\"Red Fort\", \"Taj Mahal\", \"Agra Fort\", \"Hawa Mahal\", \"Amber Fort\"]}}, \"outcome\": \"continue\"}"
+  "raw_output": "{\"message\": \"Here is a starting places draft for Delhi, Agra and Jaipur over seven days, in that order.\", \"state_delta\": {\"trip_context\": {\"destinations\": [\"Delhi\", \"Agra\", \"Jaipur\"], \"trip_duration\": 7}, \"planner_state\": {\"conversation_context\": {\"awaiting\": null}, \"places\": [\"Red Fort\", \"Taj Mahal\", \"Agra Fort\", \"Hawa Mahal\", \"Amber Fort\"]}}, \"outcome\": \"continue\"}"
 }

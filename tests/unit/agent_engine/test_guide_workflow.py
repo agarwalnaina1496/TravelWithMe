@@ -30,7 +30,7 @@ def test_guide_evaluation_corpus_covers_incremental_planning() -> None:
         "all-fixed-inputs-known-start",
     }
     assert cases_by_id["approve-rishikesh-places"]["invariants"] == {
-        "duration_days": 3,
+        "trip_duration": 3,
         "day_plan_length": 3,
         "preserve_all_places": True,
         "place_only_day_plan": True,
@@ -48,7 +48,7 @@ def test_guide_evaluation_corpus_covers_missing_duration_clarification() -> None
 
     for case_id in ("missing-duration-start", "missing-duration-approve-places"):
         invariants = cases_by_id[case_id]["invariants"]
-        assert invariants["awaiting"] == "duration_days"
+        assert invariants["awaiting"] == "trip_duration"
         assert invariants["day_plan_length"] == 0
 
     assert cases_by_id["missing-duration-start"]["invariants"][

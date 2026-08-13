@@ -54,7 +54,7 @@ async def apply_guide(
         # quality: there is no traveler input for Guide to interpret here.
         return _apply_plan_freeze(logger, state)
 
-    if event == "APPROVE_PLACES" and not state["trip_context"].get("duration_days"):
+    if event == "APPROVE_PLACES" and not state["trip_context"].get("trip_duration"):
         raise InvalidTripCommandError(
             "Trip duration is required before building a day plan."
         )
@@ -126,7 +126,7 @@ def _apply_plan_freeze(
     trip_context = state["trip_context"]
     guide_state = {
         "destinations": trip_context.get("destinations") or [],
-        "duration_days": trip_context.get("duration_days"),
+        "trip_duration": trip_context.get("trip_duration"),
         "start_date": trip_context.get("start_date"),
         "places": planner.get("places") or [],
         "day_plan": planner.get("day_plan") or [],
@@ -229,13 +229,13 @@ def _validate_day_plan(state: dict[str, Any]) -> None:
     planner = state["planner_state"]
     day_plan = planner.get("day_plan") or []
     places = planner.get("places") or []
-    duration_days = state["trip_context"].get("duration_days")
-    if duration_days is None:
+    trip_duration = state["trip_context"].get("trip_duration")
+    if trip_duration is None:
         raise InvalidTripCommandError("Guide returned a day plan without a known duration.")
-    if len(day_plan) != duration_days:
-        raise InvalidTripCommandError("Day plan length must equal duration_days.")
+    if len(day_plan) != trip_duration:
+        raise InvalidTripCommandError("Day plan length must equal trip_duration.")
     day_numbers = [day["day_number"] for day in day_plan]
-    if day_numbers != list(range(1, duration_days + 1)):
+    if day_numbers != list(range(1, trip_duration + 1)):
         raise InvalidTripCommandError("Day numbers must be sequential from 1.")
     allocated = [place for day in day_plan for place in day["places"]]
     if len(allocated) != len({place.casefold() for place in allocated}):

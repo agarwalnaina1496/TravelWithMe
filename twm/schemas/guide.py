@@ -23,7 +23,7 @@ GuideEvent = Literal["START", "TRAVELER_MESSAGE", "APPROVE_PLACES", "APPROVE_PLA
 # Kept as a small enum (like Meridian's `awaiting`) rather than free text so
 # the UI can drive it with a fixed quick-reply set. Each slug is the exact
 # matching trip_context key name — values stay verbatim under that key.
-GuideAwaiting = Literal["duration_days", "origin_city", "num_travelers", "travel_dates", "budget"]
+GuideAwaiting = Literal["trip_duration", "origin_city", "num_travelers", "travel_dates", "budget"]
 
 
 class GuideDay(BaseModel):

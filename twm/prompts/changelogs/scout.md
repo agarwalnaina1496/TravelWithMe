@@ -1,5 +1,18 @@
 # Scout prompt changelog
 
+## Scout 1.9.0 — 2026-08-14
+
+- Renames the `duration_days` fixed shared key to `trip_duration`, matching
+  the same rename applied to Meridian's and Guide's awaiting slugs in this
+  release.
+- Rewrites two behavioral instructions from negative ("do not X") to
+  positive framing (topic-redirect reply length, when to ask/route on a
+  null-intent turn). Kept the Ownership Boundary's negative framing as-is:
+  Scout only knows abstract routing intents (`advise`/`matcher`/`planner`),
+  not the concrete downstream agent identities, so it cannot correctly
+  state "Meridian/Guide own X" without assuming knowledge it doesn't have.
+  Safety/injection guardrails unchanged.
+
 ## Scout 1.8.0 — 2026-08-14
 
 - Restored fixed shared keys for five facts (`origin_city`, `num_travelers`,

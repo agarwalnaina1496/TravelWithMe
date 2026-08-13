@@ -74,17 +74,17 @@ class AtlasWorkingPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     destinations: list[AtlasText]
-    duration_days: int = Field(ge=1, le=60)
+    trip_duration: int = Field(ge=1, le=60)
     start_date: Optional[AtlasText] = None
     approved_places: list[AtlasText] = Field(default_factory=list)
     days: list[AtlasWorkingDay]
 
     @model_validator(mode="after")
     def validate_approved_plan(self) -> "AtlasWorkingPlan":
-        if len(self.days) != self.duration_days:
-            raise ValueError("working plan day count must equal duration_days")
+        if len(self.days) != self.trip_duration:
+            raise ValueError("working plan day count must equal trip_duration")
         if [day.day_number for day in self.days] != list(
-            range(1, self.duration_days + 1)
+            range(1, self.trip_duration + 1)
         ):
             raise ValueError("working plan days must be sequential from 1")
         allocated = [place for day in self.days for place in day.places]
@@ -116,8 +116,8 @@ class AtlasTripSummary(BaseModel):
 
     title: AtlasText
     destinations: list[AtlasText]
-    duration_days: int = Field(ge=1)
-    travelers: Optional[int] = Field(default=None, ge=1)
+    trip_duration: int = Field(ge=1)
+    num_travelers: Optional[int] = Field(default=None, ge=1)
     date_range: Optional[AtlasText] = None
     overview: AtlasText
     route_rationale: AtlasText
@@ -238,9 +238,9 @@ class AtlasFinalItinerary(BaseModel):
 
     @model_validator(mode="after")
     def validate_days(self) -> "AtlasFinalItinerary":
-        expected = self.trip_summary.duration_days
+        expected = self.trip_summary.trip_duration
         if len(self.days) != expected:
-            raise ValueError("final itinerary day count must equal duration_days")
+            raise ValueError("final itinerary day count must equal trip_duration")
         if [day.day_number for day in self.days] != list(range(1, expected + 1)):
             raise ValueError("final itinerary days must be sequential from 1")
         return self
