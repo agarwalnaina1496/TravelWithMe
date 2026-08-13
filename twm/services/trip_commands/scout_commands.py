@@ -36,14 +36,6 @@ async def apply_scout(
         advisor.setdefault("conversation_context", {})[
             "last_advisor_message"
         ] = response.message
-        advisor.setdefault("artifacts", []).append(
-            {
-                "type": "advice",
-                "source": "scout",
-                "assistant_message": response.message,
-                "agent_meta": response.agent_meta.model_dump(mode="json"),
-            }
-        )
     if response.intent == "matcher":
         state["trip_context"].pop("selected_option", None)
         state["stage"] = "matching"

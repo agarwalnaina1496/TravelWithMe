@@ -7,7 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from ...persistence.contracts import TripCommandRecord, TripRecord, TripRepository
-from ...schemas.trips import TripCommandRequest, TripCommandResponse
+from ...schemas.trips import TripCommandRequest, TripCommandResponse, TripResponse
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from .atlas_commands import apply_atlas
@@ -20,7 +20,12 @@ from .logistics_commands import (
 from .matcher_commands import apply_meridian, select_destination
 from .planner_commands import apply_guide
 from .scout_commands import apply_scout
-from .state import canonical_state, trip_response
+from .state import (
+    canonical_state,
+    shape_command_trip_state,
+    snapshot_touchable_branches,
+    touched_branches,
+)
 
 _POST_FREEZE_COMMANDS = {
     "start_itinerary",
@@ -52,7 +57,10 @@ class TripCommandService:
 
         state = canonical_state(trip.trip_state)
         state["trip_id"] = str(trip.id)
+        before = snapshot_touchable_branches(state)
         result = await self._apply(state, payload)
+        touched = touched_branches(state, before)
+        shaped_trip_state = shape_command_trip_state(state, touched)
         response_without_trip = {
             "message": result["message"],
             "agent_meta": result["agent_meta"],
@@ -64,6 +72,7 @@ class TripCommandService:
             payload.idempotency_key,
             request_hash,
             state,
+            shaped_trip_state,
             response_without_trip,
         )
         if committed is None:
@@ -71,7 +80,16 @@ class TripCommandService:
         if isinstance(committed, TripCommandRecord):
             return self._replay(committed, request_hash)
         response = TripCommandResponse(
-            trip=trip_response(committed),
+            trip=TripResponse(
+                id=committed.id,
+                title=committed.title,
+                product_mode=committed.product_mode,
+                trip_state=shaped_trip_state,
+                ui_state=committed.ui_state,
+                version=committed.version,
+                created_at=committed.created_at,
+                updated_at=committed.updated_at,
+            ),
             message=result["message"],
             agent_meta=result["agent_meta"],
         )

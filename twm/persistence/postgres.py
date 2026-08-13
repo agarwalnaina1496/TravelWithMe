@@ -96,7 +96,7 @@ class PostgresTripRepository:
     async def commit_command(
         self, guest_id: UUID, trip_id: UUID, expected_version: int,
         idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any],
-        response: dict[str, Any],
+        response_trip_state: dict[str, Any], response: dict[str, Any],
     ) -> TripRecord | TripCommandRecord | None:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
@@ -130,7 +130,9 @@ class PostgresTripRepository:
                         return None
                     raise VersionConflictError(current)
                 stored_response = dict(response)
-                stored_response["trip"] = _record(row).__dict__
+                response_record = _record(row).__dict__.copy()
+                response_record["trip_state"] = response_trip_state
+                stored_response["trip"] = response_record
                 await connection.execute(
                     f"""INSERT INTO {self.schema}.trip_commands
                     (guest_session_id,trip_id,idempotency_key,request_hash,response)
