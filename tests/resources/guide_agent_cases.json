@@ -139,6 +139,48 @@
     }
   },
   {
+    "id": "missing-duration-start",
+    "input": {
+      "event": "START",
+      "message": "I want to go to Ladakh.",
+      "trip_context": {
+        "destinations": ["Ladakh"]
+      }
+    },
+    "invariants": {
+      "phase": "NEEDS_CLARIFICATION",
+      "requires_pending_clarification": true,
+      "day_plan_length": 0
+    }
+  },
+  {
+    "id": "missing-duration-approve-places",
+    "input": {
+      "event": "APPROVE_PLACES",
+      "message": null,
+      "trip_context": {
+        "destinations": ["Ladakh"]
+      },
+      "guide_state": {
+        "phase": "PLACES_DRAFT",
+        "destinations": ["Ladakh"],
+        "duration_days": null,
+        "start_date": null,
+        "places": ["Leh Palace", "Shanti Stupa"],
+        "day_plan": [],
+        "preferences": [],
+        "exclusions": [],
+        "applied_changes": [],
+        "pending_clarification": null
+      }
+    },
+    "invariants": {
+      "phase": "NEEDS_CLARIFICATION",
+      "requires_pending_clarification": true,
+      "day_plan_length": 0
+    }
+  },
+  {
     "id": "preserve-explicit-circuit",
     "input": {
       "event": "START",

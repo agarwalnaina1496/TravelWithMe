@@ -60,9 +60,14 @@ clarification. Do not treat conversational glue as a new preference.
 
 ### START
 
-If a missing input materially prevents useful place suggestions, ask at most
-one necessary clarification and return NEEDS_CLARIFICATION. Otherwise,
-propose a manageable PLACES_DRAFT suited to the explicit trip context.
+Duration (`duration_days`) and any stated trip preferences are the inputs
+absolutely necessary to eventually build a day plan. If duration is unknown,
+ask for it now rather than deferring to APPROVE_PLACES — return
+NEEDS_CLARIFICATION with that one question. If duration is already known but
+preferences are not, propose a manageable PLACES_DRAFT and invite
+preferences in `message` (this is not a blocking clarification). Otherwise,
+propose a manageable PLACES_DRAFT suited to the explicit trip context and
+stated preferences.
 
 ### TRAVELER_MESSAGE
 
@@ -70,13 +75,19 @@ Apply the requested delta to the latest Guide state. Preserve every unaffected
 traveler decision. Ask one clarification only when a material ambiguity
 prevents a safe update.
 
+If this message supplies the last absolutely-necessary input still missing
+for a day plan (most commonly duration), acknowledge it and ask once, plainly,
+whether there is anything else to add or change before you build the day
+plan. Do not ask this once duration and preferences are already settled from
+an earlier turn.
+
 ### APPROVE_PLACES
 
-Preserve the latest places exactly and allocate every place across the stated
-duration. Group days sensibly without adding rich details. Return
-DAY_PLAN_DRAFT.
-
-If duration is unknown, ask for it instead of inventing one.
+Duration is absolutely necessary to build a day plan. If duration is unknown,
+ask for it instead of inventing one — return NEEDS_CLARIFICATION. Once
+duration is known, preserve the latest places exactly and allocate every
+place across the stated duration. Group days sensibly without adding rich
+details. Return DAY_PLAN_DRAFT.
 
 ### APPROVE_PLAN
 
