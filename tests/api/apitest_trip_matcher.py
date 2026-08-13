@@ -693,15 +693,12 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
     }
 
 
-def test_invalid_output_after_repair_returns_cors_enabled_502(
+def test_invalid_output_returns_cors_enabled_502(
     api_client: TestClient,
 ) -> None:
     adapter = AsyncMock()
     adapter.invoke = AsyncMock(
-        side_effect=[
-            AgentInvocationResult(raw_output="not-json"),
-            AgentInvocationResult(raw_output="still-not-json"),
-        ]
+        side_effect=[AgentInvocationResult(raw_output="not-json")]
     )
     set_engine(
         api_client,
@@ -719,7 +716,7 @@ def test_invalid_output_after_repair_returns_cors_enabled_502(
         "detail": "The travel assistant returned an invalid response."
     }
     assert response.headers["access-control-allow-origin"] == "https://ui.test"
-    assert adapter.invoke.await_count == 2
+    assert adapter.invoke.await_count == 1
 
 
 def test_adapter_timeout_returns_cors_enabled_504(api_client: TestClient) -> None:

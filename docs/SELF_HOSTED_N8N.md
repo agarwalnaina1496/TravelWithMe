@@ -8,7 +8,7 @@ FastAPI now runs on Render. See [Render FastAPI deployment](RENDER_FASTAPI.md).
 
 ## What n8n Does
 
-n8n is the default thin model-invocation adapter for Trip Matcher. FastAPI owns prompt preparation, parsing, Pydantic validation, the single repair attempt, and public response normalization. LangGraph remains available through an explicit manual configuration switch; see [Agent engine selection](AGENT_ENGINE.md).
+n8n is the default thin model-invocation adapter for Trip Matcher. FastAPI owns prompt preparation, parsing, Pydantic validation, and public response normalization. LangGraph remains available through an explicit manual configuration switch; see [Agent engine selection](AGENT_ENGINE.md).
 
 Each agent workflow has three logical nodes:
 
@@ -16,7 +16,7 @@ Each agent workflow has three logical nodes:
 Webhook -> Agent (+ model connection) -> Respond to Webhook
 ```
 
-Neither Agent has a Structured Output Parser. On pinned n8n 1.84.3 that subnode can reject generated content and terminate the Agent before Respond to Webhook, which prevents FastAPI from observing and repairing the raw completion. FastAPI therefore supplies the output contract in the system prompt, and n8n returns the exact Agent text as `{"raw_output":"<exact model text>"}`.
+Neither Agent has a Structured Output Parser. On pinned n8n 1.84.3 that subnode can reject generated content and terminate the Agent before Respond to Webhook, which prevents FastAPI from observing the raw completion. FastAPI therefore supplies the output contract in the system prompt, and n8n returns the exact Agent text as `{"raw_output":"<exact model text>"}`.
 
 Both model subnodes read the same explicit Backend generation settings for maximum output tokens and temperature. The 180-second workflow timeout matches the common generation deadline.
 

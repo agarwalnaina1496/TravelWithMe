@@ -15,13 +15,12 @@ validate request
   -> prepare the traveler message and explicit generation settings
   -> invoke the selected thin adapter
   -> parse JSON and validate the Pydantic output contract
-  -> regenerate once from the original request after invalid output
   -> normalize the public response
 ```
 
-If the first completion is invalid, FastAPI makes exactly one compact regeneration invocation. The retry reuses the original trusted request plus sanitized failure categories and never copies the failed completion into the prompt. If the regenerated completion is still invalid, FastAPI returns a CORS-enabled `502`. Adapter timeouts return a CORS-enabled `504`. Parsing failures are infrastructure failures; they must never be represented as a successful Scout response or as Meridian `HARD_FAIL`.
+If the completion is invalid, FastAPI returns a CORS-enabled `502` immediately — there is no repair/regeneration retry, so each turn costs exactly one model invocation regardless of outcome. Adapter timeouts return a CORS-enabled `504`. Parsing failures are infrastructure failures; they must never be represented as a successful Scout response or as Meridian `HARD_FAIL`.
 
-FastAPI converts the selected Pydantic output schema into one compact instruction in the system prompt. Both adapters perform one raw model invocation and return the exact generated text. Neither adapter parses the completion. This keeps malformed-output and repair behavior identical across engines.
+FastAPI converts the selected Pydantic output schema into one compact instruction in the system prompt. Both adapters perform one raw model invocation and return the exact generated text. Neither adapter parses the completion. This keeps malformed-output behavior identical across engines.
 
 The same provider-neutral generation policy applies to Scout and Meridian:
 
@@ -42,7 +41,7 @@ These are generation capacity and execution controls, not response-content limit
 twm/services/
   agent_engine/
     contracts.py   common engine and thin-adapter contracts
-    service.py     shared preparation, parsing, validation, and repair
+    service.py     shared preparation, parsing, and validation
     settings.py    immutable selected-engine configuration
     factory.py     adapter selection and common-service assembly
     n8n.py         raw-output n8n webhook transport
@@ -86,7 +85,7 @@ The workflow returns exactly:
 {"raw_output":"<exact model text>"}
 ```
 
-The workflow does not use a Structured Output Parser. On pinned n8n 1.84.3 that subnode can reject a completion and abort the Agent before Respond to Webhook, preventing FastAPI from applying the common validation and repair policy. The workflow has three main nodes plus the configured model subnode.
+The workflow does not use a Structured Output Parser. On pinned n8n 1.84.3 that subnode can reject a completion and abort the Agent before Respond to Webhook, preventing FastAPI from applying the common validation policy. The workflow has three main nodes plus the configured model subnode.
 
 The workflow execution limit is 180 seconds and FastAPI's n8n read deadline is 185 seconds. This ordering lets n8n finish or fail before the caller deadline and prevents the previously observed 116-second successful execution from becoming a late orphan after a 60-second FastAPI timeout.
 Because pinned n8n stores the workflow deadline as a static workflow setting, Backend startup rejects an n8n configuration whose `GENERATION_TIMEOUT_SECONDS` is not 180. Change the exported workflows and the common setting together if this deadline is intentionally revised.

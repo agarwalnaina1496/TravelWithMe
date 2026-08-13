@@ -404,7 +404,7 @@ def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
     )
 
     assert response.status_code == 502
-    assert adapter.invoke.await_count == 2
+    assert adapter.invoke.await_count == 1
 
 
 def test_atlas_rejects_plan_that_does_not_allocate_approved_places(

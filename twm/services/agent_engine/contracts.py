@@ -100,7 +100,7 @@ class AgentAdapterTimeoutError(AgentAdapterError):
 
 
 class AgentOutputError(RuntimeError):
-    """The model output remained invalid after the bounded repair attempt."""
+    """The model output failed schema validation."""
 
     def __init__(self, agent: AgentName, failures: list[dict[str, Any]]) -> None:
         super().__init__(f"{agent} returned invalid output")

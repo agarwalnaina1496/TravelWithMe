@@ -1,4 +1,4 @@
-"""Common agent execution, validation, and repair tests."""
+"""Common agent execution and validation tests."""
 
 import asyncio
 import json
@@ -318,95 +318,72 @@ def test_common_service_failure_response_respects_payload_mode(
         assert "response_metadata" not in failed
 
 
-def test_common_service_repairs_invalid_output_once(monkeypatch) -> None:
+def test_common_service_raises_immediately_on_invalid_output(monkeypatch) -> None:
+    # No repair attempt: a single bad completion fails the turn outright
+    # rather than spending a second LLM call trying to recover it.
     sink = InMemorySink()
-    repaired = {
-        "message": "A repaired answer.",
-        "state_delta": {},
-        "intent": "advise",
-    }
     engine, adapter = service_with_outputs(
         monkeypatch,
         "not-json",
-        json.dumps(repaired),
         telemetry_sink=sink,
     )
 
-    execution = asyncio.run(engine.scout({}, "Help me."))
+    with pytest.raises(AgentOutputError) as captured:
+        asyncio.run(engine.scout({}, "Help me."))
 
-    assert execution.response == ScoutAgentOutput.model_validate(repaired).model_dump(
-        mode="json", exclude_none=True
-    )
-    assert adapter.invoke.await_count == 2
-    _, repair_invocation = adapter.invoke.await_args.args
-    assert "previous completion failed" in repair_invocation.system_prompt
-    original_invocation = adapter.invoke.await_args_list[0].args[1]
-    assert repair_invocation.user_prompt == original_invocation.user_prompt
-    assert repair_invocation.generation == original_invocation.generation
-    assert "OUTPUT CONTRACT:" in repair_invocation.system_prompt
-    assert "not-json" not in repair_invocation.system_prompt
-    assert '"type":"json_invalid"' in repair_invocation.system_prompt
+    assert adapter.invoke.await_count == 1
+    assert captured.value.agent == "scout"
+    assert captured.value.failures
     assert [event["event"] for event in sink.events] == [
         "be.agent.invocation.started",
-        "be.agent.output.validation_failed",
-        "be.agent.repair.started",
-        "be.agent.invocation.started",
-        "be.agent.response.received",
+        "be.agent.output.invalid",
     ]
-    assert sink.events[-1]["message"].startswith(
-        "Scout agent response received from test-engine. Response - "
+    failed = sink.events[1]
+    assert failed["message"].startswith(
+        "FastAPI rejected Scout response from test-engine. "
+        "Detail - AgentOutputValidationError:"
     )
-    assert sink.events[-1]["fields"]["attempt"] == 2
-    assert sink.events[1]["fields"]["raw_output_chars"] == len("not-json")
-    assert sink.events[1]["message"].endswith('Response - "not-json"')
-    assert sink.events[1]["response"] == "not-json"
+    assert failed["fields"]["attempt"] == 1
+    assert failed["fields"]["raw_output_chars"] == len("not-json")
+    assert failed["message"].endswith('Response - "not-json"')
+    assert failed["response"] == "not-json"
 
 
-def test_common_service_repairs_empty_successful_model_content(monkeypatch) -> None:
+def test_common_service_raises_on_empty_model_content(monkeypatch) -> None:
     sink = InMemorySink()
-    repaired = {
-        "message": "Recovered from empty content.",
-        "state_delta": {},
-        "intent": "advise",
-    }
     engine, adapter = service_with_outputs(
         monkeypatch,
         "",
-        json.dumps(repaired),
         telemetry_sink=sink,
     )
 
-    execution = asyncio.run(engine.scout({}, "Help me."))
+    with pytest.raises(AgentOutputError):
+        asyncio.run(engine.scout({}, "Help me."))
 
-    assert execution.response["message"] == "Recovered from empty content."
-    assert adapter.invoke.await_count == 2
-    assert sink.events[1]["message"].endswith('Response - ""')
-    assert sink.events[1]["response"] == ""
+    assert adapter.invoke.await_count == 1
+    failed = sink.events[1]
+    assert failed["message"].endswith('Response - ""')
+    assert failed["response"] == ""
 
 
-def test_common_service_rejects_double_encoded_output_before_repair(
-    monkeypatch,
-) -> None:
-    repaired = {
-        "message": "Recovered from a double-encoded completion.",
+def test_common_service_rejects_double_encoded_output(monkeypatch) -> None:
+    doubly_encoded = {
+        "message": "A double-encoded completion.",
         "state_delta": {},
         "intent": "advise",
     }
     engine, adapter = service_with_outputs(
         monkeypatch,
-        json.dumps(json.dumps(repaired)),
-        json.dumps(repaired),
+        json.dumps(json.dumps(doubly_encoded)),
     )
 
-    execution = asyncio.run(engine.scout({}, "Help me."))
+    with pytest.raises(AgentOutputError):
+        asyncio.run(engine.scout({}, "Help me."))
 
-    assert execution.response["message"] == (
-        "Recovered from a double-encoded completion."
-    )
-    assert adapter.invoke.await_count == 2
+    assert adapter.invoke.await_count == 1
 
 
-def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> None:
+def test_common_service_raises_on_first_invalid_output(monkeypatch) -> None:
     sink = InMemorySink()
     invalid = {
         "status": "HARD_FAIL",
@@ -417,27 +394,21 @@ def test_common_service_raises_after_exactly_one_failed_repair(monkeypatch) -> N
     engine, adapter = service_with_outputs(
         monkeypatch,
         json.dumps(invalid),
-        json.dumps(invalid),
         telemetry_sink=sink,
     )
 
     with pytest.raises(AgentOutputError) as captured:
         asyncio.run(engine.meridian({}, "Find options."))
 
-    assert adapter.invoke.await_count == 2
+    assert adapter.invoke.await_count == 1
     assert captured.value.agent == "meridian"
     assert captured.value.failures
-    validation_failures = [
-        event
-        for event in sink.events
-        if event["event"] == "be.agent.output.validation_failed"
+    invalid_events = [
+        event for event in sink.events if event["event"] == "be.agent.output.invalid"
     ]
-    assert len(validation_failures) == 2
-    assert all(
-        "HARD_FAIL" in event["message"]
-        and event["response"] == json.dumps(invalid)
-        for event in validation_failures
-    )
+    assert len(invalid_events) == 1
+    assert "HARD_FAIL" in invalid_events[0]["message"]
+    assert invalid_events[0]["response"] == json.dumps(invalid)
 
 
 def test_common_service_redacts_model_controlled_validation_locations(
@@ -453,60 +424,12 @@ def test_common_service_redacts_model_controlled_validation_locations(
     engine, adapter = service_with_outputs(
         monkeypatch,
         json.dumps(invalid),
-        json.dumps(invalid),
     )
 
     with pytest.raises(AgentOutputError) as captured:
         asyncio.run(engine.scout({}, "Help me."))
 
-    repair_invocation = adapter.invoke.await_args_list[1].args[1]
-    assert '"type":"extra_forbidden"' in repair_invocation.system_prompt
-    assert '"loc":["<redacted>"]' in repair_invocation.system_prompt
+    assert adapter.invoke.await_count == 1
     assert captured.value.failures == [
         {"type": "extra_forbidden", "loc": ["<redacted>"]}
     ]
-
-
-def test_common_service_repairs_ui_owned_state_instead_of_applying_it(
-    monkeypatch,
-) -> None:
-    invalid = {
-        "message": "Invalid",
-        "state_delta": {
-            "trip_context": {"selected_option": {"id": "ui-owned"}}
-        },
-        "intent": "advise",
-    }
-    repaired = {
-        "message": "Valid",
-        "state_delta": {},
-        "intent": "advise",
-    }
-    engine, adapter = service_with_outputs(
-        monkeypatch,
-        json.dumps(invalid),
-        json.dumps(repaired),
-    )
-
-    execution = asyncio.run(engine.scout({}, "Select it."))
-
-    assert execution.response == ScoutAgentOutput.model_validate(repaired).model_dump(
-        mode="json", exclude_none=True
-    )
-    assert adapter.invoke.await_count == 2
-
-
-def test_large_truncated_completion_is_not_copied_into_regeneration(
-    monkeypatch,
-) -> None:
-    truncated = '{"message":"' + ("x" * 12_000)
-    engine, adapter = service_with_outputs(
-        monkeypatch, truncated, json.dumps(meridian_success())
-    )
-
-    execution = asyncio.run(engine.meridian({}, "Find options."))
-
-    assert execution.response["options"][0]["destination_id"]
-    retry = adapter.invoke.await_args_list[1].args[1]
-    assert truncated not in retry.system_prompt
-    assert truncated not in retry.user_prompt
