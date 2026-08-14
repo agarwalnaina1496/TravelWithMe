@@ -788,6 +788,161 @@ def test_traveler_message_generates_places_and_day_plan_together(api_client: Tes
     assert all(day["pace"] in {"relaxed", "balanced", "packed"} for day in day_plan)
 
 
+class FakeGuideClearsGateWithoutPlanEngine(FakeCommandEngine):
+    """Simulates an LLM slip: clears the terminal `anything_else` gate but
+    returns neither `places` nor `day_plan` — the exact completeness failure
+    the deleted APPROVE_PLACES guard used to catch."""
+
+    async def guide(self, trip_state, message):
+        self.calls.append(("guide", trip_state, message))
+        return AgentExecution(
+            response={
+                "message": "Noted.",
+                "state_delta": {
+                    "planner_state": {"conversation_context": {"awaiting": None}},
+                },
+            },
+            prompt_release=PromptRelease("guide", "1.0.0", "test"),
+        )
+
+
+def test_guide_clearing_final_gate_without_a_plan_is_rejected(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeGuideClearsGateWithoutPlanEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "planning",
+        "active_agent": "guide",
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
+        "planner_state": {
+            "conversation_context": {"awaiting": "anything_else"},
+            "places": [],
+            "day_plan": [],
+            "revision": 1,
+        },
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Nothing else.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert response.status_code == 422
+    persisted = api_client.get(f"/trips/{trip['id']}").json()
+    assert persisted["version"] == 1
+    assert persisted["trip_state"]["planner_state"]["conversation_context"]["awaiting"] == "anything_else"
+
+
+def test_single_step_generation_logs_plan_generated_with_budget_and_preference_presence(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeGuideLifecycleEngine()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True,
+            environment="test",
+            payload_mode=PayloadMode.METADATA,
+            max_field_size=256,
+        ),
+        sink,
+    )
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
+    state = {
+        "stage": "planning",
+        "active_agent": "guide",
+        "trip_context": {
+            "destinations": ["Rishikesh"], "trip_duration": 1, "budget": "INR 30000",
+        },
+        "planner_state": {
+            "conversation_context": {"awaiting": "anything_else"},
+            "places": ["Triveni Ghat"],
+            "day_plan": [],
+            "revision": 2,
+        },
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "I'd like it to be quiet.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert response.status_code == 200
+    generated = [event for event in sink.events if event["event"] == "be.trip.guide.plan_generated"]
+    assert len(generated) == 1
+    assert generated[0]["fields"]["trip_id"] == trip["id"]
+    assert generated[0]["fields"]["budget_present"] is True
+    assert generated[0]["fields"]["day_plan_length"] == 1
+
+
+class FakeGuideEditReturningBothPlacesAndDayPlanEngine(FakeCommandEngine):
+    """Simulates an ordinary post-generation edit (e.g. removing a place)
+    that legitimately returns both `places` and a reallocated `day_plan` in
+    the same delta — must not be mistaken for single-step generation."""
+
+    async def guide(self, trip_state, message):
+        self.calls.append(("guide", trip_state, message))
+        return AgentExecution(
+            response={
+                "message": "Removed Ram Jhula.",
+                "state_delta": {
+                    "planner_state": {
+                        "places": ["Triveni Ghat"],
+                        "day_plan": [
+                            {"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "relaxed", "buffer_note": None},
+                        ],
+                    },
+                },
+            },
+            prompt_release=PromptRelease("guide", "1.0.0", "test"),
+        )
+
+
+def test_ordinary_edit_returning_both_places_and_day_plan_does_not_refire_plan_generated(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeGuideEditReturningBothPlacesAndDayPlanEngine()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True,
+            environment="test",
+            payload_mode=PayloadMode.METADATA,
+            max_field_size=256,
+        ),
+        sink,
+    )
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
+    state = {
+        "stage": "planning",
+        "active_agent": "guide",
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
+        "planner_state": {
+            "conversation_context": {"awaiting": None},
+            "places": ["Triveni Ghat", "Ram Jhula"],
+            "day_plan": [
+                {"day_number": 1, "date": None, "places": ["Triveni Ghat", "Ram Jhula"], "pace": "packed", "buffer_note": None},
+            ],
+            "revision": 3,
+        },
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Remove Ram Jhula.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert response.status_code == 200
+    assert not [event for event in sink.events if event["event"] == "be.trip.guide.plan_generated"]
+
+
 class FakeTradeoffExplainingEngine(FakeCommandEngine):
     async def guide(self, trip_state, message):
         self.calls.append(("guide", trip_state, message))
@@ -1356,8 +1511,19 @@ def test_keep_current_itinerary_requires_pending_proposal(api_client: TestClient
 def test_approve_plan_rejects_wrong_phase_without_invoking_guide(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeGuideLifecycleEngine()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True,
+            environment="test",
+            payload_mode=PayloadMode.METADATA,
+            max_field_size=256,
+        ),
+        sink,
+    )
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
     # approve_plan is only valid once a day plan exists — places drafted but
     # no day plan built yet must be rejected deterministically, without ever
     # calling Guide.
@@ -1385,6 +1551,13 @@ def test_approve_plan_rejects_wrong_phase_without_invoking_guide(api_client: Tes
     assert persisted["version"] == 1
     assert persisted["trip_state"]["planner_state"]["places"] == ["Triveni Ghat"]
     assert persisted["trip_state"]["planner_state"]["day_plan"] == []
+    rejection = next(
+        event for event in sink.events
+        if event["event"] == "be.trip.command.invalid_transition"
+    )
+    assert rejection["level"] == "WARNING"
+    assert rejection["fields"]["trip_id"] == trip["id"]
+    assert rejection["fields"]["command"] == "approve_plan"
 
 
 def test_day_plan_survives_a_backend_owned_clarification_round_trip(
