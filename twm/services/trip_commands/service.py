@@ -77,6 +77,7 @@ class TripCommandService:
             state,
             shaped_trip_state,
             response_without_trip,
+            frozenset(touched),
             new_recommendation,
             new_itinerary_version,
         )
@@ -105,6 +106,7 @@ class TripCommandService:
             trip_id=str(trip.id),
             command=payload.command,
             version=committed.version,
+            tables_written=sorted({"trips", *touched}),
         )
         if new_recommendation is not None:
             self.logger.info(

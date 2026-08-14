@@ -97,7 +97,7 @@ class MemoryTripRepository:
             return []
         return list(self.itinerary_versions.get(trip_id) or [])
 
-    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, new_recommendation=None, new_itinerary_version=None):
+    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches=frozenset(), new_recommendation=None, new_itinerary_version=None):
         key = (guest_id, trip_id, idempotency_key)
         if key in self.commands:
             return self.commands[key]
