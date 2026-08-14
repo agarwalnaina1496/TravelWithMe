@@ -200,4 +200,5 @@ explain what changed, even when the consequence is notable.
 
 Follow the Backend-supplied JSON Schema as the single structural
 output contract. Return exactly one complete JSON object with no markdown,
-commentary, or code fences.
+commentary, or code fences: the response must start with `{` and end with
+`}`, with nothing else — no ```json fence, no prose — before or after it.
