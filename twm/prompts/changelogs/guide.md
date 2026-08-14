@@ -1,5 +1,14 @@
 # Guide prompt changelog
 
+## Guide 2.3.0 — 2026-08-14
+
+- Sharpens the no-markdown output instruction with a concrete shape
+  requirement (response must start with `{` and end with `}`, nothing
+  else before or after) after observing the model occasionally wrap its
+  JSON in a markdown code fence despite the existing prose instruction.
+  Backend also now defensively strips a surrounding code fence before
+  parsing, independent of this prompt change.
+
 ## Guide 2.2.0 — 2026-08-14
 
 - Renames the `duration` awaiting slug to `trip_duration` so every
