@@ -2363,3 +2363,135 @@ def test_guide_reversal_is_rejected_once_the_plan_is_frozen(api_client: TestClie
 
     assert response.status_code == 422
     assert engine.calls == []
+
+
+def _sink_logger():
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True,
+            environment="test",
+            payload_mode=PayloadMode.METADATA,
+            max_field_size=256,
+        ),
+        sink,
+    )
+    return sink, logger
+
+
+def test_scout_command_logs_request_and_response_at_the_trip_commands_boundary(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeCommandEngine()
+    sink, logger = _sink_logger()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
+    state = {"stage": "new", "trip_context": {}, "advisor_state": {"conversation_context": {}}}
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "continue", "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+
+    assert response.status_code == 200
+    received = next(event for event in sink.events if event["event"] == "be.request.validated")
+    assert received["fields"]["agent"] == "scout"
+    assert received["fields"]["trip_id"] == trip["id"]
+    returned = next(event for event in sink.events if event["event"] == "be.response.normalized")
+    assert returned["fields"]["agent"] == "scout"
+    assert returned["fields"]["trip_id"] == trip["id"]
+    assert returned["fields"]["status"] == "success"
+
+
+def test_meridian_command_logs_request_and_response_at_the_trip_commands_boundary(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    sink, logger = _sink_logger()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
+    state = {
+        "stage": "matching", "active_agent": "meridian",
+        "trip_context": {}, "advisor_state": {"conversation_context": {}},
+        "matcher_state": {"conversation_context": {}},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "continue", "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+
+    assert response.status_code == 200
+    meridian_received = next(
+        event for event in sink.events
+        if event["event"] == "be.request.validated" and event["fields"]["agent"] == "meridian"
+    )
+    assert meridian_received["fields"]["trip_id"] == trip["id"]
+    meridian_returned = next(
+        event for event in sink.events
+        if event["event"] == "be.response.normalized" and event["fields"]["agent"] == "meridian"
+    )
+    assert meridian_returned["fields"]["trip_id"] == trip["id"]
+    assert meridian_returned["fields"]["status"] == "success"
+
+
+def test_guide_command_logs_request_and_response_at_the_trip_commands_boundary(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeGuideLifecycleEngine()
+    sink, logger = _sink_logger()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
+    state = _seeded_guide_places_state()
+    state["trip_context"]["trip_duration"] = 1
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Add a beach.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+
+    assert response.status_code == 200
+    received = next(event for event in sink.events if event["event"] == "be.request.validated")
+    assert received["fields"]["agent"] == "guide"
+    assert received["fields"]["trip_id"] == trip["id"]
+    returned = next(event for event in sink.events if event["event"] == "be.response.normalized")
+    assert returned["fields"]["agent"] == "guide"
+    assert returned["fields"]["trip_id"] == trip["id"]
+    assert returned["fields"]["status"] == "success"
+
+
+def test_atlas_command_logs_request_and_response_at_the_trip_commands_boundary(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    sink, logger = _sink_logger()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
+    state = _frozen_plan_trip_state(guide_revision=5)
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "start_itinerary", "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+
+    assert response.status_code == 200
+    received = next(event for event in sink.events if event["event"] == "be.request.validated")
+    assert received["fields"]["agent"] == "atlas"
+    assert received["fields"]["trip_id"] == trip["id"]
+    returned = next(event for event in sink.events if event["event"] == "be.response.normalized")
+    assert returned["fields"]["agent"] == "atlas"
+    assert returned["fields"]["trip_id"] == trip["id"]
+    assert returned["fields"]["status"] == "success"

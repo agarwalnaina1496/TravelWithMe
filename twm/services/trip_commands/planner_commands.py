@@ -69,8 +69,28 @@ async def apply_guide(
     )
     agent_state = request.trip_state.model_dump(mode="json")
     agent_state["guide_event"] = request.event
+    request_data = request.model_dump(mode="json", exclude_none=True)
+    trip_id = str(state.get("trip_id")) if state.get("trip_id") else None
+    logger.info(
+        f"Received Guide request. Request - {logger.format_json(request_data)}",
+        event="be.request.validated",
+        source="application",
+        agent="guide",
+        trip_id=trip_id,
+        payload=request_data,
+    )
     response = _normalize_guide_response(
         await engine.guide(agent_state, request.message)
+    )
+    response_data = response.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        f"Returning Guide response. Response - {logger.format_json(response_data)}",
+        event="be.response.normalized",
+        source="application",
+        agent="guide",
+        trip_id=trip_id,
+        status="success",
+        response=response_data,
     )
 
     if event == "TRAVELER_MESSAGE" and response.outcome == "reopen_destination_discovery":
@@ -204,7 +224,7 @@ async def _reopen_destination_discovery(
     )
     from .matcher_commands import apply_meridian
 
-    return await apply_meridian(engine, state, message, latest_recommendation)
+    return await apply_meridian(engine, logger, state, message, latest_recommendation)
 
 
 def _validate_guide_event(event: str, state: dict[str, Any]) -> None:
