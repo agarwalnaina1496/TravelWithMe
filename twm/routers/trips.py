@@ -9,10 +9,12 @@ from ..dependencies import get_engine, get_logger, get_trip_persistence
 from ..persistence.contracts import TripRecord, VersionConflictError
 from ..persistence.service import TripPersistenceService
 from ..schemas.trips import (
+    SUMMARY_TRIP_CONTEXT_FIELDS,
     ItineraryVersionDaySummary,
     TripCommandRequest,
     TripCommandResponse,
     TripCreateRequest,
+    TripItineraryResponse,
     TripItineraryVersionSummary,
     TripItineraryVersionsResponse,
     TripListResponse,
@@ -20,6 +22,8 @@ from ..schemas.trips import (
     TripRenameRequest,
     TripResponse,
     TripSummary,
+    TripSummaryItineraryState,
+    TripSummaryState,
     TripUiStateRequest,
 )
 from ..services import AgentEngine
@@ -33,7 +37,45 @@ Engine = Annotated[AgentEngine, Depends(get_engine)]
 
 
 def _response(record: TripRecord) -> TripResponse:
-    return TripResponse.model_validate(record, from_attributes=True)
+    """GET /trips/{id} (TWM-159): matcher/planner/logistics stay inline
+    (small, one shared resume call every screen relies on) — only the
+    Atlas itinerary result is dropped, since only the Trip Dashboard
+    screen reads it (via the dedicated /itinerary endpoint instead)."""
+    trip_state = record.trip_state
+    itinerary = trip_state.get("itinerary_state")
+    current_version = itinerary.get("current_version") if isinstance(itinerary, dict) else None
+    if isinstance(current_version, dict) and "result" in current_version:
+        trip_state = {
+            **trip_state,
+            "itinerary_state": {
+                **itinerary,
+                "current_version": {key: value for key, value in current_version.items() if key != "result"},
+            },
+        }
+    return TripResponse(
+        id=record.id, title=record.title, product_mode=record.product_mode,
+        trip_state=trip_state, ui_state=record.ui_state, version=record.version,
+        created_at=record.created_at, updated_at=record.updated_at,
+    )
+
+
+def _summary(record: TripRecord) -> TripSummary:
+    """GET /trips (TWM-159): a small My Trips/Landing recap, not the full
+    trip_state — the list screen never reads matcher/planner/itinerary
+    result/logistics state, so none of it belongs on a list card."""
+    trip_state = record.trip_state
+    trip_context = trip_state.get("trip_context") or {}
+    recap = {key: trip_context[key] for key in SUMMARY_TRIP_CONTEXT_FIELDS if key in trip_context}
+    itinerary_status = (trip_state.get("itinerary_state") or {}).get("status")
+    return TripSummary(
+        id=record.id, title=record.title, product_mode=record.product_mode,
+        trip_state=TripSummaryState(
+            stage=trip_state.get("stage", "new"),
+            itinerary_state=TripSummaryItineraryState(status=itinerary_status),
+            trip_context=recap,
+        ),
+        version=record.version, created_at=record.created_at, updated_at=record.updated_at,
+    )
 
 
 @router.get("", response_model=TripListResponse)
@@ -47,7 +89,7 @@ async def list_trips(request: Request, response: Response, persistence: Persiste
         guest_id=str(guest.id),
         count=len(trips),
     )
-    return TripListResponse(trips=[TripSummary.model_validate(t, from_attributes=True) for t in trips])
+    return TripListResponse(trips=[_summary(t) for t in trips])
 
 
 @router.post("", response_model=TripResponse, status_code=201)
@@ -127,6 +169,34 @@ async def list_itinerary_versions(trip_id: UUID, request: Request, response: Res
         count=len(summaries),
     )
     return TripItineraryVersionsResponse(versions=summaries)
+
+
+@router.get("/{trip_id}/itinerary", response_model=TripItineraryResponse)
+async def get_current_itinerary(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger):
+    guest = await persistence.guest(request, response)
+    trip = await persistence.repository.get_trip(guest.id, trip_id)
+    if trip is None:
+        logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    current = await persistence.repository.get_current_itinerary(guest.id, trip_id)
+    if current is None:
+        logger.info(
+            "No active itinerary yet for trip.",
+            event="be.trip.itinerary.fetched",
+            source="http",
+            trip_id=str(trip_id),
+            found=False,
+        )
+        raise HTTPException(status_code=404, detail="No itinerary yet.")
+    logger.info(
+        "Fetched active itinerary.",
+        event="be.trip.itinerary.fetched",
+        source="http",
+        trip_id=str(trip_id),
+        found=True,
+        version=current.version,
+    )
+    return TripItineraryResponse.model_validate(current, from_attributes=True)
 
 
 def _conflict(error: VersionConflictError) -> HTTPException:

@@ -196,3 +196,36 @@ def test_accepting_a_revision_archives_the_outgoing_version_via_new_itinerary_ve
     assert (trip_id, 1) in db.itinerary_versions  # outgoing, archived explicitly
     assert (trip_id, 2) in db.itinerary_versions  # new active version, archived unconditionally
     assert db.itinerary_state[trip_id]["current_version"] == 2
+
+
+def test_get_current_itinerary_reads_the_version_the_pointer_names():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_id = _seed_trip(db, guest_id)
+    db.itinerary_state[trip_id] = {"status": "ready", "current_version": 2}
+    db.itinerary_versions[(trip_id, 1)] = {
+        "trip_id": trip_id, "version": 1, "source_guide_revision": 5,
+        "result": __import__("json").dumps({"final_itinerary": {"days": ["v1"]}}),
+        "created_at": datetime.now(timezone.utc),
+    }
+    db.itinerary_versions[(trip_id, 2)] = {
+        "trip_id": trip_id, "version": 2, "source_guide_revision": 6,
+        "result": __import__("json").dumps({"final_itinerary": {"days": ["v2"]}}),
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    current = asyncio.run(repository.get_current_itinerary(guest_id, trip_id))
+
+    assert current.version == 2
+    assert current.source_guide_revision == 6
+    assert current.result == {"final_itinerary": {"days": ["v2"]}}
+
+
+def test_get_current_itinerary_none_before_any_itinerary_generated():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_id = _seed_trip(db, guest_id)
+
+    assert asyncio.run(repository.get_current_itinerary(guest_id, trip_id)) is None

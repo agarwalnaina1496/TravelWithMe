@@ -81,6 +81,19 @@ class MemoryTripRepository:
         self.trips[trip_id] = updated
         return updated
 
+    async def get_current_itinerary(self, guest_id, trip_id):
+        trip = await self.get_trip(guest_id, trip_id)
+        if not trip:
+            return None
+        itinerary = trip.trip_state.get("itinerary_state") or {}
+        current = itinerary.get("current_version")
+        if not current:
+            return None
+        return ItineraryVersionRecord(
+            trip_id=trip_id, version=current["version"], source_guide_revision=current["source_guide_revision"],
+            result=current["result"], created_at=datetime.now(timezone.utc),
+        )
+
     async def get_command(self, guest_id, trip_id, idempotency_key):
         return self.commands.get((guest_id, trip_id, idempotency_key))
 
@@ -499,21 +512,34 @@ def test_guest_trip_crud_without_delete_and_version_conflict(api_client: TestCli
     assert api_client.delete(f"/trips/{trip_id}").status_code == 405
 
 
-def test_list_trips_includes_trip_state_and_ui_state_so_the_ui_can_render_cards_without_n_extra_fetches(
+def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
     api_client: TestClient,
 ):
+    """TWM-159: My Trips/Landing only ever read stage, itinerary_state.status,
+    and a small trip_context recap subset — the list response no longer
+    carries the full trip_state/ui_state blobs (matcher/planner/itinerary
+    result/logistics state, or unrelated trip_context fields)."""
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
 
-    state = {"stage": "matching", "trip_context": {"origin_city": "Delhi", "budget": "₹1,00,000"}}
+    state = {
+        "stage": "matching",
+        "trip_context": {"origin_city": "Delhi", "origin": "Delhi", "budget": "₹1,00,000"},
+        "matcher_state": {"conversation_context": {"awaiting": None}},
+    }
     ui_state = {"destinationsOpenId": "gwalior-orchha-khajuraho-panna"}
     _create_seeded_trip(api_client, repository, title="Rishikesh", trip_state=state, ui_state=ui_state)
 
     listed = api_client.get("/trips")
     assert listed.status_code == 200
     [summary] = listed.json()["trips"]
-    assert summary["trip_state"] == state
-    assert summary["ui_state"] == ui_state
+    assert summary["trip_state"] == {
+        "stage": "matching",
+        "itinerary_state": {"status": None},
+        "trip_context": {"origin": "Delhi", "budget": "₹1,00,000"},
+    }
+    assert "ui_state" not in summary
+    assert "matcher_state" not in summary["trip_state"]
 
 
 def test_guest_cannot_access_another_guests_trip():
@@ -1024,8 +1050,12 @@ def test_start_itinerary_is_idempotent_and_does_not_rerun_atlas(api_client: Test
     # correctly omits an untouched branch, so fetch the persisted state to
     # confirm nothing changed instead of expecting it inline.
     assert "itinerary_state" not in second.json()["trip"]["trip_state"]
-    persisted_itinerary = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["itinerary_state"]
-    assert first_itinerary["current_version"]["result"] == persisted_itinerary["current_version"]["result"]
+    # GET /trips/{id} no longer inlines the itinerary result (TWM-159) — the
+    # dedicated endpoint is the source for it now.
+    persisted_trip_state = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]
+    assert "result" not in persisted_trip_state["itinerary_state"]["current_version"]
+    persisted_itinerary = api_client.get(f"/trips/{trip['id']}/itinerary").json()
+    assert first_itinerary["current_version"]["result"] == persisted_itinerary["result"]
 
 
 def test_start_itinerary_rejects_browser_supplied_plan_fields(api_client: TestClient):
@@ -1220,6 +1250,53 @@ def test_itinerary_versions_404_for_unknown_trip(api_client: TestClient):
     response = api_client.get(f"/trips/{uuid4()}/itinerary-versions")
 
     assert response.status_code == 404
+
+
+def test_get_current_itinerary_returns_the_active_version_result(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
+
+    response = api_client.get(f"/trips/{trip['id']}/itinerary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["version"] == 1
+    assert body["source_guide_revision"] == 5
+    assert body["result"]["final_itinerary"]["trip_summary"]["destinations"] == ["Rishikesh"]
+
+
+def test_get_current_itinerary_404_before_any_itinerary_generated(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+
+    response = api_client.get(f"/trips/{trip['id']}/itinerary")
+
+    assert response.status_code == 404
+
+
+def test_get_current_itinerary_404_for_unknown_trip(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    response = api_client.get(f"/trips/{uuid4()}/itinerary")
+
+    assert response.status_code == 404
+
+
+def test_get_current_itinerary_is_ownership_guarded():
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        trip = _seed_ready_itinerary(owner, repository, engine, guide_revision=5, trip_duration=1)
+        assert stranger.get(f"/trips/{trip['id']}/itinerary").status_code == 404
+        assert owner.get(f"/trips/{trip['id']}/itinerary").status_code == 200
+    app.dependency_overrides.clear()
 
 
 def test_accept_itinerary_revision_requires_pending_proposal(api_client: TestClient):

@@ -209,6 +209,16 @@ class FakeDatabase:
                 return []
             rows = [v for (t, _v), v in self.itinerary_versions.items() if t == trip_id]
             return sorted(rows, key=lambda r: r["version"])
+        if q.startswith(f"SELECT v.* FROM {self.q('itinerary_versions')} v"):
+            trip_id, guest_id = args
+            trip = self.trips.get(trip_id)
+            if not trip or trip["guest_session_id"] != guest_id:
+                return None
+            pointer = self.itinerary_state.get(trip_id)
+            if not pointer or pointer["current_version"] is None:
+                return None
+            row = self.itinerary_versions.get((trip_id, pointer["current_version"]))
+            return dict(row) if row else None
 
         # --- itinerary_proposed_revisions ---
         if q.startswith(f"INSERT INTO {self.q('itinerary_proposed_revisions')}"):

@@ -179,6 +179,16 @@ class PostgresTripRepository:
         )
         return [_itinerary_version_record(row) for row in rows]
 
+    async def get_current_itinerary(self, guest_id: UUID, trip_id: UUID) -> ItineraryVersionRecord | None:
+        row = await self.pool.fetchrow(
+            f"""SELECT v.* FROM {self.schema}.itinerary_versions v
+            JOIN {self.schema}.itinerary_state s ON s.trip_id = v.trip_id AND s.current_version = v.version
+            JOIN {self.schema}.trips t ON t.id = v.trip_id
+            WHERE v.trip_id=$1 AND t.guest_session_id=$2""",
+            trip_id, guest_id,
+        )
+        return _itinerary_version_record(row) if row else None
+
     async def commit_command(
         self, guest_id: UUID, trip_id: UUID, expected_version: int,
         idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any],

@@ -63,12 +63,34 @@ class TripResponse(BaseModel):
     updated_at: datetime
 
 
+class TripSummaryItineraryState(BaseModel):
+    status: str | None = None
+
+
+# trip_context is free-form (Scout extracts whatever field names fit the
+# conversation); this is the same recap subset My Trips/Landing actually
+# render (TWM-159) — kept in sync with TWM-UI's tripLifecycle.js
+# RECAP_FIELDS plus selected_option (contextDestination).
+SUMMARY_TRIP_CONTEXT_FIELDS = (
+    "origin", "budget", "duration_days", "travelers", "travel_window", "month", "dates", "selected_option",
+)
+
+
+class TripSummaryState(BaseModel):
+    stage: str = "new"
+    itinerary_state: TripSummaryItineraryState = Field(default_factory=TripSummaryItineraryState)
+    trip_context: dict[str, Any] = Field(default_factory=dict)
+
+
 class TripSummary(BaseModel):
+    """My Trips / Landing list item (TWM-159) — a small recap, not the full
+    trip_state; the Atlas itinerary result and matcher/planner/logistics
+    state never belong on a card the list screen never reads them from."""
+
     id: UUID
     title: str
     product_mode: Literal["self_led", "twm_led"]
-    trip_state: dict[str, Any]
-    ui_state: dict[str, Any]
+    trip_state: TripSummaryState
     version: int
     created_at: datetime
     updated_at: datetime
@@ -110,6 +132,17 @@ class TripItineraryVersionSummary(BaseModel):
 
 class TripItineraryVersionsResponse(BaseModel):
     versions: list[TripItineraryVersionSummary]
+
+
+class TripItineraryResponse(BaseModel):
+    """The active itinerary's full Atlas result (TWM-159) — moved out of
+    GET /trips/{id} into its own endpoint since only the Trip Dashboard
+    screen ever reads it."""
+
+    version: int
+    source_guide_revision: int
+    result: dict[str, Any]
+    created_at: datetime
 
 
 class TripConflictResponse(BaseModel):
