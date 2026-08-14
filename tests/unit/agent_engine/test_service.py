@@ -385,6 +385,48 @@ def test_common_service_strips_markdown_fence_around_output(monkeypatch) -> None
     assert adapter.invoke.await_count == 1
 
 
+def test_common_service_extracts_fenced_json_with_surrounding_prose(
+    monkeypatch,
+) -> None:
+    output = {
+        "message": "A mountain trip can work well.",
+        "state_delta": {"trip_context": {"region": "Uttarakhand"}},
+        "intent": "advise",
+    }
+    noisy = f"Sure, here you go:\n```json\n{json.dumps(output)}\n```\nLet me know!"
+    engine, adapter = service_with_outputs(monkeypatch, noisy)
+
+    execution = asyncio.run(
+        engine.scout({"stage": "new", "trip_context": {}}, "Tell me about mountains.")
+    )
+
+    assert execution.response == ScoutAgentOutput.model_validate(output).model_dump(
+        mode="json", exclude_none=True
+    )
+    assert adapter.invoke.await_count == 1
+
+
+def test_common_service_extracts_outermost_braces_without_fence(
+    monkeypatch,
+) -> None:
+    output = {
+        "message": "A mountain trip can work well.",
+        "state_delta": {"trip_context": {"region": "Uttarakhand"}},
+        "intent": "advise",
+    }
+    noisy = f"Here's the plan: {json.dumps(output)} Hope that helps!"
+    engine, adapter = service_with_outputs(monkeypatch, noisy)
+
+    execution = asyncio.run(
+        engine.scout({"stage": "new", "trip_context": {}}, "Tell me about mountains.")
+    )
+
+    assert execution.response == ScoutAgentOutput.model_validate(output).model_dump(
+        mode="json", exclude_none=True
+    )
+    assert adapter.invoke.await_count == 1
+
+
 def test_common_service_rejects_double_encoded_output(monkeypatch) -> None:
     doubly_encoded = {
         "message": "A double-encoded completion.",

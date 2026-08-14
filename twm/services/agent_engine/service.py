@@ -284,20 +284,41 @@ def _build_invocation(
 
 
 _MARKDOWN_FENCE_RE = re.compile(
-    r"\A\s*```(?:json)?\s*\n(?P<body>.*)\n```\s*\Z", re.DOTALL
+    r"```(?:json)?\s*\n(?P<body>.*?)\n```", re.DOTALL
 )
 
 
-def _strip_markdown_fence(raw_output: str) -> str:
-    match = _MARKDOWN_FENCE_RE.match(raw_output)
-    return match.group("body") if match else raw_output
+def _decode_agent_json(raw_output: str) -> Any:
+    # Layered fallback for LLM formatting deviations the prompt forbids but
+    # cannot fully prevent: try the raw string first, then a fenced block
+    # found anywhere in it, then the outermost {...} span as a last resort.
+    try:
+        return json.loads(raw_output)
+    except (TypeError, json.JSONDecodeError):
+        pass
+
+    fence_match = _MARKDOWN_FENCE_RE.search(raw_output)
+    if fence_match:
+        try:
+            return json.loads(fence_match.group("body"))
+        except json.JSONDecodeError:
+            pass
+
+    start, end = raw_output.find("{"), raw_output.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(raw_output[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    raise json.JSONDecodeError("Unable to decode agent output", raw_output, 0)
 
 
 def _parse_and_validate(
     raw_output: str, definition: AgentDefinition
 ) -> dict[str, Any]:
     try:
-        decoded = json.loads(_strip_markdown_fence(raw_output))
+        decoded = _decode_agent_json(raw_output)
     except (TypeError, json.JSONDecodeError):
         raise _OutputValidationFailure(
             [{"type": "json_invalid", "loc": []}]
