@@ -4,6 +4,7 @@ from typing import Any
 
 from ...persistence.contracts import RecommendationRecord
 from ...schemas.meridian import MeridianRequest
+from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_meridian_response
 from .errors import InvalidTripCommandError
@@ -25,6 +26,7 @@ def _prior_options(latest: RecommendationRecord | None) -> list[dict[str, Any]]:
 
 async def apply_meridian(
     engine: AgentEngine,
+    logger: TelemetryLogger,
     state: dict[str, Any],
     message: str | None,
     latest: RecommendationRecord | None,
@@ -47,8 +49,28 @@ async def apply_meridian(
         "matcher_state": matcher_state,
     }
     request = MeridianRequest.model_validate({"trip_state": phase, "message": message})
+    request_data = request.model_dump(mode="json", exclude_none=True)
+    trip_id = str(state.get("trip_id")) if state.get("trip_id") else None
+    logger.info(
+        f"Received Meridian request. Request - {logger.format_json(request_data)}",
+        event="be.request.validated",
+        source="application",
+        agent="meridian",
+        trip_id=trip_id,
+        payload=request_data,
+    )
     response = _normalize_meridian_response(
         await engine.meridian(request.trip_state.model_dump(mode="json"), request.message)
+    )
+    response_data = response.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        f"Returning Meridian response. Response - {logger.format_json(response_data)}",
+        event="be.response.normalized",
+        source="application",
+        agent="meridian",
+        trip_id=trip_id,
+        status="success",
+        response=response_data,
     )
     trip_delta = response.state_delta.trip_context.model_dump(mode="json")
     trip_delta.pop("selected_option", None)

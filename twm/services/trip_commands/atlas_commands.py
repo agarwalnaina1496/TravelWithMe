@@ -30,7 +30,26 @@ async def apply_atlas(
         {"trip_context": state["trip_context"], "working_plan": working_plan.model_dump(mode="json")}
     )
     agent_state = request.model_dump(mode="json")
+    trip_id = str(state.get("trip_id")) if state.get("trip_id") else None
+    logger.info(
+        f"Received Atlas request. Request - {logger.format_json(agent_state)}",
+        event="be.request.validated",
+        source="application",
+        agent="atlas",
+        trip_id=trip_id,
+        payload=agent_state,
+    )
     response = _normalize_atlas_response(await engine.atlas(agent_state, None))
+    response_data = response.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        f"Returning Atlas response. Response - {logger.format_json(response_data)}",
+        event="be.response.normalized",
+        source="application",
+        agent="atlas",
+        trip_id=trip_id,
+        status="success",
+        response=response_data,
+    )
 
     state["itinerary_state"] = {
         "status": "ready",

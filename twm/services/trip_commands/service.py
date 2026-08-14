@@ -173,7 +173,7 @@ class TripCommandService:
             if state.get("active_agent") == "meridian" or state.get("stage") in {
                 "matching", "recommendation_ready", "recommended"
             }:
-                return await apply_meridian(self.engine, state, None, latest_recommendation)
+                return await apply_meridian(self.engine, self.logger, state, None, latest_recommendation)
             return await apply_scout(self.engine, self.logger, state, None, latest_recommendation)
         if payload.command == "select_destination":
             return select_destination(state, payload.option_id or "", latest_recommendation)
@@ -192,11 +192,12 @@ class TripCommandService:
         if payload.command == "discover_entry":
             state["stage"] = "matching"
             state["active_agent"] = "meridian"
-            return await apply_meridian(self.engine, state, payload.message, latest_recommendation)
+            return await apply_meridian(self.engine, self.logger, state, payload.message, latest_recommendation)
         if payload.command == "more_like_this":
             refinement = payload.refinement
             return await apply_meridian(
                 self.engine,
+                self.logger,
                 state,
                 refinement.instructions if refinement else None,
                 latest_recommendation,
@@ -222,7 +223,7 @@ class TripCommandService:
         if state.get("active_agent") == "meridian" or state.get("stage") in {
             "matching", "recommendation_ready", "recommended"
         }:
-            return await apply_meridian(self.engine, state, message, latest_recommendation)
+            return await apply_meridian(self.engine, self.logger, state, message, latest_recommendation)
         return await apply_scout(self.engine, self.logger, state, message, latest_recommendation)
 
     @staticmethod

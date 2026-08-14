@@ -60,8 +60,27 @@ async def apply_confirm_logistics(
             ],
         }
     )
+    request_data = request.model_dump(mode="json")
+    logger.info(
+        f"Received Atlas request. Request - {logger.format_json(request_data)}",
+        event="be.request.validated",
+        source="application",
+        agent="atlas",
+        trip_id=trip_id,
+        payload=request_data,
+    )
     response = _normalize_atlas_response(
         await engine.atlas(request.model_dump(mode="json"), None)
+    )
+    response_data = response.model_dump(mode="json", exclude_none=True)
+    logger.info(
+        f"Returning Atlas response. Response - {logger.format_json(response_data)}",
+        event="be.response.normalized",
+        source="application",
+        agent="atlas",
+        trip_id=trip_id,
+        status="success",
+        response=response_data,
     )
 
     proposed_version = current_version["version"] + 1
