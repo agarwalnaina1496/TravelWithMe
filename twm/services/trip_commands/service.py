@@ -185,8 +185,6 @@ class TripCommandService:
             state["stage"] = "planning"
             state["active_agent"] = "guide"
             return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
-        if payload.command == "approve_places":
-            return await apply_guide(self.engine, self.logger, state, "APPROVE_PLACES", None, latest_recommendation)
         if payload.command == "approve_plan":
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None, latest_recommendation)
         if payload.command == "scout_entry":

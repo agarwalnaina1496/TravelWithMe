@@ -18,23 +18,23 @@ def test_guide_evaluation_corpus_covers_incremental_planning() -> None:
     assert set(cases_by_id) == {
         "rishikesh-start",
         "remove-rafting-add-pilgrimage",
-        "approve-rishikesh-places",
+        "anything-else-answered-generates-plan",
         "remove-place-shortens-day-explains-tradeoff",
         "preserve-explicit-circuit",
         "missing-duration-start",
-        "missing-duration-approve-places",
         "missing-origin-start",
         "missing-travelers-start",
         "missing-dates-start",
         "missing-budget-start",
         "all-fixed-inputs-known-start",
     }
-    assert cases_by_id["approve-rishikesh-places"]["invariants"] == {
+    assert cases_by_id["anything-else-answered-generates-plan"]["invariants"] == {
         "trip_duration": 3,
         "day_plan_length": 3,
-        "preserve_all_places": True,
+        "places_generated": True,
         "place_only_day_plan": True,
         "requires_day_pace": True,
+        "no_intermediate_places_only_state": True,
     }
 
 
@@ -46,14 +46,10 @@ def test_guide_evaluation_corpus_covers_missing_duration_clarification() -> None
     )
     cases_by_id = {case["id"]: case for case in cases}
 
-    for case_id in ("missing-duration-start", "missing-duration-approve-places"):
-        invariants = cases_by_id[case_id]["invariants"]
-        assert invariants["awaiting"] == "trip_duration"
-        assert invariants["day_plan_length"] == 0
-
-    assert cases_by_id["missing-duration-start"]["invariants"][
-        "places_omitted_from_delta"
-    ] is True
+    invariants = cases_by_id["missing-duration-start"]["invariants"]
+    assert invariants["awaiting"] == "trip_duration"
+    assert invariants["day_plan_length"] == 0
+    assert invariants["places_omitted_from_delta"] is True
 
 
 def test_guide_evaluation_corpus_covers_fixed_input_gate_sequence() -> None:
@@ -77,6 +73,6 @@ def test_guide_evaluation_corpus_covers_fixed_input_gate_sequence() -> None:
         assert invariants["places_omitted_from_delta"] is True
 
     assert cases_by_id["all-fixed-inputs-known-start"]["invariants"] == {
-        "awaiting": None,
+        "awaiting": "anything_else",
         "day_plan_length": 0,
     }

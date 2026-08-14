@@ -48,33 +48,33 @@
     }
   },
   {
-    "id": "approve-rishikesh-places",
+    "id": "anything-else-answered-generates-plan",
     "input": {
-      "event": "APPROVE_PLACES",
-      "message": null,
+      "event": "TRAVELER_MESSAGE",
+      "message": "No, that's everything, thanks.",
       "trip_context": {
         "destinations": ["Rishikesh"],
         "trip_duration": 3,
+        "origin_city": "Delhi",
+        "num_travelers": 3,
+        "travel_dates": "flexible",
+        "budget": "INR 30000",
         "preferences": ["pilgrimage"],
         "exclusions": ["river rafting"]
       },
       "planner_state": {
-        "conversation_context": { "awaiting": null },
-        "places": [
-          "Ram Jhula",
-          "Triveni Ghat",
-          "Neer Garh Waterfall",
-          "Neelkanth Mahadev Temple"
-        ],
+        "conversation_context": { "awaiting": "anything_else" },
+        "places": [],
         "day_plan": []
       }
     },
     "invariants": {
       "trip_duration": 3,
       "day_plan_length": 3,
-      "preserve_all_places": true,
+      "places_generated": true,
       "place_only_day_plan": true,
-      "requires_day_pace": true
+      "requires_day_pace": true,
+      "no_intermediate_places_only_state": true
     }
   },
   {
@@ -134,25 +134,6 @@
       "awaiting": "trip_duration",
       "day_plan_length": 0,
       "places_omitted_from_delta": true
-    }
-  },
-  {
-    "id": "missing-duration-approve-places",
-    "input": {
-      "event": "APPROVE_PLACES",
-      "message": null,
-      "trip_context": {
-        "destinations": ["Ladakh"]
-      },
-      "planner_state": {
-        "conversation_context": { "awaiting": null },
-        "places": ["Leh Palace", "Shanti Stupa"],
-        "day_plan": []
-      }
-    },
-    "invariants": {
-      "awaiting": "trip_duration",
-      "day_plan_length": 0
     }
   },
   {
@@ -245,7 +226,7 @@
       "planner_state": {}
     },
     "invariants": {
-      "awaiting": null,
+      "awaiting": "anything_else",
       "day_plan_length": 0
     }
   }

@@ -13,17 +13,21 @@ from pydantic import (
 from ..trust_boundary import validate_phase_state
 from .common import AgentMeta
 from .scout import BoundedMessage
-from .trip_context import TripContext
+from .trip_context import FIXED_KEYS, TripContext
 
 
 GuideText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 GuidePace = Literal["relaxed", "balanced", "packed"]
-GuideEvent = Literal["START", "TRAVELER_MESSAGE", "APPROVE_PLACES", "APPROVE_PLAN"]
-# Fixed trip-context inputs Guide gates on before a day plan can be built.
-# Kept as a small enum (like Meridian's `awaiting`) rather than free text so
-# the UI can drive it with a fixed quick-reply set. Each slug is the exact
-# matching trip_context key name — values stay verbatim under that key.
-GuideAwaiting = Literal["trip_duration", "origin_city", "num_travelers", "travel_dates", "budget"]
+GuideEvent = Literal["START", "TRAVELER_MESSAGE", "APPROVE_PLAN"]
+# Fixed trip-context inputs Guide gates on before a plan can be built. Kept
+# as a small enum (like Meridian's `awaiting`) rather than free text so the
+# UI can drive it with a fixed quick-reply set. Each of the five slugs is
+# the exact matching trip_context key name (derived from TripContext's own
+# FIXED_KEYS so the two can't drift) — values stay verbatim under that key.
+# `anything_else` is the sixth, open gating question asked after all five
+# fixed fields are known; its answer is extracted like any other turn under
+# a freely chosen semantic key, never a fixed key of its own.
+GuideAwaiting = Literal[(*FIXED_KEYS, "anything_else")]
 
 
 class GuideDay(BaseModel):

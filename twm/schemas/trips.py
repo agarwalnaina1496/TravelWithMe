@@ -155,7 +155,6 @@ TripCommandName = Literal[
     "continue",
     "select_destination",
     "start_planning",
-    "approve_places",
     "approve_plan",
     "new_journey",
     "scout_entry",

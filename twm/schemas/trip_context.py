@@ -12,7 +12,9 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, model_serializer
 
-_FIXED_KEYS = ("origin_city", "num_travelers", "trip_duration", "travel_dates", "budget")
+# Public so other schemas (e.g. Guide's awaiting enum) can derive their own
+# fixed-key references from this single source instead of re-hardcoding it.
+FIXED_KEYS = ("origin_city", "num_travelers", "trip_duration", "travel_dates", "budget")
 
 
 class TripContext(BaseModel):
@@ -35,5 +37,5 @@ class TripContext(BaseModel):
         return {
             key: value
             for key, value in data.items()
-            if value is not None or key not in _FIXED_KEYS
+            if value is not None or key not in FIXED_KEYS
         }

@@ -1,8 +1,0 @@
-{
-  "agent": "guide",
-  "case_id": "approve-rishikesh-places",
-  "execution_path": "n8n",
-  "prompt_version": "2.0.0",
-  "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"Here is your three-day plan for Rishikesh.\", \"state_delta\": {\"planner_state\": {\"day_plan\": [{\"day_number\": 1, \"date\": null, \"places\": [\"Ram Jhula\", \"Triveni Ghat\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 2, \"date\": null, \"places\": [\"Neer Garh Waterfall\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 3, \"date\": null, \"places\": [\"Neelkanth Mahadev Temple\"], \"pace\": \"balanced\", \"buffer_note\": null}]}}, \"outcome\": \"continue\"}"
-}

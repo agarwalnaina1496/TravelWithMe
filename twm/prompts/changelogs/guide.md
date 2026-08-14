@@ -1,5 +1,28 @@
 # Guide prompt changelog
 
+## Guide 3.0.0 — 2026-08-14
+
+- Breaking flow change: removes the two-phase `PLACES_DRAFT` →
+  `APPROVE_PLACES` split entirely. Guide no longer receives an
+  `APPROVE_PLACES` event; `places` and `day_plan` are generated together in
+  a single step, once trip context is complete, on the same
+  `TRAVELER_MESSAGE` turn that answers the last gating question. There is
+  no intermediate places-only state for the traveler or Backend to hold.
+- Adds a sixth gating question after the five fixed trip-context fields —
+  "Anything else you'd like to add? Any other preferences?" — via a new
+  `awaiting = "anything_else"` value. Its answer is extracted the same way
+  as any other turn — a concise semantic key under `trip_context`, never a
+  fixed key of its own. Guide returns only this turn's additions; Backend
+  owns the union-merge with what's already stored. `GuideAwaiting` grows
+  from five values to six.
+- Extends place-selection instructions so a qualitative budget tier (tight/
+  moderate/generous) and stated preferences actually influence which
+  places are proposed, not just day-plan pace judgment — previously the
+  "no cost data" instruction only scoped to pace.
+- Backend: removes the `approve_places` command, the `APPROVE_PLACES`
+  `GuideEvent`, and its dedicated validation from `planner_commands.py` and
+  `twm/schemas/trips.py`'s command enum.
+
 ## Guide 2.3.0 — 2026-08-14
 
 - Sharpens the no-markdown output instruction with a concrete shape

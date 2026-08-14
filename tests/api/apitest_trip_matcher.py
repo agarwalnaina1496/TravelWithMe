@@ -120,12 +120,13 @@ def test_active_phase_prompt_releases_are_complete() -> None:
     assert load_prompt_versions() == {
         "scout": "1.9.0",
         "meridian": "1.10.0",
-        "guide": "2.3.0",
+        "guide": "3.0.0",
         "atlas": "1.4.0",
     }
     guide_prompt = load_prompt_release("guide").content
     assert "Traveler authority" in guide_prompt
-    assert "APPROVE_PLACES" in guide_prompt
+    assert "anything_else" in guide_prompt
+    assert "APPROVE_PLACES" not in guide_prompt
     assert "booking links, reservations, or detailed transport" in guide_prompt
     assert "reopen_destination_discovery" in guide_prompt
     meridian_prompt = load_prompt_release("meridian").content
