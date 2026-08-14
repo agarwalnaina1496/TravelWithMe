@@ -1,6 +1,7 @@
 """Common agent execution, parsing, and validation."""
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -282,11 +283,21 @@ def _build_invocation(
     )
 
 
+_MARKDOWN_FENCE_RE = re.compile(
+    r"\A\s*```(?:json)?\s*\n(?P<body>.*)\n```\s*\Z", re.DOTALL
+)
+
+
+def _strip_markdown_fence(raw_output: str) -> str:
+    match = _MARKDOWN_FENCE_RE.match(raw_output)
+    return match.group("body") if match else raw_output
+
+
 def _parse_and_validate(
     raw_output: str, definition: AgentDefinition
 ) -> dict[str, Any]:
     try:
-        decoded = json.loads(raw_output)
+        decoded = json.loads(_strip_markdown_fence(raw_output))
     except (TypeError, json.JSONDecodeError):
         raise _OutputValidationFailure(
             [{"type": "json_invalid", "loc": []}]

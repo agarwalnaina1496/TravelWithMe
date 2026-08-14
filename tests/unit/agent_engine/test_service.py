@@ -366,6 +366,25 @@ def test_common_service_raises_on_empty_model_content(monkeypatch) -> None:
     assert failed["response"] == ""
 
 
+def test_common_service_strips_markdown_fence_around_output(monkeypatch) -> None:
+    output = {
+        "message": "A mountain trip can work well.",
+        "state_delta": {"trip_context": {"region": "Uttarakhand"}},
+        "intent": "advise",
+    }
+    fenced = f"```json\n{json.dumps(output)}\n```"
+    engine, adapter = service_with_outputs(monkeypatch, fenced)
+
+    execution = asyncio.run(
+        engine.scout({"stage": "new", "trip_context": {}}, "Tell me about mountains.")
+    )
+
+    assert execution.response == ScoutAgentOutput.model_validate(output).model_dump(
+        mode="json", exclude_none=True
+    )
+    assert adapter.invoke.await_count == 1
+
+
 def test_common_service_rejects_double_encoded_output(monkeypatch) -> None:
     doubly_encoded = {
         "message": "A double-encoded completion.",
