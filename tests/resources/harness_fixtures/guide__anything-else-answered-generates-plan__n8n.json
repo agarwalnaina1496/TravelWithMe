@@ -1,0 +1,8 @@
+{
+  "agent": "guide",
+  "case_id": "anything-else-answered-generates-plan",
+  "execution_path": "n8n",
+  "prompt_version": "3.0.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Here is your three-day plan for Rishikesh.\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": null}, \"places\": [\"Ram Jhula\", \"Triveni Ghat\", \"Neer Garh Waterfall\", \"Neelkanth Mahadev Temple\"], \"day_plan\": [{\"day_number\": 1, \"date\": null, \"places\": [\"Ram Jhula\", \"Triveni Ghat\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 2, \"date\": null, \"places\": [\"Neer Garh Waterfall\"], \"pace\": \"relaxed\", \"buffer_note\": null}, {\"day_number\": 3, \"date\": null, \"places\": [\"Neelkanth Mahadev Temple\"], \"pace\": \"balanced\", \"buffer_note\": null}]}}, \"outcome\": \"continue\"}"
+}

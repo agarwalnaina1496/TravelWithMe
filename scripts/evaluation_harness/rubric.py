@@ -385,6 +385,24 @@ def _guide_requires_day_pace(
         raise RubricFailure("expected every day plan entry to carry a valid pace signal")
 
 
+def _guide_places_generated(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    places = response.get("state_delta", {}).get("planner_state", {}).get("places")
+    if expected and not places:
+        raise RubricFailure("expected places to be generated in this turn's delta")
+
+
+def _guide_no_intermediate_places_only_state(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    planner_delta = response.get("state_delta", {}).get("planner_state", {})
+    if expected and "places" in planner_delta and "day_plan" not in planner_delta:
+        raise RubricFailure(
+            "expected places and day_plan to be generated together, not places alone"
+        )
+
+
 def _guide_must_not_add_destinations(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
@@ -656,6 +674,8 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "preserve_destination_order": _guide_preserve_destination_order,
         "must_not_add_destinations": _guide_must_not_add_destinations,
         "requires_day_pace": _guide_requires_day_pace,
+        "places_generated": _guide_places_generated,
+        "no_intermediate_places_only_state": _guide_no_intermediate_places_only_state,
     },
     "atlas": {
         "destinations": _atlas_destinations,

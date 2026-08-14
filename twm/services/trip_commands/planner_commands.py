@@ -54,13 +54,6 @@ async def apply_guide(
         # quality: there is no traveler input for Guide to interpret here.
         return _apply_plan_freeze(logger, state)
 
-    if event == "APPROVE_PLACES" and not state["trip_context"].get("trip_duration"):
-        raise InvalidTripCommandError(
-            "Trip duration is required before building a day plan."
-        )
-    if event == "APPROVE_PLACES" and not planner.get("places"):
-        raise InvalidTripCommandError("Approve places before building a day plan.")
-
     request = GuideRequest.model_validate(
         {
             "event": event,
@@ -99,6 +92,20 @@ async def apply_guide(
 
     _validate_guide_transition(event, state, planner_delta)
     planner["revision"] = int(planner.get("revision", 0)) + 1
+
+    if planner_delta.places is not None and planner_delta.day_plan is not None:
+        trip_context = state["trip_context"]
+        logger.info(
+            "Guide generated the complete plan in a single step.",
+            event="be.trip.guide.plan_generated",
+            source="application",
+            trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+            guide_revision=planner["revision"],
+            places_count=len(planner.get("places") or []),
+            day_plan_length=len(planner.get("day_plan") or []),
+            budget_present=bool(trip_context.get("budget")),
+            preferences_present=bool(trip_context.get("preferences")),
+        )
 
     state["active_agent"] = "guide"
     state["stage"] = "planning"
@@ -202,8 +209,6 @@ def _validate_guide_event(event: str, state: dict[str, Any]) -> None:
         return
     if not started:
         raise InvalidTripCommandError("Start Guide planning before changing the plan.")
-    if event == "APPROVE_PLACES" and not state["planner_state"].get("places"):
-        raise InvalidTripCommandError("Only the latest places draft can be approved.")
     if event == "APPROVE_PLAN" and not state["planner_state"].get("day_plan"):
         raise InvalidTripCommandError("Only the latest day plan can be approved.")
 
@@ -215,12 +220,6 @@ def _validate_guide_transition(
         raise InvalidTripCommandError(
             "Guide returned a day plan for START, which does not build one."
         )
-    if event == "APPROVE_PLACES" and planner_delta.day_plan is None:
-        awaiting = state["planner_state"].get("conversation_context", {}).get("awaiting")
-        if not awaiting:
-            raise InvalidTripCommandError(
-                "Guide did not return a day plan for APPROVE_PLACES."
-            )
     if planner_delta.day_plan is not None:
         _validate_day_plan(state)
 
