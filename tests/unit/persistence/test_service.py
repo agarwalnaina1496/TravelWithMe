@@ -58,6 +58,9 @@ class FakeTripRepository(TripRepository):
     async def list_itinerary_versions(self, guest_id, trip_id):
         raise NotImplementedError
 
+    async def get_current_itinerary(self, guest_id, trip_id):
+        raise NotImplementedError
+
     async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches, new_recommendation=None, new_itinerary_version=None):
         raise NotImplementedError
 
