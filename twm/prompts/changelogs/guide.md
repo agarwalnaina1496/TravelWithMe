@@ -10,9 +10,11 @@
   no intermediate places-only state for the traveler or Backend to hold.
 - Adds a sixth gating question after the five fixed trip-context fields —
   "Anything else you'd like to add? Any other preferences?" — via a new
-  `awaiting = "anything_else"` value. Its answer merges into
-  `trip_context.preferences`/`exclusions` as a delta, not a fixed key.
-  `GuideAwaiting` grows from five values to six.
+  `awaiting = "anything_else"` value. Its answer is extracted the same way
+  as any other turn — a concise semantic key under `trip_context`, never a
+  fixed key of its own. Guide returns only this turn's additions; Backend
+  owns the union-merge with what's already stored. `GuideAwaiting` grows
+  from five values to six.
 - Extends place-selection instructions so a qualitative budget tier (tight/
   moderate/generous) and stated preferences actually influence which
   places are proposed, not just day-plan pace judgment — previously the

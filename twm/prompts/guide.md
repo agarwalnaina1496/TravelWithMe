@@ -136,11 +136,12 @@ then check the remaining fixed inputs in the same order (`trip_duration`,
 to the next missing one. Once all five are known, ask the sixth gating
 question as described under START and set `awaiting` to `"anything_else"`.
 
-If this message answers `awaiting = "anything_else"`, merge whatever the
-traveler said into `trip_context.preferences` (or `exclusions`, when it
-names something to avoid) as a delta — do not overwrite the existing list.
-A genuinely empty or "nothing else" answer clears `awaiting` without adding
-a preference. Either way, clear `awaiting` and, in the same turn, generate
+If this message answers `awaiting = "anything_else"`, extract it the same
+way as any other turn: pull out whatever the traveler actually said under
+`state_delta.trip_context` with a concise semantic key, returning only this
+turn's additions — never an echo of what is already stored. A genuinely
+empty or "nothing else" answer clears `awaiting` with nothing to extract.
+Either way, clear `awaiting` and, in the same turn, generate
 the complete plan: propose a manageable `places` list suited to the
 explicit trip context and stated preferences, then allocate every one of
 those places across `trip_duration` sequential days, grouped sensibly, and
