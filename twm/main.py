@@ -12,10 +12,12 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from .shared.properties import property_loader
 from .middleware import SecurityBoundaryMiddleware
+from .routers.auth import router as auth_api
 from .routers.health import router as health_api
 from .routers.trip_matcher import router as trip_matcher_api
 from .routers.trip_planner import router as trip_planner_api
 from .routers.trips import router as trips_api
+from .auth import AuthService, AuthSettings
 from .persistence import DatabaseSettings, PostgresTripRepository, TripPersistenceService
 from .services import (
     AgentAdapterError,
@@ -36,6 +38,7 @@ from .telemetry import (
 async def application_lifespan(app: FastAPI):
     settings = AgentEngineSettings.load()
     database_settings = DatabaseSettings.load()
+    auth_settings = AuthSettings.load()
     async with AsyncExitStack() as stack:
         http_client = None
         if settings.engine == "n8n":
@@ -52,9 +55,12 @@ async def application_lifespan(app: FastAPI):
                 max_size=database_settings.pool_max_size,
             )
             stack.push_async_callback(pool.close)
-            app.state.trip_persistence = TripPersistenceService(PostgresTripRepository(pool, database_settings.schema), database_settings)
+            repository = PostgresTripRepository(pool, database_settings.schema)
+            app.state.trip_persistence = TripPersistenceService(repository, database_settings)
+            app.state.auth_service = AuthService(repository, auth_settings, app.state.telemetry)
         else:
             app.state.trip_persistence = None
+            app.state.auth_service = None
         try:
             yield
         finally:
@@ -175,6 +181,7 @@ def initialize_app() -> FastAPI:
         return await request_validation_exception_handler(request, error)
 
     app.include_router(health_api)
+    app.include_router(auth_api)
     app.include_router(trip_matcher_api)
     app.include_router(trip_planner_api)
     app.include_router(trips_api)

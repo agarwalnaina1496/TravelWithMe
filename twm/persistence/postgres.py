@@ -8,7 +8,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .contracts import GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripRecord, VersionConflictError
+from .contracts import DuplicateEmailError, GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripRecord, User, VersionConflictError
 
 # Branches split out of trips.trip_state into dedicated tables (TWM-158).
 # itinerary_state is handled separately below — it is pointer-only
@@ -52,6 +52,10 @@ def _recommendation_record(row: asyncpg.Record) -> RecommendationRecord:
     )
 
 
+def _user_record(row: asyncpg.Record) -> User:
+    return User(id=row["id"], email=row["email"], password_hash=row["password_hash"], created_at=row["created_at"])
+
+
 def _itinerary_version_record(row: asyncpg.Record) -> ItineraryVersionRecord:
     return ItineraryVersionRecord(
         trip_id=row["trip_id"], version=row["version"], source_guide_revision=row["source_guide_revision"],
@@ -77,6 +81,23 @@ class PostgresTripRepository:
             f"INSERT INTO {self.schema}.guest_sessions (token_hash,expires_at) VALUES ($1,now()+($2*interval '1 day')) RETURNING id,expires_at",
             token_hash, lifetime_days)
         return GuestSession(**dict(row))
+
+    async def create_user(self, email: str, password_hash: str) -> User:
+        try:
+            row = await self.pool.fetchrow(
+                f"INSERT INTO {self.schema}.users (email,password_hash) VALUES ($1,$2) RETURNING *",
+                email, password_hash)
+        except asyncpg.UniqueViolationError as error:
+            raise DuplicateEmailError(email) from error
+        return _user_record(row)
+
+    async def get_user_by_email(self, email: str) -> User | None:
+        row = await self.pool.fetchrow(f"SELECT * FROM {self.schema}.users WHERE email=$1", email)
+        return _user_record(row) if row else None
+
+    async def get_user_by_id(self, user_id: UUID) -> User | None:
+        row = await self.pool.fetchrow(f"SELECT * FROM {self.schema}.users WHERE id=$1", user_id)
+        return _user_record(row) if row else None
 
     async def list_trips(self, guest_id: UUID) -> list[TripRecord]:
         async with self.pool.acquire() as connection:
