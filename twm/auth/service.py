@@ -82,6 +82,15 @@ class AuthService:
         claimed = await self._claim_guest_trips(request, user.id)
         return AuthResult(user=user, claimed_trip_count=claimed)
 
+    def logout(self, response: Response) -> None:
+        """Clears the JWT cookie. Flags must match how it was set (path,
+        httponly, secure, samesite) for the browser to actually remove it
+        rather than leaving a stale, now-orphaned cookie behind."""
+        response.delete_cookie(
+            key=self.settings.jwt_cookie_name, path="/",
+            httponly=True, secure=self.settings.jwt_cookie_secure, samesite="lax",
+        )
+
     async def current_user(self, request: Request) -> User | None:
         token = request.cookies.get(self.settings.jwt_cookie_name)
         if not token:

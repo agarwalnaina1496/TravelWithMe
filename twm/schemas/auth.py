@@ -62,3 +62,8 @@ class LoginResponse(BaseModel):
     claimed_trip_count: int = Field(
         description="Trips reassigned from this request's guest session to this account, if any.",
     )
+
+
+class MeResponse(BaseModel):
+    id: UUID
+    email: str
