@@ -57,7 +57,7 @@ async def application_lifespan(app: FastAPI):
             stack.push_async_callback(pool.close)
             repository = PostgresTripRepository(pool, database_settings.schema)
             app.state.trip_persistence = TripPersistenceService(repository, database_settings)
-            app.state.auth_service = AuthService(repository, auth_settings, app.state.telemetry)
+            app.state.auth_service = AuthService(repository, auth_settings, database_settings, app.state.telemetry)
         else:
             app.state.trip_persistence = None
             app.state.auth_service = None

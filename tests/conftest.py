@@ -16,11 +16,17 @@ os.environ["N8N_ATLAS_WEBHOOK_URL"] = "https://agents.test/webhook/atlas"
 os.environ["TRUSTED_HOSTS"] = '["testserver"]'
 os.environ["CORS_ALLOWED_ORIGINS"] = '["https://ui.test"]'
 
+from twm.dependencies import get_current_user
 from twm.main import app
 
 
 @pytest.fixture
 def api_client() -> TestClient:
+    # Default every API test to an unauthenticated (guest-only) request —
+    # get_current_user otherwise depends on get_auth_service, which raises
+    # 503 when app.state.auth_service is unset (no APP_DATABASE_URL in this
+    # suite). Tests exercising authenticated behavior override this again.
+    app.dependency_overrides[get_current_user] = lambda: None
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()

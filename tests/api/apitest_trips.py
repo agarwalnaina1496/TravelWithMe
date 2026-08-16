@@ -6,9 +6,9 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
-from twm.dependencies import get_engine, get_logger, get_trip_persistence
+from twm.dependencies import get_current_user, get_engine, get_logger, get_trip_persistence
 from twm.main import app
-from twm.persistence.contracts import GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripRecord, VersionConflictError
+from twm.persistence.contracts import GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripRecord, User, VersionConflictError
 from twm.persistence.service import TripPersistenceService
 from twm.persistence.settings import DatabaseSettings
 from twm.prompt_registry import PromptRelease
@@ -17,9 +17,16 @@ from twm.services import AgentExecution
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
 
 
+def _owned_by(trip: TripRecord, owner) -> bool:
+    if owner.user_id is not None:
+        return trip.user_id == owner.user_id
+    return trip.guest_session_id == owner.guest_session_id and trip.user_id is None
+
+
 class MemoryTripRepository:
     def __init__(self):
         self.guests = {}
+        self.users = {}
         self.trips = {}
         self.commands = {}
         self.recommendations = {}  # trip_id -> list[RecommendationRecord], latest last
@@ -38,21 +45,40 @@ class MemoryTripRepository:
         self.guests[token_hash] = guest
         return guest
 
-    async def list_trips(self, guest_id):
-        return [trip for trip in self.trips.values() if trip.guest_session_id == guest_id]
+    async def create_user(self, email, password_hash):
+        user = User(id=uuid4(), email=email, password_hash=password_hash, created_at=datetime.now(timezone.utc))
+        self.users[email] = user
+        return user
 
-    async def create_trip(self, guest_id, title, product_mode, trip_state, ui_state):
+    async def get_user_by_email(self, email):
+        return self.users.get(email)
+
+    async def get_user_by_id(self, user_id):
+        return next((u for u in self.users.values() if u.id == user_id), None)
+
+    async def claim_guest_trips(self, guest_session_id, user_id):
+        claimed = 0
+        for trip_id, trip in list(self.trips.items()):
+            if trip.guest_session_id == guest_session_id and trip.user_id is None:
+                self.trips[trip_id] = replace(trip, user_id=user_id)
+                claimed += 1
+        return claimed
+
+    async def list_trips(self, owner):
+        return [trip for trip in self.trips.values() if _owned_by(trip, owner)]
+
+    async def create_trip(self, guest_id, user_id, title, product_mode, trip_state, ui_state):
         now = datetime.now(timezone.utc)
-        trip = TripRecord(uuid4(), guest_id, title, product_mode, trip_state, ui_state, 1, now, now)
+        trip = TripRecord(uuid4(), guest_id, user_id, title, product_mode, trip_state, ui_state, 1, now, now)
         self.trips[trip.id] = trip
         return trip
 
-    async def get_trip(self, guest_id, trip_id):
+    async def get_trip(self, owner, trip_id):
         trip = self.trips.get(trip_id)
-        return trip if trip and trip.guest_session_id == guest_id else None
+        return trip if trip and _owned_by(trip, owner) else None
 
-    async def replace_trip(self, guest_id, trip_id, expected_version, trip_state, ui_state):
-        trip = await self.get_trip(guest_id, trip_id)
+    async def replace_trip(self, owner, trip_id, expected_version, trip_state, ui_state):
+        trip = await self.get_trip(owner, trip_id)
         if not trip:
             return None
         if trip.version != expected_version:
@@ -61,8 +87,8 @@ class MemoryTripRepository:
         self.trips[trip_id] = updated
         return updated
 
-    async def rename_trip(self, guest_id, trip_id, expected_version, title):
-        trip = await self.get_trip(guest_id, trip_id)
+    async def rename_trip(self, owner, trip_id, expected_version, title):
+        trip = await self.get_trip(owner, trip_id)
         if not trip:
             return None
         if trip.version != expected_version:
@@ -71,8 +97,8 @@ class MemoryTripRepository:
         self.trips[trip_id] = updated
         return updated
 
-    async def update_ui_state(self, guest_id, trip_id, expected_version, ui_state):
-        trip = await self.get_trip(guest_id, trip_id)
+    async def update_ui_state(self, owner, trip_id, expected_version, ui_state):
+        trip = await self.get_trip(owner, trip_id)
         if not trip:
             return None
         if trip.version != expected_version:
@@ -81,8 +107,8 @@ class MemoryTripRepository:
         self.trips[trip_id] = updated
         return updated
 
-    async def get_current_itinerary(self, guest_id, trip_id):
-        trip = await self.get_trip(guest_id, trip_id)
+    async def get_current_itinerary(self, owner, trip_id):
+        trip = await self.get_trip(owner, trip_id)
         if not trip:
             return None
         itinerary = trip.trip_state.get("itinerary_state") or {}
@@ -94,27 +120,27 @@ class MemoryTripRepository:
             result=current["result"], created_at=datetime.now(timezone.utc),
         )
 
-    async def get_command(self, guest_id, trip_id, idempotency_key):
-        return self.commands.get((guest_id, trip_id, idempotency_key))
+    async def get_command(self, owner, trip_id, idempotency_key):
+        return self.commands.get((owner.user_id or owner.guest_session_id, trip_id, idempotency_key))
 
-    async def get_latest_recommendation(self, guest_id, trip_id):
-        trip = await self.get_trip(guest_id, trip_id)
+    async def get_latest_recommendation(self, owner, trip_id):
+        trip = await self.get_trip(owner, trip_id)
         if not trip:
             return None
         rounds = self.recommendations.get(trip_id) or []
         return rounds[-1] if rounds else None
 
-    async def list_itinerary_versions(self, guest_id, trip_id):
-        trip = await self.get_trip(guest_id, trip_id)
+    async def list_itinerary_versions(self, owner, trip_id):
+        trip = await self.get_trip(owner, trip_id)
         if not trip:
             return []
         return list(self.itinerary_versions.get(trip_id) or [])
 
-    async def commit_command(self, guest_id, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches=frozenset(), new_recommendation=None, new_itinerary_version=None):
-        key = (guest_id, trip_id, idempotency_key)
+    async def commit_command(self, owner, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches=frozenset(), new_recommendation=None, new_itinerary_version=None):
+        key = (owner.user_id or owner.guest_session_id, trip_id, idempotency_key)
         if key in self.commands:
             return self.commands[key]
-        trip = await self.get_trip(guest_id, trip_id)
+        trip = await self.get_trip(owner, trip_id)
         if not trip:
             return None
         if trip.version != expected_version:
@@ -546,6 +572,7 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
 def test_guest_cannot_access_another_guests_trip():
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_current_user] = lambda: None
     with TestClient(app) as owner, TestClient(app) as stranger:
         trip_id = owner.post("/trips", json={"title": "Delhi"}).json()["id"]
         assert stranger.get(f"/trips/{trip_id}").status_code == 404
@@ -630,6 +657,7 @@ def test_ui_state_update_preserves_canonical_trip_state(api_client: TestClient):
 def test_ui_state_contract_rejects_trip_state_and_foreign_owner():
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_current_user] = lambda: None
     with TestClient(app) as owner, TestClient(app) as stranger:
         created = owner.post("/trips", json={"title": "Trip"}).json()
         rejected = owner.patch(
@@ -1435,6 +1463,7 @@ def test_get_current_itinerary_is_ownership_guarded():
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_current_user] = lambda: None
     with TestClient(app) as owner, TestClient(app) as stranger:
         trip = _seed_ready_itinerary(owner, repository, engine, guide_revision=5, trip_duration=1)
         assert stranger.get(f"/trips/{trip['id']}/itinerary").status_code == 404

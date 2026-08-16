@@ -8,7 +8,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .contracts import DuplicateEmailError, GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripRecord, User, VersionConflictError
+from .contracts import DuplicateEmailError, GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripOwner, TripRecord, User, VersionConflictError
 
 # Branches split out of trips.trip_state into dedicated tables (TWM-158).
 # itinerary_state is handled separately below — it is pointer-only
@@ -20,6 +20,26 @@ _ITINERARY_BRANCH = "itinerary_state"
 # trips.trip_state now holds only these non-touchable fields; everything
 # else lives in the dedicated branch tables above.
 _CORE_STATE_FIELDS = ("status", "stage", "active_agent", "trip_context", "advisor_state")
+
+
+def _owner_clause(owner: TripOwner, index: int, *, alias: str = "") -> str:
+    """A trip is reachable by user_id once claimed, or by an unclaimed
+    guest_session_id otherwise (TWM-179) — always exactly one placeholder,
+    so callers can splice this into a query without shifting other
+    positional params."""
+    prefix = f"{alias}." if alias else ""
+    if owner.user_id is not None:
+        return f"{prefix}user_id=${index}"
+    return f"{prefix}guest_session_id=${index} AND {prefix}user_id IS NULL"
+
+
+def _owner_value(owner: TripOwner) -> UUID:
+    return owner.user_id if owner.user_id is not None else owner.guest_session_id
+
+
+def _row_count(result: str) -> int:
+    """asyncpg's Connection.execute() returns a command tag like 'UPDATE 3'."""
+    return int(result.rsplit(" ", 1)[-1])
 
 
 def _json_object(value: str | dict[str, Any]) -> dict[str, Any]:
@@ -36,7 +56,7 @@ def _core_state(trip_state: dict[str, Any]) -> dict[str, Any]:
 
 def _record(row: asyncpg.Record) -> TripRecord:
     return TripRecord(
-        id=row["id"], guest_session_id=row["guest_session_id"], title=row["title"],
+        id=row["id"], guest_session_id=row["guest_session_id"], user_id=row["user_id"], title=row["title"],
         product_mode=row["product_mode"], trip_state=_json_object(row["trip_state"]), ui_state=_json_object(row["ui_state"]),
         version=row["version"], created_at=row["created_at"], updated_at=row["updated_at"],
     )
@@ -99,9 +119,20 @@ class PostgresTripRepository:
         row = await self.pool.fetchrow(f"SELECT * FROM {self.schema}.users WHERE id=$1", user_id)
         return _user_record(row) if row else None
 
-    async def list_trips(self, guest_id: UUID) -> list[TripRecord]:
+    async def claim_guest_trips(self, guest_session_id: UUID, user_id: UUID) -> int:
+        """Reassigns every trip still scoped to guest_session_id to user_id.
+        Filters on user_id IS NULL, so a repeat call (double-login) is a
+        safe no-op rather than re-claiming or erroring (TWM-179)."""
+        result = await self.pool.execute(
+            f"UPDATE {self.schema}.trips SET user_id=$2, updated_at=now() WHERE guest_session_id=$1 AND user_id IS NULL",
+            guest_session_id, user_id)
+        return _row_count(result)
+
+    async def list_trips(self, owner: TripOwner) -> list[TripRecord]:
         async with self.pool.acquire() as connection:
-            rows = await connection.fetch(f"SELECT * FROM {self.schema}.trips WHERE guest_session_id=$1 ORDER BY updated_at DESC", guest_id)
+            rows = await connection.fetch(
+                f"SELECT * FROM {self.schema}.trips WHERE {_owner_clause(owner, 1)} ORDER BY updated_at DESC",
+                _owner_value(owner))
             records = []
             for row in rows:
                 record = _record(row)
@@ -109,49 +140,55 @@ class PostgresTripRepository:
                 records.append(replace(record, trip_state=composed))
             return records
 
-    async def create_trip(self, guest_id: UUID, title: str, product_mode: str, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord:
+    async def create_trip(self, guest_id: UUID, user_id: UUID | None, title: str, product_mode: str, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
-                    f"""INSERT INTO {self.schema}.trips (guest_session_id,title,product_mode,trip_state,ui_state)
-                    VALUES ($1,$2,$3,$4::jsonb,$5::jsonb) RETURNING *""",
-                    guest_id, title, product_mode, json.dumps(_core_state(trip_state)), json.dumps(ui_state))
+                    f"""INSERT INTO {self.schema}.trips (guest_session_id,user_id,title,product_mode,trip_state,ui_state)
+                    VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb) RETURNING *""",
+                    guest_id, user_id, title, product_mode, json.dumps(_core_state(trip_state)), json.dumps(ui_state))
                 present = frozenset(key for key in _BLOB_BRANCHES + (_ITINERARY_BRANCH,) if key in trip_state)
                 await self._write_branch_tables(connection, row["id"], trip_state, present)
                 composed = await self._compose_trip_state(connection, row["id"], _core_state(trip_state))
                 return replace(_record(row), trip_state=composed)
 
-    async def get_trip(self, guest_id: UUID, trip_id: UUID) -> TripRecord | None:
+    async def get_trip(self, owner: TripOwner, trip_id: UUID) -> TripRecord | None:
         async with self.pool.acquire() as connection:
-            row = await connection.fetchrow(f"SELECT * FROM {self.schema}.trips WHERE id=$1 AND guest_session_id=$2", trip_id, guest_id)
+            row = await connection.fetchrow(
+                f"SELECT * FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
+                trip_id, _owner_value(owner))
             if not row:
                 return None
             record = _record(row)
             composed = await self._compose_trip_state(connection, trip_id, record.trip_state)
             return replace(record, trip_state=composed)
 
-    async def _mutate(self, query: str, guest_id: UUID, trip_id: UUID, expected_version: int, *values: Any) -> TripRecord | None:
+    async def _mutate(self, query: str, owner: TripOwner, trip_id: UUID, expected_version: int, *values: Any) -> TripRecord | None:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
-                row = await connection.fetchrow(query, trip_id, guest_id, expected_version, *values)
+                row = await connection.fetchrow(query, trip_id, _owner_value(owner), expected_version, *values)
                 if row:
                     record = _record(row)
                     composed = await self._compose_trip_state(connection, trip_id, record.trip_state)
                     return replace(record, trip_state=composed)
-                current = await connection.fetchval(f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND guest_session_id=$2", trip_id, guest_id)
+                current = await connection.fetchval(
+                    f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
+                    trip_id, _owner_value(owner))
                 if current is None:
                     return None
                 raise VersionConflictError(current)
 
-    async def replace_trip(self, guest_id: UUID, trip_id: UUID, expected_version: int, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord | None:
+    async def replace_trip(self, owner: TripOwner, trip_id: UUID, expected_version: int, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord | None:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
                     f"""UPDATE {self.schema}.trips SET trip_state=$4::jsonb,ui_state=$5::jsonb,version=version+1,updated_at=now()
-                    WHERE id=$1 AND guest_session_id=$2 AND version=$3 RETURNING *""",
-                    trip_id, guest_id, expected_version, json.dumps(_core_state(trip_state)), json.dumps(ui_state))
+                    WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
+                    trip_id, _owner_value(owner), expected_version, json.dumps(_core_state(trip_state)), json.dumps(ui_state))
                 if not row:
-                    current = await connection.fetchval(f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND guest_session_id=$2", trip_id, guest_id)
+                    current = await connection.fetchval(
+                        f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
+                        trip_id, _owner_value(owner))
                     if current is None:
                         return None
                     raise VersionConflictError(current)
@@ -160,58 +197,58 @@ class PostgresTripRepository:
                 composed = await self._compose_trip_state(connection, trip_id, _core_state(trip_state))
                 return replace(_record(row), trip_state=composed)
 
-    async def rename_trip(self, guest_id: UUID, trip_id: UUID, expected_version: int, title: str) -> TripRecord | None:
+    async def rename_trip(self, owner: TripOwner, trip_id: UUID, expected_version: int, title: str) -> TripRecord | None:
         return await self._mutate(
             f"""UPDATE {self.schema}.trips SET title=$4,version=version+1,updated_at=now()
-            WHERE id=$1 AND guest_session_id=$2 AND version=$3 RETURNING *""",
-            guest_id, trip_id, expected_version, title)
+            WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
+            owner, trip_id, expected_version, title)
 
-    async def update_ui_state(self, guest_id: UUID, trip_id: UUID, expected_version: int, ui_state: dict[str, Any]) -> TripRecord | None:
+    async def update_ui_state(self, owner: TripOwner, trip_id: UUID, expected_version: int, ui_state: dict[str, Any]) -> TripRecord | None:
         return await self._mutate(
             f"""UPDATE {self.schema}.trips SET ui_state=$4::jsonb,version=version+1,updated_at=now()
-            WHERE id=$1 AND guest_session_id=$2 AND version=$3 RETURNING *""",
-            guest_id, trip_id, expected_version, json.dumps(ui_state))
+            WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
+            owner, trip_id, expected_version, json.dumps(ui_state))
 
-    async def get_command(self, guest_id: UUID, trip_id: UUID, idempotency_key: UUID) -> TripCommandRecord | None:
+    async def get_command(self, owner: TripOwner, trip_id: UUID, idempotency_key: UUID) -> TripCommandRecord | None:
         row = await self.pool.fetchrow(
             f"""SELECT request_hash,response FROM {self.schema}.trip_commands
-            WHERE guest_session_id=$1 AND trip_id=$2 AND idempotency_key=$3""",
-            guest_id, trip_id, idempotency_key,
+            WHERE {_owner_clause(owner, 1)} AND trip_id=$2 AND idempotency_key=$3""",
+            _owner_value(owner), trip_id, idempotency_key,
         )
         return TripCommandRecord(row["request_hash"], _json_object(row["response"])) if row else None
 
-    async def get_latest_recommendation(self, guest_id: UUID, trip_id: UUID) -> RecommendationRecord | None:
+    async def get_latest_recommendation(self, owner: TripOwner, trip_id: UUID) -> RecommendationRecord | None:
         row = await self.pool.fetchrow(
             f"""SELECT r.* FROM {self.schema}.matcher_recommendations r
             JOIN {self.schema}.trips t ON t.id = r.trip_id
-            WHERE r.trip_id=$1 AND t.guest_session_id=$2
+            WHERE r.trip_id=$1 AND {_owner_clause(owner, 2, alias="t")}
             ORDER BY r.version DESC LIMIT 1""",
-            trip_id, guest_id,
+            trip_id, _owner_value(owner),
         )
         return _recommendation_record(row) if row else None
 
-    async def list_itinerary_versions(self, guest_id: UUID, trip_id: UUID) -> list[ItineraryVersionRecord]:
+    async def list_itinerary_versions(self, owner: TripOwner, trip_id: UUID) -> list[ItineraryVersionRecord]:
         rows = await self.pool.fetch(
             f"""SELECT r.* FROM {self.schema}.itinerary_versions r
             JOIN {self.schema}.trips t ON t.id = r.trip_id
-            WHERE r.trip_id=$1 AND t.guest_session_id=$2
+            WHERE r.trip_id=$1 AND {_owner_clause(owner, 2, alias="t")}
             ORDER BY r.version ASC""",
-            trip_id, guest_id,
+            trip_id, _owner_value(owner),
         )
         return [_itinerary_version_record(row) for row in rows]
 
-    async def get_current_itinerary(self, guest_id: UUID, trip_id: UUID) -> ItineraryVersionRecord | None:
+    async def get_current_itinerary(self, owner: TripOwner, trip_id: UUID) -> ItineraryVersionRecord | None:
         row = await self.pool.fetchrow(
             f"""SELECT v.* FROM {self.schema}.itinerary_versions v
             JOIN {self.schema}.itinerary_state s ON s.trip_id = v.trip_id AND s.current_version = v.version
             JOIN {self.schema}.trips t ON t.id = v.trip_id
-            WHERE v.trip_id=$1 AND t.guest_session_id=$2""",
-            trip_id, guest_id,
+            WHERE v.trip_id=$1 AND {_owner_clause(owner, 2, alias="t")}""",
+            trip_id, _owner_value(owner),
         )
         return _itinerary_version_record(row) if row else None
 
     async def commit_command(
-        self, guest_id: UUID, trip_id: UUID, expected_version: int,
+        self, owner: TripOwner, trip_id: UUID, expected_version: int,
         idempotency_key: UUID, request_hash: str, trip_state: dict[str, Any],
         response_trip_state: dict[str, Any], response: dict[str, Any],
         touched_branches: frozenset[str],
@@ -222,29 +259,29 @@ class PostgresTripRepository:
             async with connection.transaction():
                 prior = await connection.fetchrow(
                     f"""SELECT request_hash,response FROM {self.schema}.trip_commands
-                    WHERE guest_session_id=$1 AND trip_id=$2 AND idempotency_key=$3""",
-                    guest_id, trip_id, idempotency_key,
+                    WHERE {_owner_clause(owner, 1)} AND trip_id=$2 AND idempotency_key=$3""",
+                    _owner_value(owner), trip_id, idempotency_key,
                 )
                 if prior:
                     return TripCommandRecord(prior["request_hash"], _json_object(prior["response"]))
                 row = await connection.fetchrow(
                     f"""UPDATE {self.schema}.trips SET trip_state=$4::jsonb,version=version+1,updated_at=now()
-                    WHERE id=$1 AND guest_session_id=$2 AND version=$3 RETURNING *""",
-                    trip_id, guest_id, expected_version, json.dumps(_core_state(trip_state)),
+                    WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
+                    trip_id, _owner_value(owner), expected_version, json.dumps(_core_state(trip_state)),
                 )
                 if not row:
                     prior = await connection.fetchrow(
                         f"""SELECT request_hash,response FROM {self.schema}.trip_commands
-                        WHERE guest_session_id=$1 AND trip_id=$2 AND idempotency_key=$3""",
-                        guest_id, trip_id, idempotency_key,
+                        WHERE {_owner_clause(owner, 1)} AND trip_id=$2 AND idempotency_key=$3""",
+                        _owner_value(owner), trip_id, idempotency_key,
                     )
                     if prior:
                         return TripCommandRecord(
                             prior["request_hash"], _json_object(prior["response"])
                         )
                     current = await connection.fetchval(
-                        f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND guest_session_id=$2",
-                        trip_id, guest_id,
+                        f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
+                        trip_id, _owner_value(owner),
                     )
                     if current is None:
                         return None
@@ -276,9 +313,9 @@ class PostgresTripRepository:
                 stored_response["trip"] = response_record
                 await connection.execute(
                     f"""INSERT INTO {self.schema}.trip_commands
-                    (guest_session_id,trip_id,idempotency_key,request_hash,response)
-                    VALUES ($1,$2,$3,$4,$5::jsonb)""",
-                    guest_id, trip_id, idempotency_key, request_hash,
+                    (guest_session_id,user_id,trip_id,idempotency_key,request_hash,response)
+                    VALUES ($1,$2,$3,$4,$5,$6::jsonb)""",
+                    owner.guest_session_id, owner.user_id, trip_id, idempotency_key, request_hash,
                     json.dumps(stored_response, default=str),
                 )
                 return _record(row)

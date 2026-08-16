@@ -51,8 +51,14 @@ class SignupResponse(BaseModel):
     id: UUID
     email: str
     created_at: datetime
+    claimed_trip_count: int = Field(
+        description="Trips reassigned from this request's guest session to the new account, if any.",
+    )
 
 
 class LoginResponse(BaseModel):
     id: UUID
     email: str
+    claimed_trip_count: int = Field(
+        description="Trips reassigned from this request's guest session to this account, if any.",
+    )
