@@ -4,9 +4,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
 
-from ...persistence.contracts import RecommendationRecord, TripCommandRecord, TripRecord, TripRepository
+from ...persistence.contracts import RecommendationRecord, TripCommandRecord, TripOwner, TripRecord, TripRepository
 from ...schemas.trips import TripCommandRequest, TripCommandResponse, TripResponse
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
@@ -42,7 +41,7 @@ class TripCommandService:
     logger: TelemetryLogger
 
     async def execute(
-        self, guest_id: UUID, trip: TripRecord, payload: TripCommandRequest
+        self, owner: TripOwner, trip: TripRecord, payload: TripCommandRequest
     ) -> TripCommandResponse:
         request_hash = hashlib.sha256(
             json.dumps(
@@ -50,14 +49,14 @@ class TripCommandService:
             ).encode("utf-8")
         ).hexdigest()
         prior = await self.repository.get_command(
-            guest_id, trip.id, payload.idempotency_key
+            owner, trip.id, payload.idempotency_key
         )
         if prior:
             return self._replay(prior, request_hash)
 
         state = canonical_state(trip.trip_state)
         state["trip_id"] = str(trip.id)
-        latest_recommendation = await self.repository.get_latest_recommendation(guest_id, trip.id)
+        latest_recommendation = await self.repository.get_latest_recommendation(owner, trip.id)
         before = snapshot_touchable_branches(state)
         result = await self._apply(state, payload, latest_recommendation)
         touched = touched_branches(state, before)
@@ -69,7 +68,7 @@ class TripCommandService:
             "agent_meta": result["agent_meta"],
         }
         committed = await self.repository.commit_command(
-            guest_id,
+            owner,
             trip.id,
             payload.expected_version,
             payload.idempotency_key,

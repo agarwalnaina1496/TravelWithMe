@@ -14,6 +14,14 @@ def _dumps(value):
     return json.dumps(value)
 
 
+def _owned_by(row: dict, owner_value) -> bool:
+    """Mirrors PostgresTripRepository's _owner_clause: a row is reachable
+    by user_id once claimed, or by an unclaimed guest_session_id otherwise
+    (TWM-179). owner_value is opaque here — it's whichever single column
+    the real SQL filtered on — so this checks both interpretations."""
+    return row["user_id"] == owner_value or (row["guest_session_id"] == owner_value and row["user_id"] is None)
+
+
 class _Transaction:
     async def __aenter__(self):
         return self
@@ -83,12 +91,13 @@ class FakeDatabase:
 
         # --- trip_commands ---
         if q.startswith(f"SELECT request_hash,response FROM {self.q('trip_commands')}"):
-            guest_id, trip_id, idem = args
-            row = self.trip_commands.get((guest_id, trip_id, idem))
-            return dict(row) if row else None
+            owner_value, trip_id, idem = args
+            row = self.trip_commands.get((trip_id, idem))
+            return {"request_hash": row["request_hash"], "response": row["response"]} if row and _owned_by(row, owner_value) else None
         if q.startswith(f"INSERT INTO {self.q('trip_commands')}"):
-            guest_id, trip_id, idem, request_hash, response = args
-            self.trip_commands[(guest_id, trip_id, idem)] = {
+            guest_id, user_id, trip_id, idem, request_hash, response = args
+            self.trip_commands[(trip_id, idem)] = {
+                "guest_session_id": guest_id, "user_id": user_id,
                 "request_hash": request_hash, "response": response,
             }
             self.written_tables.add("trip_commands")
@@ -96,9 +105,9 @@ class FakeDatabase:
 
         # --- trips ---
         if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,version=version+1"):
-            trip_id, guest_id, expected_version, trip_state = args
+            trip_id, owner_value, expected_version, trip_state = args
             trip = self.trips.get(trip_id)
-            if not trip or trip["guest_session_id"] != guest_id or trip["version"] != expected_version:
+            if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
             trip["trip_state"] = trip_state
             trip["version"] += 1
@@ -106,9 +115,9 @@ class FakeDatabase:
             self.written_tables.add("trips")
             return dict(trip)
         if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,ui_state=$5::jsonb"):
-            trip_id, guest_id, expected_version, trip_state, ui_state = args
+            trip_id, owner_value, expected_version, trip_state, ui_state = args
             trip = self.trips.get(trip_id)
-            if not trip or trip["guest_session_id"] != guest_id or trip["version"] != expected_version:
+            if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
             trip["trip_state"] = trip_state
             trip["ui_state"] = ui_state
@@ -117,9 +126,9 @@ class FakeDatabase:
             self.written_tables.add("trips")
             return dict(trip)
         if q.startswith(f"UPDATE {self.q('trips')} SET title=$4"):
-            trip_id, guest_id, expected_version, title = args
+            trip_id, owner_value, expected_version, title = args
             trip = self.trips.get(trip_id)
-            if not trip or trip["guest_session_id"] != guest_id or trip["version"] != expected_version:
+            if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
             trip["title"] = title
             trip["version"] += 1
@@ -127,41 +136,52 @@ class FakeDatabase:
             self.written_tables.add("trips")
             return dict(trip)
         if q.startswith(f"UPDATE {self.q('trips')} SET ui_state=$4::jsonb"):
-            trip_id, guest_id, expected_version, ui_state = args
+            trip_id, owner_value, expected_version, ui_state = args
             trip = self.trips.get(trip_id)
-            if not trip or trip["guest_session_id"] != guest_id or trip["version"] != expected_version:
+            if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
             trip["ui_state"] = ui_state
             trip["version"] += 1
             trip["updated_at"] = datetime.now(timezone.utc)
             self.written_tables.add("trips")
             return dict(trip)
+        if q.startswith(f"UPDATE {self.q('trips')} SET user_id=$2"):
+            guest_id, user_id = args
+            count = 0
+            for trip in self.trips.values():
+                if trip["guest_session_id"] == guest_id and trip["user_id"] is None:
+                    trip["user_id"] = user_id
+                    trip["updated_at"] = datetime.now(timezone.utc)
+                    count += 1
+            if count:
+                self.written_tables.add("trips")
+            return f"UPDATE {count}"
         if q.startswith(f"SELECT version FROM {self.q('trips')}"):
-            trip_id, guest_id = args
+            trip_id, owner_value = args
             trip = self.trips.get(trip_id)
-            if not trip or trip["guest_session_id"] != guest_id:
+            if not trip or not _owned_by(trip, owner_value):
                 return None
             return {"version": trip["version"]}
         if q.startswith(f"INSERT INTO {self.q('trips')}"):
-            guest_id, title, product_mode, trip_state, ui_state = args
+            guest_id, user_id, title, product_mode, trip_state, ui_state = args
             trip_id = uuid4()
             now = datetime.now(timezone.utc)
             trip = {
-                "id": trip_id, "guest_session_id": guest_id, "title": title, "product_mode": product_mode,
+                "id": trip_id, "guest_session_id": guest_id, "user_id": user_id, "title": title, "product_mode": product_mode,
                 "trip_state": trip_state, "ui_state": ui_state, "version": 1, "created_at": now, "updated_at": now,
             }
             self.trips[trip_id] = trip
             self.written_tables.add("trips")
             return dict(trip)
         if q.startswith(f"SELECT * FROM {self.q('trips')} WHERE id=$1"):
-            trip_id, guest_id = args
+            trip_id, owner_value = args
             trip = self.trips.get(trip_id)
-            if not trip or trip["guest_session_id"] != guest_id:
+            if not trip or not _owned_by(trip, owner_value):
                 return None
             return dict(trip)
-        if q.startswith(f"SELECT * FROM {self.q('trips')} WHERE guest_session_id=$1"):
-            (guest_id,) = args
-            return [dict(t) for t in self.trips.values() if t["guest_session_id"] == guest_id]
+        if q.startswith(f"SELECT * FROM {self.q('trips')} WHERE "):
+            (owner_value,) = args
+            return [dict(t) for t in self.trips.values() if _owned_by(t, owner_value)]
 
         # --- blob branch tables (matcher_state/planner_state/logistics_state) ---
         for branch in self.branch_tables:
@@ -203,16 +223,16 @@ class FakeDatabase:
             row = self.itinerary_versions.get((trip_id, version))
             return dict(row) if row else None
         if q.startswith(f"SELECT r.* FROM {self.q('itinerary_versions')}"):
-            trip_id, guest_id = args
+            trip_id, owner_value = args
             trip = self.trips.get(trip_id)
-            if not trip or trip["guest_session_id"] != guest_id:
+            if not trip or not _owned_by(trip, owner_value):
                 return []
             rows = [v for (t, _v), v in self.itinerary_versions.items() if t == trip_id]
             return sorted(rows, key=lambda r: r["version"])
         if q.startswith(f"SELECT v.* FROM {self.q('itinerary_versions')} v"):
-            trip_id, guest_id = args
+            trip_id, owner_value = args
             trip = self.trips.get(trip_id)
-            if not trip or trip["guest_session_id"] != guest_id:
+            if not trip or not _owned_by(trip, owner_value):
                 return None
             pointer = self.itinerary_state.get(trip_id)
             if not pointer or pointer["current_version"] is None:
@@ -264,3 +284,6 @@ class FakePool:
 
     async def fetch(self, query, *args):
         return self.db.dispatch(query, args, many=True) or []
+
+    async def execute(self, query, *args):
+        return self.db.dispatch(query, args)

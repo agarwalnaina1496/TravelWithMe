@@ -13,17 +13,21 @@ from uuid import uuid4
 import pytest
 
 from tests.unit.persistence.postgres_fakes import FakeDatabase
-from twm.persistence.contracts import TripCommandRecord, VersionConflictError
+from twm.persistence.contracts import TripCommandRecord, TripOwner, VersionConflictError
 from twm.persistence.postgres import PostgresTripRepository
 
 SCHEMA = "twm_app"
+
+
+def _owner(guest_id) -> TripOwner:
+    return TripOwner(guest_session_id=guest_id, user_id=None)
 
 
 def _seed_trip(db: FakeDatabase, guest_id, *, core_state=None, version=1):
     trip_id = uuid4()
     now = datetime.now(timezone.utc)
     db.trips[trip_id] = {
-        "id": trip_id, "guest_session_id": guest_id, "title": "Trip", "product_mode": "self_led",
+        "id": trip_id, "guest_session_id": guest_id, "user_id": None, "title": "Trip", "product_mode": "self_led",
         "trip_state": __import__("json").dumps(core_state or {}), "ui_state": "{}",
         "version": version, "created_at": now, "updated_at": now,
     }
@@ -41,7 +45,7 @@ def test_scout_only_commit_writes_only_trips_and_matcher_state():
     trip_id = _seed_trip(db, guest_id)
 
     committed = asyncio.run(repository.commit_command(
-        guest_id, trip_id, expected_version=1,
+        _owner(guest_id), trip_id, expected_version=1,
         idempotency_key=uuid4(), request_hash="hash",
         trip_state={
             "status": "free", "stage": "new", "active_agent": "scout", "trip_context": {"destination": "Rishikesh"},
@@ -67,12 +71,12 @@ def test_commit_command_replays_a_stored_response_for_a_reused_idempotency_key()
     base_state = {"status": "free", "stage": "new", "active_agent": "scout", "trip_context": {}}
 
     first = asyncio.run(repository.commit_command(
-        guest_id, trip_id, 1, idempotency_key, "hash", base_state,
+        _owner(guest_id), trip_id, 1, idempotency_key, "hash", base_state,
         {"trip_id": str(trip_id)}, {"message": None, "agent_meta": None}, frozenset(),
     ))
     db.written_tables.clear()
     replay = asyncio.run(repository.commit_command(
-        guest_id, trip_id, 1, idempotency_key, "hash", base_state,
+        _owner(guest_id), trip_id, 1, idempotency_key, "hash", base_state,
         {"trip_id": str(trip_id)}, {"message": None, "agent_meta": None}, frozenset(),
     ))
 
@@ -90,7 +94,7 @@ def test_commit_command_raises_version_conflict_on_stale_expected_version():
 
     with pytest.raises(VersionConflictError) as excinfo:
         asyncio.run(repository.commit_command(
-            guest_id, trip_id, expected_version=1, idempotency_key=uuid4(), request_hash="hash",
+            _owner(guest_id), trip_id, expected_version=1, idempotency_key=uuid4(), request_hash="hash",
             trip_state={"status": "free", "stage": "new", "active_agent": "scout", "trip_context": {}},
             response_trip_state={}, response={"message": None, "agent_meta": None}, touched_branches=frozenset(),
         ))
@@ -105,7 +109,7 @@ def test_get_trip_composes_blob_branches_from_dedicated_tables():
     db.branch_tables["planner_state"][trip_id] = {"state": __import__("json").dumps({"places": ["Baga Beach"]})}
     db.branch_tables["logistics_state"][trip_id] = {"state": __import__("json").dumps({"anchors": []})}
 
-    trip = asyncio.run(repository.get_trip(guest_id, trip_id))
+    trip = asyncio.run(repository.get_trip(_owner(guest_id), trip_id))
 
     assert trip.trip_state["stage"] == "planning"
     assert trip.trip_state["trip_context"] == {"destinations": ["Goa"]}
@@ -132,7 +136,7 @@ def test_get_trip_composes_itinerary_state_current_version_and_proposed_revision
         "triggered_by": __import__("json").dumps({"type": "transport"}),
     }
 
-    trip = asyncio.run(repository.get_trip(guest_id, trip_id))
+    trip = asyncio.run(repository.get_trip(_owner(guest_id), trip_id))
 
     itinerary = trip.trip_state["itinerary_state"]
     assert itinerary["status"] == "ready"
@@ -154,7 +158,7 @@ def test_itinerary_state_write_archives_the_active_version_unconditionally():
     trip_id = _seed_trip(db, guest_id)
 
     asyncio.run(repository.commit_command(
-        guest_id, trip_id, 1, uuid4(), "hash",
+        _owner(guest_id), trip_id, 1, uuid4(), "hash",
         trip_state={
             "status": "free", "stage": "planned", "active_agent": None, "trip_context": {},
             "itinerary_state": {
@@ -179,7 +183,7 @@ def test_accepting_a_revision_archives_the_outgoing_version_via_new_itinerary_ve
     trip_id = _seed_trip(db, guest_id)
 
     asyncio.run(repository.commit_command(
-        guest_id, trip_id, 1, uuid4(), "hash",
+        _owner(guest_id), trip_id, 1, uuid4(), "hash",
         trip_state={
             "status": "free", "stage": "planned", "active_agent": None, "trip_context": {},
             "itinerary_state": {
@@ -215,7 +219,7 @@ def test_get_current_itinerary_reads_the_version_the_pointer_names():
         "created_at": datetime.now(timezone.utc),
     }
 
-    current = asyncio.run(repository.get_current_itinerary(guest_id, trip_id))
+    current = asyncio.run(repository.get_current_itinerary(_owner(guest_id), trip_id))
 
     assert current.version == 2
     assert current.source_guide_revision == 6
@@ -228,4 +232,4 @@ def test_get_current_itinerary_none_before_any_itinerary_generated():
     guest_id = uuid4()
     trip_id = _seed_trip(db, guest_id)
 
-    assert asyncio.run(repository.get_current_itinerary(guest_id, trip_id)) is None
+    assert asyncio.run(repository.get_current_itinerary(_owner(guest_id), trip_id)) is None

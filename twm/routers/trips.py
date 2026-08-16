@@ -5,8 +5,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from ..dependencies import get_engine, get_logger, get_trip_persistence
-from ..persistence.contracts import TripRecord, VersionConflictError
+from ..dependencies import get_current_user, get_engine, get_logger, get_trip_persistence
+from ..persistence.contracts import TripOwner, TripRecord, User, VersionConflictError
 from ..persistence.service import TripPersistenceService
 from ..schemas.trips import (
     SUMMARY_TRIP_CONTEXT_FIELDS,
@@ -34,6 +34,16 @@ router = APIRouter(prefix="/trips", tags=["Trips"])
 Persistence = Annotated[TripPersistenceService, Depends(get_trip_persistence)]
 Logger = Annotated[TelemetryLogger, Depends(get_logger)]
 Engine = Annotated[AgentEngine, Depends(get_engine)]
+CurrentUser = Annotated[User | None, Depends(get_current_user)]
+
+
+async def _resolve_owner(request: Request, response: Response, persistence: TripPersistenceService, current_user: User | None) -> TripOwner:
+    """Every request still carries/creates a guest session (TWM-64); an
+    authenticated request additionally resolves by user_id, which takes
+    precedence — a claimed trip is no longer reachable via its originating
+    guest cookie (TWM-179)."""
+    guest = await persistence.guest(request, response)
+    return TripOwner(guest_session_id=guest.id, user_id=current_user.id if current_user else None)
 
 
 def _response(record: TripRecord) -> TripResponse:
@@ -79,33 +89,34 @@ def _summary(record: TripRecord) -> TripSummary:
 
 
 @router.get("", response_model=TripListResponse)
-async def list_trips(request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
-    trips = await persistence.repository.list_trips(guest.id)
+async def list_trips(request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    owner = await _resolve_owner(request, response, persistence, current_user)
+    trips = await persistence.repository.list_trips(owner)
     logger.info(
         "Listed guest trips.",
         event="be.trip.listed",
         source="http",
-        guest_id=str(guest.id),
+        guest_id=str(owner.guest_session_id),
+        authenticated=owner.is_authenticated,
         count=len(trips),
     )
     return TripListResponse(trips=[_summary(t) for t in trips])
 
 
 @router.post("", response_model=TripResponse, status_code=201)
-async def create_trip(payload: TripCreateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
+async def create_trip(payload: TripCreateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    owner = await _resolve_owner(request, response, persistence, current_user)
     trip = await persistence.repository.create_trip(
-        guest.id, payload.title, payload.product_mode, {}, {}
+        owner.guest_session_id, owner.user_id, payload.title, payload.product_mode, {}, {}
     )
     logger.info("Created guest trip.", event="be.trip.created", source="http", trip_id=str(trip.id), version=trip.version)
     return _response(trip)
 
 
 @router.get("/{trip_id}", response_model=TripResponse)
-async def get_trip(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
-    trip = await persistence.repository.get_trip(guest.id, trip_id)
+async def get_trip(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    owner = await _resolve_owner(request, response, persistence, current_user)
+    trip = await persistence.repository.get_trip(owner, trip_id)
     if trip is None:
         logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
         raise HTTPException(status_code=404, detail="Trip not found.")
@@ -114,13 +125,13 @@ async def get_trip(trip_id: UUID, request: Request, response: Response, persiste
 
 
 @router.get("/{trip_id}/recommendations", response_model=TripRecommendationsResponse)
-async def get_latest_recommendations(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
-    trip = await persistence.repository.get_trip(guest.id, trip_id)
+async def get_latest_recommendations(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    owner = await _resolve_owner(request, response, persistence, current_user)
+    trip = await persistence.repository.get_trip(owner, trip_id)
     if trip is None:
         logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
         raise HTTPException(status_code=404, detail="Trip not found.")
-    latest = await persistence.repository.get_latest_recommendation(guest.id, trip_id)
+    latest = await persistence.repository.get_latest_recommendation(owner, trip_id)
     if latest is None:
         logger.info(
             "No matcher recommendations yet for trip.",
@@ -142,13 +153,13 @@ async def get_latest_recommendations(trip_id: UUID, request: Request, response: 
 
 
 @router.get("/{trip_id}/itinerary-versions", response_model=TripItineraryVersionsResponse)
-async def list_itinerary_versions(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
-    trip = await persistence.repository.get_trip(guest.id, trip_id)
+async def list_itinerary_versions(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    owner = await _resolve_owner(request, response, persistence, current_user)
+    trip = await persistence.repository.get_trip(owner, trip_id)
     if trip is None:
         logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
         raise HTTPException(status_code=404, detail="Trip not found.")
-    records = await persistence.repository.list_itinerary_versions(guest.id, trip_id)
+    records = await persistence.repository.list_itinerary_versions(owner, trip_id)
     summaries = [
         TripItineraryVersionSummary(
             version=record.version,
@@ -172,13 +183,13 @@ async def list_itinerary_versions(trip_id: UUID, request: Request, response: Res
 
 
 @router.get("/{trip_id}/itinerary", response_model=TripItineraryResponse)
-async def get_current_itinerary(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
-    trip = await persistence.repository.get_trip(guest.id, trip_id)
+async def get_current_itinerary(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    owner = await _resolve_owner(request, response, persistence, current_user)
+    trip = await persistence.repository.get_trip(owner, trip_id)
     if trip is None:
         logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
         raise HTTPException(status_code=404, detail="Trip not found.")
-    current = await persistence.repository.get_current_itinerary(guest.id, trip_id)
+    current = await persistence.repository.get_current_itinerary(owner, trip_id)
     if current is None:
         logger.info(
             "No active itinerary yet for trip.",
@@ -204,10 +215,10 @@ def _conflict(error: VersionConflictError) -> HTTPException:
 
 
 @router.patch("/{trip_id}", response_model=TripResponse)
-async def rename_trip(trip_id: UUID, payload: TripRenameRequest, request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
+async def rename_trip(trip_id: UUID, payload: TripRenameRequest, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    owner = await _resolve_owner(request, response, persistence, current_user)
     try:
-        trip = await persistence.repository.rename_trip(guest.id, trip_id, payload.expected_version, payload.title)
+        trip = await persistence.repository.rename_trip(owner, trip_id, payload.expected_version, payload.title)
     except VersionConflictError as error:
         logger.warning("Rejected stale trip rename.", event="be.trip.version_conflict", source="http", trip_id=str(trip_id), current_version=error.current_version)
         raise _conflict(error) from error
@@ -219,11 +230,11 @@ async def rename_trip(trip_id: UUID, payload: TripRenameRequest, request: Reques
 
 
 @router.patch("/{trip_id}/ui-state", response_model=TripResponse)
-async def update_ui_state(trip_id: UUID, payload: TripUiStateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger):
-    guest = await persistence.guest(request, response)
+async def update_ui_state(trip_id: UUID, payload: TripUiStateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    owner = await _resolve_owner(request, response, persistence, current_user)
     try:
         trip = await persistence.repository.update_ui_state(
-            guest.id, trip_id, payload.expected_version, payload.ui_state
+            owner, trip_id, payload.expected_version, payload.ui_state
         )
     except VersionConflictError as error:
         logger.warning(
@@ -255,9 +266,10 @@ async def execute_trip_command(
     persistence: Persistence,
     engine: Engine,
     logger: Logger,
+    current_user: CurrentUser,
 ):
-    guest = await persistence.guest(request, response)
-    trip = await persistence.repository.get_trip(guest.id, trip_id)
+    owner = await _resolve_owner(request, response, persistence, current_user)
+    trip = await persistence.repository.get_trip(owner, trip_id)
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found.")
     logger.info(
@@ -271,7 +283,7 @@ async def execute_trip_command(
     )
     service = TripCommandService(persistence.repository, engine, logger)
     try:
-        return await service.execute(guest.id, trip, payload)
+        return await service.execute(owner, trip, payload)
     except VersionConflictError as error:
         logger.warning(
             "Rejected stale trip command.",
