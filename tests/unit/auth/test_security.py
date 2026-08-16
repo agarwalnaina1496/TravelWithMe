@@ -6,7 +6,7 @@ from uuid import uuid4
 import jwt
 import pytest
 
-from twm.auth.security import InvalidTokenError, hash_password, issue_jwt, verify_jwt, verify_password
+from twm.auth.security import UNKNOWN_ACCOUNT_PASSWORD_HASH, InvalidTokenError, hash_password, issue_jwt, verify_jwt, verify_password
 
 
 def test_hash_password_never_returns_the_plaintext() -> None:
@@ -29,6 +29,10 @@ def test_verify_password_fails_for_the_wrong_password() -> None:
 
 def test_verify_password_fails_for_a_malformed_hash() -> None:
     assert verify_password("anything", "not-a-real-hash") is False
+
+
+def test_unknown_account_password_hash_is_a_valid_bcrypt_hash_that_never_matches() -> None:
+    assert verify_password("any-password-a-caller-might-try", UNKNOWN_ACCOUNT_PASSWORD_HASH) is False
 
 
 def test_issue_jwt_resolves_to_the_same_user_id() -> None:

@@ -83,6 +83,34 @@ def test_signup_rejects_a_malformed_email(api_client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_signup_rejects_a_password_over_bcrypts_72_byte_limit(api_client: TestClient) -> None:
+    """bcrypt raises rather than truncating past 72 bytes; this must be a
+    clean 422 at the API boundary, not an unhandled 500."""
+    app.dependency_overrides[get_auth_service] = lambda: _auth_service()
+
+    response = api_client.post("/auth/signup", json={"email": "traveler@example.com", "password": "a" * 73})
+
+    assert response.status_code == 422
+
+
+def test_signup_rejects_a_password_that_exceeds_72_bytes_via_multibyte_characters(api_client: TestClient) -> None:
+    """40 accented characters (2 bytes each in UTF-8) is under the 72-char
+    limit but over the 72-byte limit bcrypt actually enforces."""
+    app.dependency_overrides[get_auth_service] = lambda: _auth_service()
+
+    response = api_client.post("/auth/signup", json={"email": "traveler@example.com", "password": "é" * 40})
+
+    assert response.status_code == 422
+
+
+def test_signup_accepts_a_password_at_exactly_72_bytes(api_client: TestClient) -> None:
+    app.dependency_overrides[get_auth_service] = lambda: _auth_service()
+
+    response = api_client.post("/auth/signup", json={"email": "traveler@example.com", "password": "a" * 72})
+
+    assert response.status_code == 201
+
+
 def test_login_succeeds_with_correct_credentials_and_sets_a_cookie(api_client: TestClient) -> None:
     repository = MemoryUserRepository()
     app.dependency_overrides[get_auth_service] = lambda: _auth_service(repository)

@@ -22,6 +22,13 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+# A fixed, precomputed hash to verify against when no account exists, so
+# an unregistered-email login costs the same bcrypt-verification time as a
+# wrong-password one — otherwise the response-time gap discloses which
+# emails are registered.
+UNKNOWN_ACCOUNT_PASSWORD_HASH = hash_password("unregistered-account-timing-equalizer")
+
+
 def issue_jwt(user_id: UUID, secret: str, algorithm: str, expiry_days: int) -> str:
     now = datetime.now(timezone.utc)
     payload = {"sub": str(user_id), "iat": now, "exp": now + timedelta(days=expiry_days)}

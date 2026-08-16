@@ -6,7 +6,7 @@ from fastapi import Request, Response
 
 from ..persistence.contracts import DuplicateEmailError, TripRepository, User
 from ..telemetry import TelemetryLogger
-from .security import InvalidTokenError, hash_password, issue_jwt, verify_jwt, verify_password
+from .security import UNKNOWN_ACCOUNT_PASSWORD_HASH, InvalidTokenError, hash_password, issue_jwt, verify_jwt, verify_password
 from .settings import AuthSettings
 
 
@@ -48,7 +48,11 @@ class AuthService:
     async def login(self, email: str, password: str, response: Response) -> User:
         normalized = self._normalize_email(email)
         user = await self.repository.get_user_by_email(normalized)
-        if user is None or not verify_password(password, user.password_hash):
+        # Always pay the bcrypt-verification cost, even for an unknown
+        # email, so response timing doesn't disclose which emails are
+        # registered (mirrors TWM-64's 404-not-403 anti-disclosure rule).
+        password_valid = verify_password(password, user.password_hash if user else UNKNOWN_ACCOUNT_PASSWORD_HASH)
+        if user is None or not password_valid:
             self.logger.warning(
                 "Rejected login with invalid credentials.",
                 event="be.auth.login_failed", source="http",

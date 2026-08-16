@@ -94,6 +94,28 @@ def test_login_rejects_an_unknown_email() -> None:
         pass
 
 
+def test_login_pays_the_same_bcrypt_verification_cost_for_an_unknown_email(monkeypatch) -> None:
+    """An unregistered email must not short-circuit before verify_password
+    runs — otherwise response timing discloses which emails are registered."""
+    service = _service()
+    asyncio.run(service.signup("traveler@example.com", "hunter22"))
+    calls: list[str] = []
+    original_verify_password = __import__("twm.auth.service", fromlist=["verify_password"]).verify_password
+
+    def spy(password, password_hash):
+        calls.append(password_hash)
+        return original_verify_password(password, password_hash)
+
+    monkeypatch.setattr("twm.auth.service.verify_password", spy)
+
+    try:
+        asyncio.run(service.login("nobody@example.com", "hunter22", Response()))
+    except InvalidCredentialsError:
+        pass
+
+    assert len(calls) == 1
+
+
 def test_current_user_resolves_from_a_valid_cookie() -> None:
     service = _service()
     created = asyncio.run(service.signup("traveler@example.com", "hunter22"))
