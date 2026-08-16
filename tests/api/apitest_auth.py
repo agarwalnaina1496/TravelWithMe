@@ -200,6 +200,52 @@ def test_login_rejects_an_unregistered_email(api_client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_me_returns_the_current_user_for_a_valid_session(api_client: TestClient) -> None:
+    repository = MemoryUserRepository()
+    app.dependency_overrides[get_auth_service] = lambda: _auth_service(repository)
+    api_client.post("/auth/signup", json={"email": "traveler@example.com", "password": "hunter22!!"})
+    api_client.post("/auth/login", json={"email": "traveler@example.com", "password": "hunter22!!"})
+
+    response = api_client.get("/auth/me")
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "traveler@example.com"
+
+
+def test_me_rejects_a_request_with_no_session(api_client: TestClient) -> None:
+    app.dependency_overrides[get_auth_service] = lambda: _auth_service()
+
+    assert api_client.get("/auth/me").status_code == 401
+
+
+def test_me_rejects_an_invalid_cookie(api_client: TestClient) -> None:
+    app.dependency_overrides[get_auth_service] = lambda: _auth_service()
+    api_client.cookies.set("twm_auth", "not-a-real-jwt")
+
+    assert api_client.get("/auth/me").status_code == 401
+
+
+def test_logout_clears_the_session_so_a_follow_up_me_call_is_unauthenticated(api_client: TestClient) -> None:
+    repository = MemoryUserRepository()
+    app.dependency_overrides[get_auth_service] = lambda: _auth_service(repository)
+    api_client.post("/auth/signup", json={"email": "traveler@example.com", "password": "hunter22!!"})
+    api_client.post("/auth/login", json={"email": "traveler@example.com", "password": "hunter22!!"})
+    assert api_client.get("/auth/me").status_code == 200
+
+    logout = api_client.post("/auth/logout")
+
+    assert logout.status_code == 204
+    assert api_client.get("/auth/me").status_code == 401
+
+
+def test_logout_with_no_session_present_is_still_a_clean_204(api_client: TestClient) -> None:
+    app.dependency_overrides[get_auth_service] = lambda: _auth_service()
+
+    response = api_client.post("/auth/logout")
+
+    assert response.status_code == 204
+
+
 def test_guest_with_trips_who_signs_up_gets_them_claimed_and_visible_under_the_account(api_client: TestClient) -> None:
     repository = MemoryUserRepository()
     app.dependency_overrides[get_auth_service] = lambda: _auth_service(repository)
