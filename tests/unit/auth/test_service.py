@@ -32,7 +32,7 @@ class FakeUserRepository:
 
 
 def _service(**overrides) -> AuthService:
-    settings = AuthSettings(jwt_secret="test-secret", jwt_expiry_days=1, **overrides)
+    settings = AuthSettings(jwt_secret="test-secret-at-least-32-bytes-long!!", jwt_expiry_days=1, **overrides)
     return AuthService(repository=FakeUserRepository(), settings=settings, logger=Mock())
 
 

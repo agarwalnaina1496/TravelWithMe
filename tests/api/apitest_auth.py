@@ -41,7 +41,7 @@ def _logger() -> TelemetryLogger:
 def _auth_service(repository: MemoryUserRepository | None = None) -> AuthService:
     return AuthService(
         repository=repository or MemoryUserRepository(),
-        settings=AuthSettings(jwt_secret="test-secret", jwt_cookie_secure=False, jwt_expiry_days=1),
+        settings=AuthSettings(jwt_secret="test-secret-at-least-32-bytes-long!!", jwt_cookie_secure=False, jwt_expiry_days=1),
         logger=_logger(),
     )
 
