@@ -120,12 +120,21 @@ class PostgresTripRepository:
         return _user_record(row) if row else None
 
     async def claim_guest_trips(self, guest_session_id: UUID, user_id: UUID) -> int:
-        """Reassigns every trip still scoped to guest_session_id to user_id.
-        Filters on user_id IS NULL, so a repeat call (double-login) is a
-        safe no-op rather than re-claiming or erroring (TWM-179)."""
-        result = await self.pool.execute(
-            f"UPDATE {self.schema}.trips SET user_id=$2, updated_at=now() WHERE guest_session_id=$1 AND user_id IS NULL",
-            guest_session_id, user_id)
+        """Reassigns every trip still scoped to guest_session_id to user_id,
+        and every trip_commands row alongside it — otherwise a pre-claim
+        idempotency key resent after login would resolve by the new user_id
+        scope, miss the still-guest-scoped row, and re-execute instead of
+        replaying. Filters on user_id IS NULL in both tables, so a repeat
+        call (double-login) is a safe no-op rather than re-claiming or
+        erroring (TWM-179)."""
+        async with self.pool.acquire() as connection:
+            async with connection.transaction():
+                result = await connection.execute(
+                    f"UPDATE {self.schema}.trips SET user_id=$2, updated_at=now() WHERE guest_session_id=$1 AND user_id IS NULL",
+                    guest_session_id, user_id)
+                await connection.execute(
+                    f"UPDATE {self.schema}.trip_commands SET user_id=$2 WHERE guest_session_id=$1 AND user_id IS NULL",
+                    guest_session_id, user_id)
         return _row_count(result)
 
     async def list_trips(self, owner: TripOwner) -> list[TripRecord]:
