@@ -13,6 +13,14 @@ class GuestSession:
 
 
 @dataclass(frozen=True)
+class User:
+    id: UUID
+    email: str
+    password_hash: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class TripRecord:
     id: UUID
     guest_session_id: UUID
@@ -67,9 +75,18 @@ class VersionConflictError(Exception):
         super().__init__(f"Expected version is stale; current version is {current_version}.")
 
 
+class DuplicateEmailError(Exception):
+    def __init__(self, email: str):
+        self.email = email
+        super().__init__(f"Email is already registered: {email}")
+
+
 class TripRepository(Protocol):
     async def resolve_guest(self, token_hash: str, lifetime_days: int) -> GuestSession | None: ...
     async def create_guest(self, token_hash: str, lifetime_days: int) -> GuestSession: ...
+    async def create_user(self, email: str, password_hash: str) -> User: ...
+    async def get_user_by_email(self, email: str) -> User | None: ...
+    async def get_user_by_id(self, user_id: UUID) -> User | None: ...
     async def list_trips(self, guest_id: UUID) -> list[TripRecord]: ...
     async def create_trip(self, guest_id: UUID, title: str, product_mode: str, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord: ...
     async def get_trip(self, guest_id: UUID, trip_id: UUID) -> TripRecord | None: ...
