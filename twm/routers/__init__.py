@@ -1,3 +1,3 @@
 """twm.routers package initializer."""
 
-__all__ = ["health", "trip_matcher", "trip_planner"]
+__all__ = ["flight_search", "health", "trip_matcher", "trip_planner"]
