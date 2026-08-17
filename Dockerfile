@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+# Pull in patched Debian OS packages (util-linux family — CVE-2026-53615 et al.)
+# rather than pinning to whatever base-image snapshot was current at build time.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt .
