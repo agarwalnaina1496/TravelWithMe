@@ -32,7 +32,11 @@ partner later is a contract change):
 - train: ixigo
 - bus: ixigo, redbus
 - stay: hotellook, booking_com, agoda, hostelworld
-- flight (SEARCH_REDIRECT fallback only): makemytrip
+
+No flight SEARCH_REDIRECT partner is defined — flights already have a live
+PROVIDER (Aviasales, TWM-145); a fallback partner was considered but dropped
+since it was never actually researched (unlike every partner above, which
+was verified this session), not because none exists.
 
 Drive has no action of any kind here — its feasibility is purely computed
 (distance/routing), never a partner handoff.
@@ -111,7 +115,6 @@ PartnerName = Literal[
     "booking_com",
     "agoda",
     "hostelworld",
-    "makemytrip",
 ]
 
 # Every base domain here is a fixed constant, never derived from caller
@@ -123,16 +126,17 @@ _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
     "booking_com": "www.booking.com",
     "agoda": "www.agoda.com",
     "hostelworld": "www.hostelworld.com",
-    "makemytrip": "www.makemytrip.com",
 }
 
 # Which partners are approved for which domain. PROVIDER/SEARCH_REDIRECT
-# partner selection must fall within this map.
+# partner selection must fall within this map. "flight" has no approved
+# SEARCH_REDIRECT partner yet — flights already have a live PROVIDER
+# (Aviasales, TWM-145); no fallback partner has been researched/verified.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] = {
     "train": frozenset({"ixigo"}),
     "bus": frozenset({"ixigo", "redbus"}),
     "stay": frozenset({"hotellook", "booking_com", "agoda", "hostelworld"}),
-    "flight": frozenset({"makemytrip"}),
+    "flight": frozenset(),
 }
 
 # All partners in the allowlist are affiliate relationships (confirmed this

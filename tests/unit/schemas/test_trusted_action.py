@@ -97,6 +97,13 @@ def test_partner_not_approved_for_domain_is_rejected():
         _search_redirect_action(domain="stay", target=ActionTarget(partner="ixigo", path="search"))
 
 
+def test_flight_domain_has_no_approved_search_redirect_partner_yet():
+    # No flight SEARCH_REDIRECT fallback partner has been researched/
+    # verified — flights already have a live PROVIDER (Aviasales).
+    with pytest.raises(ValidationError):
+        _search_redirect_action(domain="flight", target=ActionTarget(partner="ixigo", path="search"))
+
+
 # --- Affiliate disclosure -----------------------------------------------------
 
 
@@ -124,7 +131,7 @@ def test_check_prices_requires_internal_capability_not_a_target():
         TrustedAction(
             action_type="CHECK_PRICES",
             domain="flight",
-            target=ActionTarget(partner="makemytrip", path="flights"),
+            target=ActionTarget(partner="ixigo", path="flights"),
             affiliate_disclosure=False,
             generated_at=NOW,
         )
