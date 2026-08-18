@@ -13,7 +13,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from ..dependencies import get_current_user, get_logger, get_trip_persistence
+from ..dependencies import (
+    get_current_user,
+    get_flight_search_service,
+    get_logger,
+    get_trip_persistence,
+)
 from ..persistence.contracts import User
 from ..persistence.service import TripPersistenceService
 from ..schemas.flight_search import FlightSearchRequest, FlightSearchResponse
@@ -26,6 +31,7 @@ router = APIRouter(prefix="/trips", tags=["Flight Search"])
 Persistence = Annotated[TripPersistenceService, Depends(get_trip_persistence)]
 Logger = Annotated[TelemetryLogger, Depends(get_logger)]
 CurrentUser = Annotated[User | None, Depends(get_current_user)]
+FlightSearch = Annotated[FlightSearchService, Depends(get_flight_search_service)]
 
 
 @router.post("/{trip_id}/flight-search", response_model=FlightSearchResponse)
@@ -37,6 +43,7 @@ async def search_flights(
     persistence: Persistence,
     logger: Logger,
     current_user: CurrentUser,
+    flight_search: FlightSearch,
 ):
     owner = await _resolve_owner(request, response, persistence, current_user)
     trip = await persistence.repository.get_trip(owner, trip_id)
@@ -49,5 +56,4 @@ async def search_flights(
         )
         raise HTTPException(status_code=404, detail="Trip not found.")
 
-    service = FlightSearchService(logger)
-    return service.search(trip_id, payload)
+    return await flight_search.search(trip_id, payload)

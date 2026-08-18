@@ -4,6 +4,7 @@ from typing import Annotated
 from .auth.service import AuthService
 from .persistence.contracts import User
 from .services import AgentEngine
+from .services.flight_search import FlightSearchService
 from .telemetry import TelemetryLogger
 from .persistence.service import TripPersistenceService
 
@@ -14,6 +15,16 @@ def get_engine(request: Request) -> AgentEngine:
 
 def get_logger(request: Request) -> TelemetryLogger:
     return request.app.state.telemetry
+
+
+def get_flight_search_service(
+    request: Request, logger: Annotated[TelemetryLogger, Depends(get_logger)]
+) -> FlightSearchService:
+    return FlightSearchService(
+        logger=logger,
+        adapter=request.app.state.flight_search_adapter,
+        currency=request.app.state.flight_search_settings.currency,
+    )
 
 
 def get_trip_persistence(request: Request) -> TripPersistenceService:

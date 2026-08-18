@@ -5,11 +5,17 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
-from twm.dependencies import get_current_user, get_logger, get_trip_persistence
+from twm.dependencies import (
+    get_current_user,
+    get_flight_search_service,
+    get_logger,
+    get_trip_persistence,
+)
 from twm.main import app
 from twm.persistence.contracts import GuestSession, TripRecord
 from twm.persistence.service import TripPersistenceService
 from twm.persistence.settings import DatabaseSettings
+from twm.services.flight_search import FlightSearchService
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
 
 
@@ -212,6 +218,59 @@ def test_repeat_identical_request_is_idempotent_and_safe(api_client: TestClient)
     assert first_body["unavailable"] == second_body["unavailable"]
     # Trip stays untouched by either call — no duplicate side effects.
     assert repository.trips[UUID(trip_id)].version == 1
+
+
+class _FakeConfiguredAdapter:
+    """Fake AviasalesAdapter used to drive the provider-configured path
+    through the HTTP boundary without any real network call."""
+
+    async def fetch_cheapest_prices(self, **kwargs):
+        return (
+            [
+                {
+                    "price": 5000,
+                    "airline": "AI",
+                    "flight_number": 101,
+                    "departure_at": "2026-09-10T10:00:00+00:00",
+                    "return_at": "2026-09-17T10:00:00+00:00",
+                    "expires_at": "2026-08-20T00:00:00+00:00",
+                }
+            ],
+            datetime(2026, 8, 18, 12, 0, 0, tzinfo=timezone.utc),
+        )
+
+    async def fetch_stop_count_hint(self, **kwargs):
+        return None
+
+
+def test_configured_provider_returns_offer_status_with_no_raw_payload(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=False, environment="test", payload_mode=PayloadMode.METADATA, max_field_size=256
+        ),
+        InMemorySink(),
+    )
+    app.dependency_overrides[get_flight_search_service] = lambda: FlightSearchService(
+        logger=logger, adapter=_FakeConfiguredAdapter(), currency="USD"
+    )
+
+    trip_id = _create_trip(api_client)
+    response = api_client.post(f"/trips/{trip_id}/flight-search", json=VALID_REQUEST)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "offer"
+    assert len(body["offers"]) == 1
+    offer = body["offers"][0]
+    assert offer["money"]["currency"] == "USD"
+    assert offer["money"]["group_total_is_approximate"] is True
+    assert offer["baggage"]["checked_bag_included"] is None
+    assert offer["fare_conditions"]["refundable"] is None
+    assert offer["provenance"]["provider_name"] == "aviasales"
+    assert "url" not in offer["provenance"]
+    assert body["unavailable"] is None
 
 
 def test_readiness_and_unavailable_events_are_logged_with_trip_id(api_client: TestClient):

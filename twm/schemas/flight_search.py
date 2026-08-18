@@ -2,7 +2,7 @@
 
 This module defines the typed request/readiness/offer contract for an
 explicit live flight search. It is deliberately shaped against the
-currently-reachable Travelpayouts provider generation — the "Data API"
+currently-reachable Aviasales provider generation — the "Data API"
 (cached cheapest-price lookups, no MAU gate) — not the real-time
 "Flight Search API" (search_id-based live search), which requires a
 minimum monthly-active-users threshold TWM does not yet meet.
@@ -22,10 +22,18 @@ Consequences of that provider reality, encoded directly in these schemas:
   provider-confirmed multi-passenger fare. FlightMoney.group_total_is_approximate
   makes this explicit as a typed field, not a comment travelers/callers
   could miss.
+- The provider discloses a departure timestamp and an IATA carrier code
+  (airline_code, flight_number) but no arrival time and no full airline
+  name — airline_name is populated only from a static code->name lookup
+  (twm/services/flight_search/airlines.py), never guessed, and there is
+  deliberately no arrival_at field since no current provider input can
+  supply one honestly. The offer carries one point price
+  (FlightMoney.per_traveler_amount_minor_units), not a low/high range —
+  a UI showing this data should render a single value with a freshness
+  badge, not fabricate a range.
 
-No provider is called from this module or from
-twm/services/flight_search/service.py yet — TWM-145 (blocked by this
-story) selects and wires an actual provider against this contract.
+TWM-145 selects and wires the Aviasales adapter against this contract
+(twm/services/flight_search/aviasales.py).
 
 House style: Pydantic v2, extra="forbid" on every model, Literal for closed
 enums, model_validator(mode="after") for cross-field invariants — mirrors
@@ -190,7 +198,7 @@ class FlightProviderProvenance(BaseModel):
 class FlightMoney(BaseModel):
     """Normalized pricing for one offer.
 
-    The current provider generation (Travelpayouts Data API) returns a
+    The current provider generation (Aviasales Data API) returns a
     single cached found price, not a confirmed multi-passenger fare
     breakdown. group_total_minor_units is therefore always Backend-computed
     as per_traveler_amount_minor_units * traveler_count —
@@ -266,11 +274,21 @@ class NormalizedFlightOffer(BaseModel):
     destination_iata: IataCode
     trip_type: FlightTripType
     departure_date: date
+    departure_at: Optional[datetime] = None
     return_date: Optional[date] = None
     # Only populated when the provider endpoint discloses it (e.g. a
     # calendar/matrix lookup's transfers count); None otherwise — never
     # fabricated.
     stop_count: Optional[int] = Field(default=None, ge=0)
+    # IATA carrier code as disclosed by the provider (e.g. "6E"). The
+    # provider does not disclose a full airline name or an arrival time —
+    # airline_name is populated only from TWM's own static code->name
+    # lookup (see normalization.py), never guessed; arrival time has no
+    # field here at all because no current provider input can supply it
+    # honestly.
+    airline_code: Optional[FlightText] = None
+    airline_name: Optional[FlightText] = None
+    flight_number: Optional[FlightText] = None
     money: FlightMoney
     baggage: FlightBaggageAllowance
     fare_conditions: FlightFareConditions
