@@ -270,7 +270,66 @@ def test_configured_provider_returns_offer_status_with_no_raw_payload(api_client
     assert offer["fare_conditions"]["refundable"] is None
     assert offer["provenance"]["provider_name"] == "aviasales"
     assert "url" not in offer["provenance"]
+    assert offer["is_recommended"] is True
     assert body["unavailable"] is None
+
+
+class _FakeMultiOfferAdapter:
+    """Fake AviasalesAdapter returning multiple offers at different prices,
+    to drive ranking (TWM-146) through the full HTTP boundary."""
+
+    async def fetch_cheapest_prices(self, **kwargs):
+        return (
+            [
+                {
+                    "price": 9000,
+                    "airline": "AI",
+                    "flight_number": 201,
+                    "departure_at": "2026-09-10T10:00:00+00:00",
+                    "return_at": "2026-09-17T10:00:00+00:00",
+                    "expires_at": "2026-08-20T00:00:00+00:00",
+                },
+                {
+                    "price": 3000,
+                    "airline": "AI",
+                    "flight_number": 202,
+                    "departure_at": "2026-09-10T14:00:00+00:00",
+                    "return_at": "2026-09-17T14:00:00+00:00",
+                    "expires_at": "2026-08-20T00:00:00+00:00",
+                },
+            ],
+            datetime(2026, 8, 18, 12, 0, 0, tzinfo=timezone.utc),
+        )
+
+    async def fetch_stop_count_hint(self, **kwargs):
+        return None
+
+
+def test_multiple_offers_are_ranked_cheapest_first_with_top_offer_marked(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=False, environment="test", payload_mode=PayloadMode.METADATA, max_field_size=256
+        ),
+        InMemorySink(),
+    )
+    app.dependency_overrides[get_flight_search_service] = lambda: FlightSearchService(
+        logger=logger, adapter=_FakeMultiOfferAdapter(), currency="USD"
+    )
+
+    trip_id = _create_trip(api_client)
+    response = api_client.post(f"/trips/{trip_id}/flight-search", json=VALID_REQUEST)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "offer"
+    offers = body["offers"]
+    assert len(offers) == 2
+    group_totals = [offer["money"]["group_total_minor_units"] for offer in offers]
+    assert group_totals == sorted(group_totals)
+    assert offers[0]["is_recommended"] is True
+    assert offers[1]["is_recommended"] is False
 
 
 def test_readiness_and_unavailable_events_are_logged_with_trip_id(api_client: TestClient):

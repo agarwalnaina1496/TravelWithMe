@@ -220,6 +220,26 @@ def test_duplicate_entries_are_deduped_to_partial():
     assert len(response.offers) == 1
 
 
+def test_offers_are_ranked_cheapest_first_and_top_offer_is_recommended():
+    logger, _ = _logger()
+    adapter = _FakeAdapter(
+        entries=[
+            _entry(price=9000, flight_number=201),
+            _entry(price=3000, flight_number=202),
+            _entry(price=6000, flight_number=203),
+        ]
+    )
+    service = FlightSearchService(logger=logger, adapter=adapter, currency="USD")
+
+    response = asyncio.run(service.search(uuid4(), _ready_request()))
+
+    assert response.status == "offer"
+    group_totals = [offer.money.group_total_minor_units for offer in response.offers]
+    assert group_totals == sorted(group_totals)
+    assert response.offers[0].is_recommended is True
+    assert all(offer.is_recommended is False for offer in response.offers[1:])
+
+
 def test_clarification_needed_never_calls_provider():
     logger, sink = _logger()
 
