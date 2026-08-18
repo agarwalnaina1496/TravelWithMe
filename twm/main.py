@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from .shared.properties import property_loader
 from .middleware import SecurityBoundaryMiddleware
 from .routers.auth import router as auth_api
+from .routers.flight_search import router as flight_search_api
 from .routers.health import router as health_api
 from .routers.trip_matcher import router as trip_matcher_api
 from .routers.trip_planner import router as trip_planner_api
@@ -185,6 +186,7 @@ def initialize_app() -> FastAPI:
     app.include_router(trip_matcher_api)
     app.include_router(trip_planner_api)
     app.include_router(trips_api)
+    app.include_router(flight_search_api)
 
     return app
 
