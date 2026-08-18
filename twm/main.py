@@ -27,6 +27,7 @@ from .services import (
     AgentOutputError,
     get_agent_engine,
 )
+from .services.flight_search import FlightSearchSettings, TravelpayoutsAdapter
 from .telemetry import (
     CORRELATION_HEADERS,
     TelemetryContextMiddleware,
@@ -40,6 +41,7 @@ async def application_lifespan(app: FastAPI):
     settings = AgentEngineSettings.load()
     database_settings = DatabaseSettings.load()
     auth_settings = AuthSettings.load()
+    flight_search_settings = FlightSearchSettings.load()
     async with AsyncExitStack() as stack:
         http_client = None
         if settings.engine == "n8n":
@@ -49,6 +51,16 @@ async def application_lifespan(app: FastAPI):
         app.state.agent_engine = get_agent_engine(
             settings, app.state.telemetry, http_client
         )
+        app.state.flight_search_settings = flight_search_settings
+        if flight_search_settings.is_configured:
+            flight_search_http_client = await stack.enter_async_context(
+                httpx.AsyncClient(timeout=float(flight_search_settings.timeout_seconds))
+            )
+            app.state.flight_search_adapter = TravelpayoutsAdapter(
+                flight_search_settings, flight_search_http_client
+            )
+        else:
+            app.state.flight_search_adapter = None
         if database_settings.url:
             pool = await asyncpg.create_pool(
                 database_settings.url,
