@@ -18,6 +18,7 @@ from .routers.health import router as health_api
 from .routers.trip_matcher import router as trip_matcher_api
 from .routers.trip_planner import router as trip_planner_api
 from .routers.trips import router as trips_api
+from .routers.trusted_action import router as trusted_action_api
 from .auth import AuthService, AuthSettings
 from .persistence import DatabaseSettings, PostgresTripRepository, TripPersistenceService
 from .services import (
@@ -28,6 +29,7 @@ from .services import (
     get_agent_engine,
 )
 from .services.flight_search import FlightSearchSettings, AviasalesAdapter
+from .services.trusted_action import TrustedActionSettings
 from .telemetry import (
     CORRELATION_HEADERS,
     TelemetryContextMiddleware,
@@ -61,6 +63,9 @@ async def application_lifespan(app: FastAPI):
             )
         else:
             app.state.flight_search_adapter = None
+        app.state.trusted_action_settings = TrustedActionSettings.load(
+            travelpayouts_marker=flight_search_settings.partner_id
+        )
         if database_settings.url:
             pool = await asyncpg.create_pool(
                 database_settings.url,
@@ -199,6 +204,7 @@ def initialize_app() -> FastAPI:
     app.include_router(trip_planner_api)
     app.include_router(trips_api)
     app.include_router(flight_search_api)
+    app.include_router(trusted_action_api)
 
     return app
 
