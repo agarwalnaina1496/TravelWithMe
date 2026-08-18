@@ -2,7 +2,7 @@
 
 This module defines the typed request/readiness/offer contract for an
 explicit live flight search. It is deliberately shaped against the
-currently-reachable Travelpayouts provider generation — the "Data API"
+currently-reachable Aviasales provider generation — the "Data API"
 (cached cheapest-price lookups, no MAU gate) — not the real-time
 "Flight Search API" (search_id-based live search), which requires a
 minimum monthly-active-users threshold TWM does not yet meet.
@@ -190,7 +190,7 @@ class FlightProviderProvenance(BaseModel):
 class FlightMoney(BaseModel):
     """Normalized pricing for one offer.
 
-    The current provider generation (Travelpayouts Data API) returns a
+    The current provider generation (Aviasales Data API) returns a
     single cached found price, not a confirmed multi-passenger fare
     breakdown. group_total_minor_units is therefore always Backend-computed
     as per_traveler_amount_minor_units * traveler_count —

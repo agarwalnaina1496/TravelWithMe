@@ -1,4 +1,4 @@
-"""Travelpayouts Data API adapter tests (TWM-145)."""
+"""Aviasales Data API adapter tests (TWM-145)."""
 
 import asyncio
 from datetime import date
@@ -8,7 +8,7 @@ import pytest
 
 from twm.services.flight_search.errors import FlightProviderError, FlightProviderTimeoutError
 from twm.services.flight_search.settings import FlightSearchSettings
-from twm.services.flight_search.travelpayouts import TravelpayoutsAdapter
+from twm.services.flight_search.aviasales import AviasalesAdapter
 
 
 def _settings(**overrides) -> FlightSearchSettings:
@@ -47,7 +47,7 @@ def test_adapter_sends_token_via_header_never_query_or_url() -> None:
         )
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    adapter = TravelpayoutsAdapter(_settings(), client)
+    adapter = AviasalesAdapter(_settings(), client)
 
     try:
         entries, received_at = asyncio.run(
@@ -78,7 +78,7 @@ def test_adapter_includes_optional_partner_id_as_marker() -> None:
         return httpx.Response(200, json={"success": True, "data": {}})
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    adapter = TravelpayoutsAdapter(_settings(partner_id="12345"), client)
+    adapter = AviasalesAdapter(_settings(partner_id="12345"), client)
 
     try:
         asyncio.run(
@@ -102,7 +102,7 @@ def test_adapter_returns_empty_list_when_destination_absent() -> None:
             lambda request: httpx.Response(200, json={"success": True, "data": {}})
         )
     )
-    adapter = TravelpayoutsAdapter(_settings(), client)
+    adapter = AviasalesAdapter(_settings(), client)
 
     try:
         entries, _ = asyncio.run(
@@ -125,7 +125,7 @@ def test_adapter_maps_timeout() -> None:
         raise httpx.ReadTimeout("slow", request=request)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    adapter = TravelpayoutsAdapter(_settings(), client)
+    adapter = AviasalesAdapter(_settings(), client)
 
     try:
         with pytest.raises(FlightProviderTimeoutError) as captured:
@@ -142,7 +142,7 @@ def test_adapter_maps_timeout() -> None:
         asyncio.run(client.aclose())
 
     error = captured.value
-    assert error.component == "travelpayouts"
+    assert error.component == "aviasales"
     assert error.failure_stage == "invocation"
     assert error.error_type == "ReadTimeout"
 
@@ -152,7 +152,7 @@ def test_adapter_maps_http_status_error_without_raw_payload() -> None:
         return httpx.Response(401, json={"error": "invalid token"})
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    adapter = TravelpayoutsAdapter(_settings(), client)
+    adapter = AviasalesAdapter(_settings(), client)
 
     try:
         with pytest.raises(FlightProviderError) as captured:
@@ -178,7 +178,7 @@ def test_adapter_maps_connection_failure() -> None:
         raise httpx.ConnectError("all connection attempts failed", request=request)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    adapter = TravelpayoutsAdapter(_settings(), client)
+    adapter = AviasalesAdapter(_settings(), client)
 
     try:
         with pytest.raises(FlightProviderError) as captured:
@@ -201,7 +201,7 @@ def test_adapter_maps_malformed_json() -> None:
     client = httpx.AsyncClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, text="not-json"))
     )
-    adapter = TravelpayoutsAdapter(_settings(), client)
+    adapter = AviasalesAdapter(_settings(), client)
 
     try:
         with pytest.raises(FlightProviderError) as captured:
@@ -226,7 +226,7 @@ def test_adapter_maps_success_false_response() -> None:
             lambda request: httpx.Response(200, json={"success": False, "error": "bad request"})
         )
     )
-    adapter = TravelpayoutsAdapter(_settings(), client)
+    adapter = AviasalesAdapter(_settings(), client)
 
     try:
         with pytest.raises(FlightProviderError) as captured:

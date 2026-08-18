@@ -1,4 +1,4 @@
-"""Pure normalization of raw Travelpayouts entries into TWM-144's
+"""Pure normalization of raw Aviasales entries into TWM-144's
 NormalizedFlightOffer shape (TWM-145).
 
 Deterministic and side-effect free: no network calls, no logging. A
@@ -23,10 +23,10 @@ from ...schemas.flight_search import (
 )
 from .calculations import compute_group_total_minor_units, traveler_total
 
-PROVIDER_NAME = "travelpayouts"
+PROVIDER_NAME = "aviasales"
 
 
-def normalize_travelpayouts_offers(
+def normalize_aviasales_offers(
     entries: list[dict],
     request: FlightSearchRequest,
     price_found_at: datetime,

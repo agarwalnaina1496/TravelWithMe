@@ -1,4 +1,4 @@
-"""Travelpayouts Data API adapter (TWM-145).
+"""Aviasales Data API adapter (TWM-145).
 
 Wraps GET /v1/prices/cheap — the simplest cached cheapest-price lookup on
 the Data API tier, matching TWM-144's single-offer-per-route contract shape
@@ -22,11 +22,11 @@ import httpx
 from .errors import FlightProviderError, FlightProviderTimeoutError
 from .settings import FlightSearchSettings
 
-_BASE_URL = "https://api.travelpayouts.com"
+_BASE_URL = "https://api.aviasales.com"
 _CHEAP_PRICES_PATH = "/v1/prices/cheap"
 
 
-class TravelpayoutsAdapter:
+class AviasalesAdapter:
     def __init__(
         self, settings: FlightSearchSettings, http_client: httpx.AsyncClient
     ) -> None:
@@ -72,59 +72,59 @@ class TravelpayoutsAdapter:
             payload = response.json()
         except httpx.TimeoutException as error:
             raise FlightProviderTimeoutError(
-                "travelpayouts cheap-prices lookup timed out",
-                component="travelpayouts",
+                "aviasales cheap-prices lookup timed out",
+                component="aviasales",
                 failure_stage="invocation",
                 error_type=type(error).__name__,
                 detail=str(error).strip()
-                or "travelpayouts did not respond before the timeout",
+                or "aviasales did not respond before the timeout",
             ) from error
         except httpx.HTTPStatusError as error:
             status_code = error.response.status_code
             raise FlightProviderError(
-                "travelpayouts cheap-prices lookup failed",
-                component="travelpayouts",
+                "aviasales cheap-prices lookup failed",
+                component="aviasales",
                 failure_stage="upstream_http",
                 error_type=type(error).__name__,
-                detail=f"travelpayouts returned HTTP {status_code}",
+                detail=f"aviasales returned HTTP {status_code}",
                 upstream_status_code=status_code,
             ) from error
         except httpx.RequestError as error:
             raise FlightProviderError(
-                "travelpayouts cheap-prices lookup failed",
-                component="travelpayouts",
+                "aviasales cheap-prices lookup failed",
+                component="aviasales",
                 failure_stage="upstream_connection",
                 error_type=type(error).__name__,
-                detail=str(error).strip() or "travelpayouts connection failed",
+                detail=str(error).strip() or "aviasales connection failed",
             ) from error
         except ValueError as error:
             raise FlightProviderError(
-                "travelpayouts returned invalid JSON",
-                component="travelpayouts",
+                "aviasales returned invalid JSON",
+                component="aviasales",
                 failure_stage="response_decode",
                 error_type=type(error).__name__,
-                detail="travelpayouts returned a response that was not valid JSON",
+                detail="aviasales returned a response that was not valid JSON",
             ) from error
 
         received_at = datetime.now(timezone.utc)
 
         if not isinstance(payload, dict) or payload.get("success") is not True:
             raise FlightProviderError(
-                "travelpayouts reported an unsuccessful lookup",
-                component="travelpayouts",
+                "aviasales reported an unsuccessful lookup",
+                component="aviasales",
                 failure_stage="response_contract",
-                error_type="TravelpayoutsResponseContractError",
-                detail="travelpayouts response did not report success=true",
+                error_type="AviasalesResponseContractError",
+                detail="aviasales response did not report success=true",
             )
 
         data = payload.get("data")
         if not isinstance(data, dict):
             raise FlightProviderError(
-                "travelpayouts response did not contain a data object",
-                component="travelpayouts",
+                "aviasales response did not contain a data object",
+                component="aviasales",
                 failure_stage="response_contract",
-                error_type="TravelpayoutsResponseContractError",
-                detail="travelpayouts response 'data' field was missing or not an object",
+                error_type="AviasalesResponseContractError",
+                detail="aviasales response 'data' field was missing or not an object",
             )
 
         entries = data.get(destination_iata.upper(), {})

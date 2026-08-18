@@ -3,12 +3,12 @@
 from .errors import FlightProviderError, FlightProviderTimeoutError
 from .service import FlightSearchService
 from .settings import FlightSearchSettings
-from .travelpayouts import TravelpayoutsAdapter
+from .aviasales import AviasalesAdapter
 
 __all__ = [
     "FlightProviderError",
     "FlightProviderTimeoutError",
     "FlightSearchService",
     "FlightSearchSettings",
-    "TravelpayoutsAdapter",
+    "AviasalesAdapter",
 ]

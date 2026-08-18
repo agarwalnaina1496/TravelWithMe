@@ -27,7 +27,7 @@ from .services import (
     AgentOutputError,
     get_agent_engine,
 )
-from .services.flight_search import FlightSearchSettings, TravelpayoutsAdapter
+from .services.flight_search import FlightSearchSettings, AviasalesAdapter
 from .telemetry import (
     CORRELATION_HEADERS,
     TelemetryContextMiddleware,
@@ -56,7 +56,7 @@ async def application_lifespan(app: FastAPI):
             flight_search_http_client = await stack.enter_async_context(
                 httpx.AsyncClient(timeout=float(flight_search_settings.timeout_seconds))
             )
-            app.state.flight_search_adapter = TravelpayoutsAdapter(
+            app.state.flight_search_adapter = AviasalesAdapter(
                 flight_search_settings, flight_search_http_client
             )
         else:

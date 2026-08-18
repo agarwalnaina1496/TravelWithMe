@@ -2,8 +2,8 @@
 
 TWM-144 defines the provider-neutral request/readiness/offer contract for
 live flight search and the trip-owned API boundary that validates a search
-request deterministically. TWM-145 wires the Travelpayouts Data API
-(TravelpayoutsAdapter) as the concrete provider behind that contract.
+request deterministically. TWM-145 wires the Aviasales Data API
+(AviasalesAdapter) as the concrete provider behind that contract.
 
 When no provider is configured (adapter is None — see
 FlightSearchSettings.load(), which never fails app startup on a missing
@@ -21,7 +21,7 @@ optimistic-concurrency `version`.
 Cache: TWM-144 defined FlightSearchCacheEntry's shape but did not wire a
 live store. TWM-145 makes the explicit judgement call to continue
 deferring a live cache/store for this story — every request (repeated or
-not) calls the live provider. This is safe (Travelpayouts Data API is
+not) calls the live provider. This is safe (Aviasales Data API is
 itself server-side cached and has no documented per-second rate limit on
 this tier, unlike the real-time Search API), but it is a known limitation:
 a follow-up story should wire FlightSearchCacheEntry to reduce redundant
@@ -47,8 +47,8 @@ from ...schemas.flight_search import (
 from ...telemetry import TelemetryLogger
 from .calculations import exceeds_budget_ceiling, exceeds_max_stops, missing_required_fields
 from .errors import FlightProviderError, FlightProviderTimeoutError
-from .normalization import normalize_travelpayouts_offers
-from .travelpayouts import TravelpayoutsAdapter
+from .normalization import normalize_aviasales_offers
+from .aviasales import AviasalesAdapter
 
 _CLARIFICATION_MESSAGE = (
     "Tell us the missing trip details so we can search for flights."
@@ -70,7 +70,7 @@ _PROVIDER_REJECTED_MESSAGE = (
 @dataclass
 class FlightSearchService:
     logger: TelemetryLogger
-    adapter: Optional[TravelpayoutsAdapter] = None
+    adapter: Optional[AviasalesAdapter] = None
     currency: str = "USD"
 
     async def search(self, trip_id: UUID, payload: FlightSearchRequest) -> FlightSearchResponse:
@@ -124,7 +124,7 @@ class FlightSearchService:
             event="be.flight_search.provider_call_started",
             source="application",
             trip_id=str(trip_id),
-            provider_name="travelpayouts",
+            provider_name="aviasales",
             origin_iata=payload.origin_iata,
             destination_iata=payload.destination_iata,
             departure_date=payload.departure_date,
@@ -155,7 +155,7 @@ class FlightSearchService:
             )
             return self._unavailable(queried_at, code, message)
 
-        normalized = normalize_travelpayouts_offers(
+        normalized = normalize_aviasales_offers(
             entries, payload, received_at, self.currency
         )
         offers = _filter_and_dedupe(normalized, payload)
@@ -165,7 +165,7 @@ class FlightSearchService:
             event="be.flight_search.provider_call_completed",
             source="application",
             trip_id=str(trip_id),
-            provider_name="travelpayouts",
+            provider_name="aviasales",
             raw_offer_count=len(entries),
             normalized_offer_count=len(normalized),
             returned_offer_count=len(offers),

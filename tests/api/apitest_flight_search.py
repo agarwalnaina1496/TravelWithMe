@@ -221,7 +221,7 @@ def test_repeat_identical_request_is_idempotent_and_safe(api_client: TestClient)
 
 
 class _FakeConfiguredAdapter:
-    """Fake TravelpayoutsAdapter used to drive the provider-configured path
+    """Fake AviasalesAdapter used to drive the provider-configured path
     through the HTTP boundary without any real network call."""
 
     async def fetch_cheapest_prices(self, **kwargs):
@@ -265,7 +265,7 @@ def test_configured_provider_returns_offer_status_with_no_raw_payload(api_client
     assert offer["money"]["group_total_is_approximate"] is True
     assert offer["baggage"]["checked_bag_included"] is None
     assert offer["fare_conditions"]["refundable"] is None
-    assert offer["provenance"]["provider_name"] == "travelpayouts"
+    assert offer["provenance"]["provider_name"] == "aviasales"
     assert "url" not in offer["provenance"]
     assert body["unavailable"] is None
 

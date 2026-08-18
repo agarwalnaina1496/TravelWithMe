@@ -1,6 +1,6 @@
 """FlightSearchService provider-integration tests (TWM-145).
 
-Mocks TravelpayoutsAdapter directly (no real network calls) to cover the
+Mocks AviasalesAdapter directly (no real network calls) to cover the
 provider-configured and provider-not-configured paths, plus typed failure
 mapping and filter/dedupe behavior.
 """

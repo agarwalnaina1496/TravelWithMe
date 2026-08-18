@@ -18,7 +18,7 @@ class FlightProviderError(RuntimeError):
         self,
         message: str,
         *,
-        component: str = "travelpayouts",
+        component: str = "aviasales",
         failure_stage: str = "invocation",
         error_type: Optional[str] = None,
         detail: Optional[str] = None,

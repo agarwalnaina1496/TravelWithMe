@@ -42,13 +42,13 @@ class FlightSearchSettings:
             "aviasales_api_token", ""
         ).strip()
         partner_id = property_loader.get_string_property_with_default(
-            "travelpayouts_partner_id", ""
+            "aviasales_partner_id", ""
         ).strip()
         timeout_seconds = _positive_int(
-            "travelpayouts_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS
+            "aviasales_timeout_seconds", _DEFAULT_TIMEOUT_SECONDS
         )
         currency = property_loader.get_string_property_with_default(
-            "travelpayouts_currency", _DEFAULT_CURRENCY
+            "aviasales_currency", _DEFAULT_CURRENCY
         ).strip().upper()
 
         return cls(
