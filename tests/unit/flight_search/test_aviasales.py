@@ -220,6 +220,106 @@ def test_adapter_maps_malformed_json() -> None:
     assert captured.value.failure_stage == "response_decode"
 
 
+def test_adapter_calls_the_travelpayouts_host() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"success": True, "data": {}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = AviasalesAdapter(_settings(), client)
+
+    try:
+        asyncio.run(
+            adapter.fetch_cheapest_prices(
+                origin_iata="DEL", destination_iata="BOM", depart_date=None, return_date=None, currency="USD"
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert captured[0].url.host == "api.travelpayouts.com"
+
+
+def test_fetch_stop_count_hint_returns_airline_flight_number_and_transfers() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api.travelpayouts.com"
+        assert request.headers["X-Access-Token"] == "test-token"
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "2026-09-10": {
+                        "origin": "DEL",
+                        "destination": "BOM",
+                        "price": 5000,
+                        "transfers": 1,
+                        "airline": "AI",
+                        "flight_number": 101,
+                        "departure_at": "2026-09-10T10:00:00+00:00",
+                        "return_at": None,
+                        "expires_at": "2026-08-20T00:00:00+00:00",
+                    }
+                },
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = AviasalesAdapter(_settings(), client)
+
+    try:
+        hint = asyncio.run(
+            adapter.fetch_stop_count_hint(
+                origin_iata="DEL", destination_iata="BOM", depart_date=date(2026, 9, 10), currency="USD"
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert hint == ("AI", "101", 1)
+
+
+def test_fetch_stop_count_hint_returns_none_on_any_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = AviasalesAdapter(_settings(), client)
+
+    try:
+        hint = asyncio.run(
+            adapter.fetch_stop_count_hint(
+                origin_iata="DEL", destination_iata="BOM", depart_date=date(2026, 9, 10), currency="USD"
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert hint is None
+
+
+def test_fetch_stop_count_hint_returns_none_when_date_absent_from_calendar() -> None:
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"success": True, "data": {}})
+        )
+    )
+    adapter = AviasalesAdapter(_settings(), client)
+
+    try:
+        hint = asyncio.run(
+            adapter.fetch_stop_count_hint(
+                origin_iata="DEL", destination_iata="BOM", depart_date=date(2026, 9, 10), currency="USD"
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert hint is None
+
+
 def test_adapter_maps_success_false_response() -> None:
     client = httpx.AsyncClient(
         transport=httpx.MockTransport(

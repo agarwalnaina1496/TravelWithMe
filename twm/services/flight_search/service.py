@@ -158,6 +158,9 @@ class FlightSearchService:
         normalized = normalize_aviasales_offers(
             entries, payload, received_at, self.currency
         )
+        normalized, stop_count_enriched = await self._enrich_stop_counts(
+            normalized, payload
+        )
         offers = _filter_and_dedupe(normalized, payload)
 
         self.logger.info(
@@ -169,6 +172,7 @@ class FlightSearchService:
             raw_offer_count=len(entries),
             normalized_offer_count=len(normalized),
             returned_offer_count=len(offers),
+            stop_count_enriched=stop_count_enriched,
         )
 
         if not offers:
@@ -184,6 +188,44 @@ class FlightSearchService:
             expires_at=min(expiries) if expiries else None,
             offers=offers,
         )
+
+    async def _enrich_stop_counts(
+        self, offers: list[NormalizedFlightOffer], payload: FlightSearchRequest
+    ) -> tuple[list[NormalizedFlightOffer], bool]:
+        """Best-effort stop-count enrichment via /v1/prices/calendar.
+
+        /v1/prices/cheap (the primary lookup) never discloses a stop count.
+        The calendar endpoint discloses one for a single cached entry per
+        date, matched here to at most one of the primary candidates by
+        (airline, flight_number). Any failure here (network, unmatched,
+        malformed) is swallowed — enrichment is never a reason to fail or
+        degrade the underlying search."""
+
+        assert self.adapter is not None
+        assert payload.departure_date is not None
+        hint = await self.adapter.fetch_stop_count_hint(
+            origin_iata=payload.origin_iata,
+            destination_iata=payload.destination_iata,
+            depart_date=payload.departure_date,
+            currency=self.currency,
+        )
+        if hint is None:
+            return offers, False
+
+        hint_airline, hint_flight_number, hint_stop_count = hint
+        enriched = False
+        result: list[NormalizedFlightOffer] = []
+        for offer in offers:
+            if (
+                not enriched
+                and offer.stop_count is None
+                and offer.airline_code == hint_airline
+                and offer.flight_number == hint_flight_number
+            ):
+                offer = offer.model_copy(update={"stop_count": hint_stop_count})
+                enriched = True
+            result.append(offer)
+        return result, enriched
 
     def _log_provider_failure(self, trip_id: UUID, error: FlightProviderError) -> None:
         self.logger.warning(

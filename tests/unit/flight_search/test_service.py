@@ -57,14 +57,18 @@ def _entry(**overrides) -> dict:
 
 
 class _FakeAdapter:
-    def __init__(self, entries=None, error=None):
+    def __init__(self, entries=None, error=None, stop_count_hint=None):
         self._entries = entries or []
         self._error = error
+        self._stop_count_hint = stop_count_hint
 
     async def fetch_cheapest_prices(self, **kwargs):
         if self._error:
             raise self._error
         return self._entries, RECEIVED_AT
+
+    async def fetch_stop_count_hint(self, **kwargs):
+        return self._stop_count_hint
 
 
 def test_no_adapter_configured_returns_provider_not_configured():
@@ -138,10 +142,9 @@ def test_empty_provider_result_maps_to_provider_rejected_request():
     assert response.unavailable.code == "provider_rejected_request"
 
 
-def test_max_stops_filters_offers_to_partial_when_stop_count_disclosed():
-    # This provider endpoint never discloses stop_count (always None), so
-    # max_stops filtering never actually excludes an offer for this
-    # provider generation — verified here as a no-op passthrough.
+def test_max_stops_has_nothing_to_filter_without_calendar_enrichment():
+    # /v1/prices/cheap alone never discloses stop_count; without a
+    # calendar-enrichment hint, max_stops filtering is a no-op passthrough.
     logger, _ = _logger()
     adapter = _FakeAdapter(entries=[_entry()])
     service = FlightSearchService(logger=logger, adapter=adapter)
@@ -150,6 +153,46 @@ def test_max_stops_filters_offers_to_partial_when_stop_count_disclosed():
 
     assert response.status == "offer"
     assert len(response.offers) == 1
+    assert response.offers[0].stop_count is None
+
+
+def test_calendar_hint_enriches_matching_offers_stop_count():
+    logger, sink = _logger()
+    adapter = _FakeAdapter(
+        entries=[_entry()], stop_count_hint=("AI", "101", 0)
+    )
+    service = FlightSearchService(logger=logger, adapter=adapter)
+
+    response = asyncio.run(service.search(uuid4(), _ready_request()))
+
+    assert response.offers[0].stop_count == 0
+    events = {event["event"]: event for event in sink.events}
+    assert events["be.flight_search.provider_call_completed"]["fields"]["stop_count_enriched"] is True
+
+
+def test_calendar_hint_that_matches_nothing_leaves_stop_count_none():
+    logger, sink = _logger()
+    adapter = _FakeAdapter(
+        entries=[_entry()], stop_count_hint=("UK", "999", 1)
+    )
+    service = FlightSearchService(logger=logger, adapter=adapter)
+
+    response = asyncio.run(service.search(uuid4(), _ready_request()))
+
+    assert response.offers[0].stop_count is None
+    events = {event["event"]: event for event in sink.events}
+    assert events["be.flight_search.provider_call_completed"]["fields"]["stop_count_enriched"] is False
+
+
+def test_max_stops_filters_out_offer_enriched_above_the_limit():
+    logger, _ = _logger()
+    adapter = _FakeAdapter(entries=[_entry()], stop_count_hint=("AI", "101", 2))
+    service = FlightSearchService(logger=logger, adapter=adapter)
+
+    response = asyncio.run(service.search(uuid4(), _ready_request(max_stops=0)))
+
+    assert response.status == "unavailable"
+    assert response.unavailable.code == "provider_rejected_request"
 
 
 def test_budget_ceiling_filters_out_offer_over_budget():

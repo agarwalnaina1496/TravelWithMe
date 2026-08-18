@@ -1,10 +1,22 @@
 """Aviasales Data API adapter (TWM-145).
 
-Wraps GET /v1/prices/cheap — the simplest cached cheapest-price lookup on
-the Data API tier, matching TWM-144's single-offer-per-route contract shape
-best. Stop-count enrichment via GET /v1/prices/calendar (which does carry a
-`transfers` field) is a natural follow-up, not required now — see
-twm/schemas/flight_search.py's NormalizedFlightOffer.stop_count docstring.
+Wraps two Data-API endpoints, both served by the Travelpayouts platform
+that Aviasales' consumer product runs on (the API host is
+api.travelpayouts.com regardless of the Aviasales branding used elsewhere
+in this module):
+
+- GET /v1/prices/cheap: the primary lookup. Keyed by destination, with
+  multiple cached candidate entries per route — this is what lets the
+  service return several ranked offers per search, matching the product's
+  "our pick + alternatives" comparison pattern. It never discloses a stop
+  count.
+- GET /v1/prices/calendar: a best-effort enrichment call for the single
+  requested date. It discloses `transfers` (stop count) but only for one
+  cached entry per date, not the same candidate set as /v1/prices/cheap.
+  fetch_stop_count_hint() returns that one (airline, flight_number) ->
+  stop_count pairing (or None on any failure) so the service can enrich a
+  matching /v1/prices/cheap entry without making stop-count enrichment a
+  hard dependency of the search succeeding at all.
 
 Auth is via the `X-Access-Token` header, never a query parameter, so the
 token can never leak into a logged URL. Mirrors
@@ -22,8 +34,9 @@ import httpx
 from .errors import FlightProviderError, FlightProviderTimeoutError
 from .settings import FlightSearchSettings
 
-_BASE_URL = "https://api.aviasales.com"
+_BASE_URL = "https://api.travelpayouts.com"
 _CHEAP_PRICES_PATH = "/v1/prices/cheap"
+_CALENDAR_PATH = "/v1/prices/calendar"
 
 
 class AviasalesAdapter:
@@ -131,3 +144,55 @@ class AviasalesAdapter:
         if not isinstance(entries, dict):
             entries = {}
         return [entry for entry in entries.values() if isinstance(entry, dict)], received_at
+
+    async def fetch_stop_count_hint(
+        self,
+        *,
+        origin_iata: str,
+        destination_iata: str,
+        depart_date: date,
+        currency: str,
+    ) -> Optional[tuple[str, str, int]]:
+        """Best-effort (airline_code, flight_number, stop_count) for the
+        requested date from /v1/prices/calendar, or None on any failure —
+        stop-count enrichment is a nice-to-have, never a reason to fail the
+        whole search. Only one entry exists per date on this endpoint, so
+        this can enrich at most one of /v1/prices/cheap's candidate offers
+        (matched by airline + flight_number in the caller)."""
+
+        params: dict[str, str] = {
+            "origin": origin_iata,
+            "destination": destination_iata,
+            "depart_date": depart_date.isoformat(),
+            "calendar_type": "departure_date",
+            "currency": currency.lower(),
+        }
+        headers = {"X-Access-Token": self._settings.api_token or ""}
+
+        try:
+            response = await self._http_client.get(
+                f"{_BASE_URL}{_CALENDAR_PATH}",
+                params=params,
+                headers=headers,
+                timeout=self._settings.timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError, ValueError):
+            return None
+
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            return None
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return None
+        entry = data.get(depart_date.isoformat())
+        if not isinstance(entry, dict):
+            return None
+
+        airline = entry.get("airline")
+        flight_number = entry.get("flight_number")
+        transfers = entry.get("transfers")
+        if airline is None or flight_number is None or not isinstance(transfers, int):
+            return None
+        return str(airline), str(flight_number), transfers

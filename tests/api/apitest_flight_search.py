@@ -239,6 +239,9 @@ class _FakeConfiguredAdapter:
             datetime(2026, 8, 18, 12, 0, 0, tzinfo=timezone.utc),
         )
 
+    async def fetch_stop_count_hint(self, **kwargs):
+        return None
+
 
 def test_configured_provider_returns_offer_status_with_no_raw_payload(api_client: TestClient):
     repository = MemoryTripRepository()
