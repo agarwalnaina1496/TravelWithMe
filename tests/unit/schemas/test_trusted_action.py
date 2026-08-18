@@ -94,14 +94,32 @@ def test_partner_outside_closed_allowlist_enum_is_rejected():
 
 def test_partner_not_approved_for_domain_is_rejected():
     with pytest.raises(ValidationError):
-        _search_redirect_action(domain="stay", target=ActionTarget(partner="ixigo", path="search"))
+        _search_redirect_action(domain="train", target=ActionTarget(partner="hotellook", path="search"))
 
 
-def test_flight_domain_has_no_approved_search_redirect_partner_yet():
-    # No flight SEARCH_REDIRECT fallback partner has been researched/
-    # verified — flights already have a live PROVIDER (Aviasales).
+def test_flight_search_redirect_via_ixigo_succeeds_as_a_second_alternative():
+    # A second, alternative option alongside the live Aviasales
+    # CHECK_PRICES offer — never a replacement for it.
+    action = _search_redirect_action(
+        domain="flight", target=ActionTarget(partner="ixigo", path="flights", query_params={"from": "DEL", "to": "BOM"})
+    )
+    assert action.target.partner == "ixigo"
+
+
+def test_flight_provider_action_is_rejected_check_prices_owns_that_path():
     with pytest.raises(ValidationError):
-        _search_redirect_action(domain="flight", target=ActionTarget(partner="ixigo", path="search"))
+        TrustedAction(
+            action_type="PROVIDER",
+            domain="flight",
+            target=ActionTarget(partner="ixigo", path="flights"),
+            affiliate_disclosure=True,
+            generated_at=NOW,
+        )
+
+
+def test_ixigo_is_approved_for_stay_alongside_the_dedicated_stay_partners():
+    action = _search_redirect_action(domain="stay", target=ActionTarget(partner="ixigo", path="hotels"))
+    assert action.target.partner == "ixigo"
 
 
 # --- Affiliate disclosure -----------------------------------------------------

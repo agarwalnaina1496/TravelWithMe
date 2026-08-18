@@ -12,31 +12,39 @@ maps provider was researched or confirmed).
 
 Three closed action types (TravelActionType):
 
-- CHECK_PRICES: points back at a TWM-owned capability (currently only the
-  live flight-search boundary, TWM-144/145) to re-run a price check. Never
-  an external URL — see ``internal_capability``.
-- PROVIDER: an approved, resolved-price provider handoff (e.g. the
-  Aviasales-backed flight offer TWM-145 already produces). This contract
-  never lets a PROVIDER action carry the price itself — the price lives on
-  ``NormalizedFlightOffer`` (twm/schemas/flight_search.py) or
-  ``LogisticsAnchor`` (twm/schemas/logistics.py); this action only carries a
-  safe link to *reach* that provider.
-- SEARCH_REDIRECT: a prefilled search on a partner site for a mode/domain
-  TWM has no live or cached price data of its own for today (train, bus,
-  stays, and a flight fallback outside TWM-145/146's Aviasales coverage).
-  Carries no price/rating/availability claim — only a safe prefilled query.
+- CHECK_PRICES: points back at a TWM-owned capability — today, only the
+  live flight-search boundary (TWM-144/145, Aviasales-backed). Never an
+  external URL — see ``internal_capability``. This is flight's *primary*
+  offer path; the price itself lives on ``NormalizedFlightOffer``
+  (twm/schemas/flight_search.py), never on this contract.
+- PROVIDER: an approved, resolved-price *external* provider handoff, for a
+  domain/mode where TWM does not itself own the live pricing capability.
+  This contract never lets a PROVIDER action carry the price itself — the
+  price lives with the provider being linked to (or, once resolved,
+  ``LogisticsAnchor`` for a confirmed booking, twm/schemas/logistics.py);
+  this action only carries a safe link to *reach* that provider.
+  domain=flight is not valid for PROVIDER, since flight's resolved-price
+  path is CHECK_PRICES/Aviasales, not a generic external partner.
+- SEARCH_REDIRECT: a prefilled search on a partner site. For train/bus/stay,
+  this is the *only* offer path (TWM has no live/cached price data of its
+  own there today). For flight, this is a *second, alternative* option
+  shown alongside the live Aviasales CHECK_PRICES offer, not a replacement
+  for it. Carries no price/rating/availability claim — only a safe
+  prefilled query.
 
 Fixed, closed partner allowlist (a Literal, not free text — adding a
-partner later is a contract change):
+partner later is a contract change), all verified this session:
 
+- flight (SEARCH_REDIRECT alternative only, alongside the Aviasales
+  CHECK_PRICES offer): ixigo
 - train: ixigo
 - bus: ixigo, redbus
-- stay: hotellook, booking_com, agoda, hostelworld
+- stay: hotellook, booking_com, agoda, hostelworld, ixigo
 
-No flight SEARCH_REDIRECT partner is defined — flights already have a live
-PROVIDER (Aviasales, TWM-145); a fallback partner was considered but dropped
-since it was never actually researched (unlike every partner above, which
-was verified this session), not because none exists.
+ixigo's affiliate program (via EarnKaro/Cuelinks, confirmed category-wise
+payouts) is separate from Travelpayouts (which covers Aviasales, Hotellook,
+Booking.com, Agoda) — a distinct credential/integration in TWM-131, not the
+same account.
 
 Drive has no action of any kind here — its feasibility is purely computed
 (distance/routing), never a partner handoff.
@@ -128,15 +136,17 @@ _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
     "hostelworld": "www.hostelworld.com",
 }
 
-# Which partners are approved for which domain. PROVIDER/SEARCH_REDIRECT
-# partner selection must fall within this map. "flight" has no approved
-# SEARCH_REDIRECT partner yet — flights already have a live PROVIDER
-# (Aviasales, TWM-145); no fallback partner has been researched/verified.
+# Which partners are approved for which domain, for PROVIDER/SEARCH_REDIRECT
+# action types. flight's only approved partner is ixigo, and only for
+# SEARCH_REDIRECT (see TrustedAction.validate_domain_partner) — shown as a
+# second, alternative option alongside the live Aviasales PROVIDER offer
+# (reached via CHECK_PRICES's internal_capability, not this generic
+# partner-target mechanism), never as a PROVIDER itself.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] = {
+    "flight": frozenset({"ixigo"}),
     "train": frozenset({"ixigo"}),
     "bus": frozenset({"ixigo", "redbus"}),
-    "stay": frozenset({"hotellook", "booking_com", "agoda", "hostelworld"}),
-    "flight": frozenset(),
+    "stay": frozenset({"hotellook", "booking_com", "agoda", "hostelworld", "ixigo"}),
 }
 
 # All partners in the allowlist are affiliate relationships (confirmed this
@@ -330,6 +340,15 @@ class TrustedAction(BaseModel):
 
     @model_validator(mode="after")
     def validate_domain_partner(self) -> "TrustedAction":
+        # domain=flight's PROVIDER is reserved exclusively for CHECK_PRICES's
+        # internal_capability path — TWM already owns a live, resolved-price
+        # flight PROVIDER (Aviasales, TWM-144/145), so a generic PROVIDER
+        # partner-target for flight would be a redundant, unresearched
+        # second path to the same thing. SEARCH_REDIRECT is still allowed
+        # for flight (ixigo) as a genuine second, alternative option shown
+        # alongside that live offer — never a replacement for it.
+        if self.action_type == "PROVIDER" and self.domain == "flight":
+            raise ValueError("PROVIDER must not use domain=flight — use CHECK_PRICES instead")
         if self.action_type in ("PROVIDER", "SEARCH_REDIRECT"):
             partner = self.target.partner if self.target is not None else None
             allowed = _ALLOWED_PARTNERS_BY_DOMAIN.get(self.domain, frozenset())
