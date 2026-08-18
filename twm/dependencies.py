@@ -13,6 +13,10 @@ def get_engine(request: Request) -> AgentEngine:
     return request.app.state.agent_engine
 
 
+def get_logger(request: Request) -> TelemetryLogger:
+    return request.app.state.telemetry
+
+
 def get_flight_search_service(
     request: Request, logger: Annotated[TelemetryLogger, Depends(get_logger)]
 ) -> FlightSearchService:
@@ -21,10 +25,6 @@ def get_flight_search_service(
         adapter=request.app.state.flight_search_adapter,
         currency=request.app.state.flight_search_settings.currency,
     )
-
-
-def get_logger(request: Request) -> TelemetryLogger:
-    return request.app.state.telemetry
 
 
 def get_trip_persistence(request: Request) -> TripPersistenceService:
