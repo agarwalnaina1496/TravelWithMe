@@ -56,6 +56,20 @@ def test_normalizes_a_valid_entry_with_correct_group_total_math() -> None:
     assert offer.offer_expires_at is not None
     assert offer.departure_date.isoformat() == "2026-09-10"
     assert offer.return_date.isoformat() == "2026-09-17"
+    assert offer.departure_at.isoformat() == "2026-09-10T10:00:00+00:00"
+    assert offer.airline_code == "AI"
+    assert offer.airline_name == "Air India"
+    assert offer.flight_number == "101"
+
+
+def test_unknown_airline_code_yields_no_airline_name_not_a_guess() -> None:
+    request = _round_trip_request()
+    entry = _entry(airline="ZZ")
+    offers = normalize_aviasales_offers([entry], request, RECEIVED_AT, "USD")
+
+    assert len(offers) == 1
+    assert offers[0].airline_code == "ZZ"
+    assert offers[0].airline_name is None
 
 
 def test_provider_reference_is_opaque_stable_and_never_a_url() -> None:

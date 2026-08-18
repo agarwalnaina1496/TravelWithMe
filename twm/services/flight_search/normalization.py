@@ -21,6 +21,7 @@ from ...schemas.flight_search import (
     FlightSearchRequest,
     NormalizedFlightOffer,
 )
+from .airlines import airline_name_for_code
 from .calculations import compute_group_total_minor_units, traveler_total
 
 PROVIDER_NAME = "aviasales"
@@ -80,8 +81,12 @@ def _normalize_one(
             destination_iata=request.destination_iata,
             trip_type=request.trip_type,
             departure_date=departure_at.date(),
+            departure_at=departure_at,
             return_date=return_date,
             stop_count=None,
+            airline_code=str(airline),
+            airline_name=airline_name_for_code(str(airline)),
+            flight_number=str(flight_number),
             money=FlightMoney(
                 currency=currency,
                 per_traveler_amount_minor_units=per_traveler_amount_minor_units,
