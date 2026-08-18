@@ -295,6 +295,13 @@ class NormalizedFlightOffer(BaseModel):
     provenance: FlightProviderProvenance
     price_found_at: datetime
     offer_expires_at: Optional[datetime] = None
+    # Backend-computed only (see rank_offers/service.py). Never provider-
+    # sourced and never caller-settable as a way to spoof TWM's pick — this
+    # field exists on the response shape, not on FlightSearchRequest, so no
+    # caller input can ever set it; the service always constructs offers
+    # itself via model_copy(update=...) after ranking, the same mechanism
+    # already used for stop_count enrichment.
+    is_recommended: bool = False
 
     @model_validator(mode="after")
     def validate_return_date_matches_trip_type(self) -> "NormalizedFlightOffer":

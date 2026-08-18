@@ -45,7 +45,12 @@ from ...schemas.flight_search import (
     NormalizedFlightOffer,
 )
 from ...telemetry import TelemetryLogger
-from .calculations import exceeds_budget_ceiling, exceeds_max_stops, missing_required_fields
+from .calculations import (
+    exceeds_budget_ceiling,
+    exceeds_max_stops,
+    missing_required_fields,
+    rank_offers,
+)
 from .errors import FlightProviderError, FlightProviderTimeoutError
 from .normalization import normalize_aviasales_offers
 from .aviasales import AviasalesAdapter
@@ -162,6 +167,7 @@ class FlightSearchService:
             normalized, payload
         )
         offers = _filter_and_dedupe(normalized, payload)
+        offers = rank_offers(offers)
 
         self.logger.info(
             "Flight-search provider call completed.",
