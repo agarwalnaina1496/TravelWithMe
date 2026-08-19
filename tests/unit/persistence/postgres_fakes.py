@@ -79,6 +79,10 @@ class FakeDatabase:
         self.trip_commands: dict[tuple, dict] = {}
         self.matcher_recommendations: dict[tuple[UUID, int], dict] = {}
         self.written_tables: set[str] = set()
+        # TWM-182: raw query log (one entry per dispatch call) — lets a test
+        # assert list_trips() issues a bounded/batched query count instead of
+        # 3+ per trip, regardless of how many trips are in the list.
+        self.query_log: list[str] = []
 
     def pool(self):
         return FakePool(self)
@@ -88,6 +92,7 @@ class FakeDatabase:
 
     def dispatch(self, query: str, args, many: bool = False):
         q = " ".join(query.split())
+        self.query_log.append(q)
 
         # --- trip_commands ---
         if q.startswith(f"SELECT request_hash,response FROM {self.q('trip_commands')}"):
@@ -194,6 +199,9 @@ class FakeDatabase:
                 (trip_id,) = args
                 row = self.branch_tables[branch].get(trip_id)
                 return dict(row) if row else None
+            if q.startswith(f"SELECT trip_id, state FROM {self.q(branch)} WHERE trip_id = ANY($1::uuid[])"):
+                (trip_ids,) = args
+                return [{"trip_id": trip_id, "state": row["state"]} for trip_id in trip_ids if (row := self.branch_tables[branch].get(trip_id))]
 
         # --- itinerary_state (pointer) ---
         if q.startswith(f"INSERT INTO {self.q('itinerary_state')} (trip_id, status, current_version)"):
@@ -205,6 +213,9 @@ class FakeDatabase:
             (trip_id,) = args
             row = self.itinerary_state.get(trip_id)
             return dict(row) if row else None
+        if q.startswith(f"SELECT trip_id, status FROM {self.q('itinerary_state')} WHERE trip_id = ANY($1::uuid[])"):
+            (trip_ids,) = args
+            return [{"trip_id": trip_id, "status": row["status"]} for trip_id in trip_ids if (row := self.itinerary_state.get(trip_id))]
 
         # --- itinerary_versions ---
         if q.startswith(f"INSERT INTO {self.q('itinerary_versions')}"):

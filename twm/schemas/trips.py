@@ -80,12 +80,22 @@ class TripSummaryState(BaseModel):
     stage: str = "new"
     itinerary_state: TripSummaryItineraryState = Field(default_factory=TripSummaryItineraryState)
     trip_context: dict[str, Any] = Field(default_factory=dict)
+    # TWM-182: a cheap derived planning-progress signal — never the full
+    # planner_state (day_plan/frozen_plan/superseded_planner_states are
+    # unbounded and stay off the list card by design). Lets My Trips/Landing
+    # tell "mid-conversation" from "draft ready" without a second fetch.
+    awaiting: str | None = None
+    has_day_plan: bool = False
+    has_places: bool = False
 
 
 class TripSummary(BaseModel):
-    """My Trips / Landing list item (TWM-159) — a small recap, not the full
-    trip_state; the Atlas itinerary result and matcher/planner/logistics
-    state never belong on a card the list screen never reads them from."""
+    """My Trips / Landing list item (TWM-159, extended TWM-182) — a small
+    recap, not the full trip_state. The Atlas itinerary result and
+    matcher/logistics state never belong on a card the list screen never
+    reads them from; planner_state contributes only the three cheap derived
+    fields on TripSummaryState above, never its own nested day_plan/
+    frozen_plan/history."""
 
     id: UUID
     title: str
