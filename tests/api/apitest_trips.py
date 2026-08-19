@@ -609,6 +609,10 @@ def test_list_trips_surfaces_awaiting_and_day_plan_presence_without_the_nested_p
     assert summaries["Udaipur"]["awaiting"] == "trip_duration"
     assert summaries["Udaipur"]["has_day_plan"] is False
     assert summaries["Udaipur"]["has_places"] is False
+    # Known-destination path (destinations, not selected_option) must still
+    # resolve on the list card — TWM-UI's Route track needs this to render
+    # correctly straight off the summary, before any full single-trip fetch.
+    assert summaries["Udaipur"]["trip_context"]["destinations"] == ["Udaipur"]
 
     assert summaries["Coorg"]["awaiting"] is None
     assert summaries["Coorg"]["has_day_plan"] is True

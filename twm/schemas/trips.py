@@ -70,9 +70,13 @@ class TripSummaryItineraryState(BaseModel):
 # trip_context is free-form (Scout extracts whatever field names fit the
 # conversation); this is the same recap subset My Trips/Landing actually
 # render (TWM-159) — kept in sync with TWM-UI's tripLifecycle.js
-# RECAP_FIELDS plus selected_option (contextDestination).
+# RECAP_FIELDS plus selected_option (contextDestination). `destinations`
+# (TWM-182) is the known-destination entry path's counterpart to
+# selected_option — without it, a known-destination trip's Route track
+# can't resolve its destination name when TWM-UI renders the Dashboard
+# straight from this summary, before any full single-trip fetch.
 SUMMARY_TRIP_CONTEXT_FIELDS = (
-    "origin", "budget", "duration_days", "travelers", "travel_window", "month", "dates", "selected_option",
+    "origin", "budget", "duration_days", "travelers", "travel_window", "month", "dates", "selected_option", "destinations",
 )
 
 
