@@ -138,16 +138,46 @@ class PostgresTripRepository:
         return _row_count(result)
 
     async def list_trips(self, owner: TripOwner) -> list[TripRecord]:
+        """GET /trips (TWM-182): batched, summary-scoped composition — the
+        generic per-trip _compose_trip_state (matcher/planner/logistics
+        branch reads plus full itinerary-result composition) previously ran
+        once per trip here, an N+1 pattern whose output the router's
+        _summary() then discarded almost entirely. The list endpoint's
+        TripSummary only ever needs itinerary status and a cheap
+        planner_state-derived signal (awaiting/has_day_plan/has_places), so
+        this fetches just those two branches, batched across every trip id
+        in two queries total regardless of trip count."""
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
                 f"SELECT * FROM {self.schema}.trips WHERE {_owner_clause(owner, 1)} ORDER BY updated_at DESC",
                 _owner_value(owner))
+            trip_ids = [row["id"] for row in rows]
+            planner_by_id, itinerary_status_by_id = await self._batch_list_summary_branches(connection, trip_ids)
             records = []
             for row in rows:
                 record = _record(row)
-                composed = await self._compose_trip_state(connection, record.id, record.trip_state)
-                records.append(replace(record, trip_state=composed))
+                state = dict(record.trip_state)
+                planner = planner_by_id.get(record.id)
+                if planner is not None:
+                    state["planner_state"] = planner
+                status = itinerary_status_by_id.get(record.id)
+                if status is not None:
+                    state["itinerary_state"] = {"status": status}
+                records.append(replace(record, trip_state=state))
             return records
+
+    async def _batch_list_summary_branches(
+        self, connection: asyncpg.Connection, trip_ids: list[UUID]
+    ) -> tuple[dict[UUID, dict[str, Any]], dict[UUID, str | None]]:
+        if not trip_ids:
+            return {}, {}
+        planner_rows = await connection.fetch(
+            f"SELECT trip_id, state FROM {self.schema}.planner_state WHERE trip_id = ANY($1::uuid[])", trip_ids)
+        planner_by_id = {row["trip_id"]: _json_object(row["state"]) for row in planner_rows}
+        itinerary_rows = await connection.fetch(
+            f"SELECT trip_id, status FROM {self.schema}.itinerary_state WHERE trip_id = ANY($1::uuid[])", trip_ids)
+        itinerary_status_by_id = {row["trip_id"]: row["status"] for row in itinerary_rows}
+        return planner_by_id, itinerary_status_by_id
 
     async def create_trip(self, guest_id: UUID, user_id: UUID | None, title: str, product_mode: str, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord:
         async with self.pool.acquire() as connection:

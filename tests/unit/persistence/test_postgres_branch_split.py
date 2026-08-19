@@ -119,6 +119,58 @@ def test_get_trip_composes_blob_branches_from_dedicated_tables():
     assert "itinerary_state" not in trip.trip_state
 
 
+# TWM-182: list_trips() previously composed the full trip_state per trip
+# (matcher/planner/logistics branch reads plus full itinerary-result
+# composition) via the same path as get_trip — an N+1 pattern whose output
+# the router's _summary() then discarded almost entirely. It now batches
+# just the two branches TripSummary actually needs (planner_state,
+# itinerary_state status) across every trip id in the list, independent of
+# trip count.
+def test_list_trips_batches_summary_branch_reads_instead_of_querying_per_trip():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_ids = [_seed_trip(db, guest_id, core_state={"stage": "planning"}) for _ in range(5)]
+    for trip_id in trip_ids:
+        db.branch_tables["planner_state"][trip_id] = {"state": __import__("json").dumps({"conversation_context": {"awaiting": "trip_duration"}})}
+        db.itinerary_state[trip_id] = {"status": "ready", "current_version": None}
+
+    db.query_log.clear()
+    trips = asyncio.run(repository.list_trips(_owner(guest_id)))
+
+    assert len(trips) == 5
+    # 1 trips-table SELECT + 1 batched planner_state SELECT + 1 batched
+    # itinerary_state SELECT — never scales with trip count.
+    assert len(db.query_log) == 3
+    assert not any("matcher_state" in q or "logistics_state" in q or "itinerary_versions" in q for q in db.query_log)
+
+
+def test_list_trips_composes_planner_state_and_itinerary_status_per_trip():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    gathering_id = _seed_trip(db, guest_id, core_state={"stage": "planning", "trip_context": {"destinations": ["Udaipur"]}})
+    db.branch_tables["planner_state"][gathering_id] = {"state": __import__("json").dumps({"conversation_context": {"awaiting": "trip_duration"}})}
+    draft_id = _seed_trip(db, guest_id, core_state={"stage": "planning", "trip_context": {"destinations": ["Coorg"]}})
+    db.branch_tables["planner_state"][draft_id] = {"state": __import__("json").dumps({
+        "conversation_context": {"awaiting": None}, "places": [{"name": "Abbey Falls"}], "day_plan": [{"day": 1}],
+    })}
+    db.itinerary_state[draft_id] = {"status": "ready", "current_version": None}
+    empty_id = _seed_trip(db, guest_id, core_state={"stage": "new"})
+
+    trips = asyncio.run(repository.list_trips(_owner(guest_id)))
+    by_id = {t.id: t for t in trips}
+
+    assert by_id[gathering_id].trip_state["planner_state"]["conversation_context"]["awaiting"] == "trip_duration"
+    assert "itinerary_state" not in by_id[gathering_id].trip_state
+
+    assert by_id[draft_id].trip_state["planner_state"]["day_plan"] == [{"day": 1}]
+    assert by_id[draft_id].trip_state["itinerary_state"] == {"status": "ready"}
+
+    assert "planner_state" not in by_id[empty_id].trip_state
+    assert "itinerary_state" not in by_id[empty_id].trip_state
+
+
 def test_get_trip_composes_itinerary_state_current_version_and_proposed_revision():
     db = FakeDatabase(SCHEMA)
     repository = _repository(db)

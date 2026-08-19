@@ -70,19 +70,28 @@ def _response(record: TripRecord) -> TripResponse:
 
 
 def _summary(record: TripRecord) -> TripSummary:
-    """GET /trips (TWM-159): a small My Trips/Landing recap, not the full
-    trip_state — the list screen never reads matcher/planner/itinerary
-    result/logistics state, so none of it belongs on a list card."""
+    """GET /trips (TWM-159, extended TWM-182): a small My Trips/Landing
+    recap, not the full trip_state — the list screen never reads matcher/
+    logistics state or the itinerary result, so none of it belongs on a
+    list card. planner_state contributes only a cheap derived
+    awaiting/has_day_plan/has_places signal (never the nested day_plan/
+    frozen_plan/history) — enough for the traveler-facing card to tell
+    "mid-conversation" from "draft ready" without a second fetch."""
     trip_state = record.trip_state
     trip_context = trip_state.get("trip_context") or {}
     recap = {key: trip_context[key] for key in SUMMARY_TRIP_CONTEXT_FIELDS if key in trip_context}
     itinerary_status = (trip_state.get("itinerary_state") or {}).get("status")
+    planner_state = trip_state.get("planner_state") or {}
+    conversation_context = planner_state.get("conversation_context") or {}
     return TripSummary(
         id=record.id, title=record.title, product_mode=record.product_mode,
         trip_state=TripSummaryState(
             stage=trip_state.get("stage", "new"),
             itinerary_state=TripSummaryItineraryState(status=itinerary_status),
             trip_context=recap,
+            awaiting=conversation_context.get("awaiting"),
+            has_day_plan=bool(planner_state.get("day_plan")),
+            has_places=bool(planner_state.get("places")),
         ),
         version=record.version, created_at=record.created_at, updated_at=record.updated_at,
     )

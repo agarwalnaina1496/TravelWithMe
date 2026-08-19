@@ -542,10 +542,12 @@ def test_guest_trip_crud_without_delete_and_version_conflict(api_client: TestCli
 def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
     api_client: TestClient,
 ):
-    """TWM-159: My Trips/Landing only ever read stage, itinerary_state.status,
-    and a small trip_context recap subset — the list response no longer
-    carries the full trip_state/ui_state blobs (matcher/planner/itinerary
-    result/logistics state, or unrelated trip_context fields)."""
+    """TWM-159, extended TWM-182: My Trips/Landing only ever read stage,
+    itinerary_state.status, a small trip_context recap subset, and a cheap
+    planner-progress signal (awaiting/has_day_plan/has_places) — the list
+    response still never carries the full trip_state/ui_state blobs
+    (matcher/planner's own nested day_plan or history/itinerary result/
+    logistics state, or unrelated trip_context fields)."""
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
 
@@ -564,9 +566,61 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
         "stage": "matching",
         "itinerary_state": {"status": None},
         "trip_context": {"origin": "Delhi", "budget": "₹1,00,000"},
+        "awaiting": None,
+        "has_day_plan": False,
+        "has_places": False,
     }
     assert "ui_state" not in summary
     assert "matcher_state" not in summary["trip_state"]
+    assert "planner_state" not in summary["trip_state"]
+
+
+# TWM-182: added alongside the openTrip fetch-timing fix in TWM-UI —
+# TripPreview's boot effect (and any future list-derived "is this trip
+# mid-conversation" check) needs this signal without a second fetch.
+def test_list_trips_surfaces_awaiting_and_day_plan_presence_without_the_nested_plan(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    gathering_state = {
+        "stage": "planning",
+        "trip_context": {"destinations": ["Udaipur"]},
+        "planner_state": {"conversation_context": {"awaiting": "trip_duration"}},
+    }
+    _create_seeded_trip(api_client, repository, title="Udaipur", trip_state=gathering_state)
+
+    draft_state = {
+        "stage": "planning",
+        "trip_context": {"destinations": ["Coorg"]},
+        "planner_state": {
+            "conversation_context": {"awaiting": None},
+            "places": [{"name": "Abbey Falls"}],
+            "day_plan": [{"day": 1, "places": ["Abbey Falls"]}],
+        },
+    }
+    _create_seeded_trip(api_client, repository, title="Coorg", trip_state=draft_state)
+
+    listed = api_client.get("/trips")
+    assert listed.status_code == 200
+    summaries = {s["title"]: s["trip_state"] for s in listed.json()["trips"]}
+
+    assert summaries["Udaipur"]["awaiting"] == "trip_duration"
+    assert summaries["Udaipur"]["has_day_plan"] is False
+    assert summaries["Udaipur"]["has_places"] is False
+    # Known-destination path (destinations, not selected_option) must still
+    # resolve on the list card — TWM-UI's Route track needs this to render
+    # correctly straight off the summary, before any full single-trip fetch.
+    assert summaries["Udaipur"]["trip_context"]["destinations"] == ["Udaipur"]
+
+    assert summaries["Coorg"]["awaiting"] is None
+    assert summaries["Coorg"]["has_day_plan"] is True
+    assert summaries["Coorg"]["has_places"] is True
+    # The nested plan itself never belongs on the list card.
+    assert "day_plan" not in summaries["Coorg"]
+    assert "places" not in summaries["Coorg"]
+    assert "planner_state" not in summaries["Coorg"]
 
 
 def test_guest_cannot_access_another_guests_trip():
