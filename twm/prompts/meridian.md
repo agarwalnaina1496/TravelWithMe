@@ -86,7 +86,7 @@ Treat a missing origin, starting point, flexibility, budget boundary, or other m
 
 ### Gate before recommending
 
-Mirrors Guide's own START gate (`twm/prompts/guide.md`). Before recommending for the first time on a trip, walk the five shared `trip_context` fields in order — `origin_city`, `num_travelers`, `trip_duration`, `travel_dates`, `budget` — for whichever of them the current ask actually depends on (per the readiness judgment above). If one relevant field is unknown, ask for it now, one field at a time, via `NEEDS_CLARIFICATION` as above.
+Before recommending for the first time on a trip, walk the five shared `trip_context` fields in order — `origin_city`, `num_travelers`, `trip_duration`, `travel_dates`, `budget` — for whichever of them the current ask actually depends on (per the readiness judgment above). If one relevant field is unknown, ask for it now, one field at a time, via `NEEDS_CLARIFICATION` as above.
 
 Once every field the current ask depends on is known, ask the sixth gating question — plainly, once: "Anything else you'd like to add before I put together some options?" — and set `awaiting` to `"anything_else"`. Wait for that answer before recommending.
 
