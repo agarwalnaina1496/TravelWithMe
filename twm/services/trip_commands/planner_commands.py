@@ -199,21 +199,14 @@ def _apply_plan_freeze(
     }
 
 
-async def _reopen_destination_discovery(
-    engine: AgentEngine,
-    logger: TelemetryLogger,
-    state: dict[str, Any],
-    message: str | None,
-    latest_recommendation: RecommendationRecord | None,
-) -> dict[str, Any]:
-    """Backend-validated pre-itinerary Guide -> Meridian reversal.
+REOPEN_CHOICE_AWAITING = "destination_reopen_choice"
 
-    Only reachable from a TRAVELER_MESSAGE turn before the plan is frozen
-    (frozen_plan is checked before Guide is ever called). Retains the
-    superseded planner state rather than deleting it, then hands off to
-    Meridian within this same command so exactly one version increment is
-    committed.
-    """
+
+def _supersede_planner_state(state: dict[str, Any]) -> None:
+    """Shared by both reopen paths (fresh discovery and revisiting an
+    existing list) — either way the current places/day_plan are being
+    abandoned in favor of a destination decision that hasn't happened yet,
+    so both retain the superseded snapshot rather than deleting it."""
     planner = state["planner_state"]
     superseded = planner.setdefault("superseded_planner_states", [])
     superseded.append(
@@ -229,17 +222,104 @@ async def _reopen_destination_discovery(
     state["trip_context"].pop("destination", None)
     state["trip_context"].pop("destinations", None)
     state["trip_context"].pop("selected_option", None)
-    set_stage(state, "matching")
+
+
+def has_pending_reopen_choice(state: dict[str, Any]) -> bool:
+    awaiting = state["planner_state"].get("conversation_context", {}).get("awaiting")
+    return awaiting == REOPEN_CHOICE_AWAITING
+
+
+async def _reopen_destination_discovery(
+    engine: AgentEngine,
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    message: str | None,
+    latest_recommendation: RecommendationRecord | None,
+) -> dict[str, Any]:
+    """Backend-validated pre-itinerary Guide reversal — only reachable from
+    a TRAVELER_MESSAGE turn before the plan is frozen (frozen_plan is
+    checked before Guide is ever called).
+
+    History-aware (TWM-188 item 3): a known-destination-direct trip
+    (latest_recommendation is None, Meridian never ran) has only one
+    sensible target and reverses immediately. A trip that already has a
+    recommendation list from Discover doesn't silently pick a stage —
+    it prompts the traveler to choose revisit-existing vs. start-fresh
+    (resolved by reopen_destination_revisit/reopen_destination_fresh).
+    """
+    if latest_recommendation is not None:
+        return _prompt_reopen_choice(logger, state)
+    return await apply_reopen_fresh(engine, logger, state, message, latest_recommendation)
+
+
+def _prompt_reopen_choice(
+    logger: TelemetryLogger, state: dict[str, Any]
+) -> dict[str, Any]:
+    planner = state["planner_state"]
+    planner.setdefault("conversation_context", {})["awaiting"] = REOPEN_CHOICE_AWAITING
+    logger.info(
+        "Guide reversal found an existing recommendation list — asking the "
+        "traveler to choose revisit vs. fresh discovery instead of "
+        "silently picking one.",
+        event="be.trip.guide.reopen_choice_prompted",
+        source="application",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+    )
+    return {
+        "message": (
+            "You already have destination recommendations from earlier — "
+            "want to revisit that list, or start a fresh search?"
+        ),
+        "agent_meta": None,
+    }
+
+
+async def apply_reopen_fresh(
+    engine: AgentEngine,
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    message: str | None,
+    latest_recommendation: RecommendationRecord | None,
+) -> dict[str, Any]:
+    """The traveler wants a new Meridian conversation — either the
+    immediate reversal (no prior recommendations existed) or their
+    explicit choice after being prompted (reopen_destination_fresh)."""
+    _supersede_planner_state(state)
+    set_stage(state, "matching", logger, context="reopen_destination_fresh")
     state["active_agent"] = "meridian"
     logger.info(
         "Backend validated a pre-itinerary Guide to Meridian reversal.",
         event="be.trip.guide.reopened_destination_discovery",
         source="application",
         trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        choice="fresh",
     )
     from .matcher_commands import apply_meridian
 
     return await apply_meridian(engine, logger, state, message, latest_recommendation)
+
+
+def apply_reopen_revisit(
+    logger: TelemetryLogger, state: dict[str, Any]
+) -> dict[str, Any]:
+    """The traveler chose to go back to their existing recommendation list
+    instead of a fresh Meridian conversation — no new matcher round is
+    triggered, the already-archived recommendations are still intact."""
+    _supersede_planner_state(state)
+    set_stage(state, "recommended", logger, context="reopen_destination_revisit")
+    state["active_agent"] = None
+    logger.info(
+        "Backend validated a pre-itinerary Guide reversal back to an "
+        "existing recommendation list.",
+        event="be.trip.guide.reopened_destination_discovery",
+        source="application",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        choice="revisit",
+    )
+    return {
+        "message": "Here are the destinations Meridian already found for you.",
+        "agent_meta": None,
+    }
 
 
 def _validate_guide_event(event: str, state: dict[str, Any]) -> None:

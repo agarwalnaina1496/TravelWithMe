@@ -55,13 +55,13 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
         "plan_ready",  # apply_guide's revision turn first produces (or
         # re-produces, after a revision) a non-empty day_plan (TWM-188
         # item 8) — mirrors "matching" -> "recommended" on the Discover side.
-        "matching",  # _reopen_destination_discovery — unconditional today,
-        # regardless of trip history.
-        # "recommended" (revisit an existing recommendation list when
-        # latest_recommendation is not None, traveler chooses "revisit"
-        # over "fresh discovery") is a confirmed GAP, not yet wired —
-        # _reopen_destination_discovery always targets "matching" today,
-        # never branching into "recommended" (TWM-188 item 3, deferred).
+        "matching",  # _reopen_destination_discovery when latest_recommendation
+        # is None (known-destination-direct, Meridian never ran — only
+        # sensible target), or the traveler's explicit "start fresh" choice
+        # (reopen_destination_fresh) when one did exist.
+        "recommended",  # the traveler's explicit "revisit existing list"
+        # choice (reopen_destination_revisit) when latest_recommendation is
+        # not None — TWM-188 item 3, now wired.
         # "planned" is no longer a direct edge from here — approve_plan
         # requires a non-empty day_plan (_validate_guide_event), which now
         # always means stage is already "plan_ready" by the time it fires.

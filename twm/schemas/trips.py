@@ -205,6 +205,8 @@ TripCommandName = Literal[
     "discover_entry",
     "known_destination_entry",
     "more_like_this",
+    "reopen_destination_revisit",
+    "reopen_destination_fresh",
     "start_itinerary",
     "confirm_logistics",
     "accept_itinerary_revision",
