@@ -252,7 +252,11 @@ class TripCommandService:
                 raise InvalidTripCommandError(
                     "Select or provide a destination before starting planning."
                 )
-            set_stage(state, "planning")
+            if state.get("stage") not in {"new", "matched"}:
+                raise InvalidTripCommandError(
+                    "Planning can only be started from the new or matched stage."
+                )
+            set_stage(state, "planning", self.logger, context="start_planning")
             state["active_agent"] = "guide"
             return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
         if payload.command == "approve_plan":
@@ -260,7 +264,7 @@ class TripCommandService:
         if payload.command == "scout_entry":
             return await apply_scout(self.engine, self.logger, state, payload.message or "", latest_recommendation)
         if payload.command == "discover_entry":
-            set_stage(state, "matching")
+            set_stage(state, "matching", self.logger, context="discover_entry")
             state["active_agent"] = "meridian"
             return await apply_meridian(self.engine, self.logger, state, payload.message, latest_recommendation)
         if payload.command == "more_like_this":
@@ -283,7 +287,7 @@ class TripCommandService:
                     "agent_meta": None,
                 }
             state["trip_context"]["destinations"] = [destination]
-            set_stage(state, "planning")
+            set_stage(state, "planning", self.logger, context="known_destination_entry")
             state["active_agent"] = "guide"
             return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
 

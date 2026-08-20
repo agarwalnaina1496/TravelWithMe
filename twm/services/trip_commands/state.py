@@ -4,6 +4,7 @@ import copy
 from typing import Any, get_args
 
 from ...schemas.scout import TripStage
+from ...telemetry import TelemetryLogger
 from .errors import InvalidTripCommandError
 
 # The canonical stage set (TWM-188) — `TripStage` is the single source of
@@ -123,21 +124,50 @@ def merge_operational_state(target: dict[str, Any], source: dict[str, Any]) -> N
             target[key] = copy.deepcopy(value)
 
 
-def set_stage(state: dict[str, Any], new_stage: str) -> None:
+# Stages whose STAGE_TRANSITIONS edges are now fully accurate (no-ops
+# removed, missing edges added) and safe to enforce. Grown one stage at a
+# time (TWM-188) rather than flipped on globally, since a stage still
+# carrying a known gap would make enforcement reject a flow that's supposed
+# to work. "new" is the first stage enforced: its only two write sites
+# (discover_entry/known_destination_entry/start_planning, and Scout's
+# matcher/planner intent handoff) now agree with STAGE_TRANSITIONS["new"].
+ENFORCED_FROM_STAGES: frozenset[str] = frozenset({"new"})
+
+
+def set_stage(
+    state: dict[str, Any],
+    new_stage: str,
+    logger: TelemetryLogger | None = None,
+    context: str | None = None,
+) -> None:
     """Write `stage`, validated against the canonical stage set.
 
     Every `state["stage"] = ...` write site in trip_commands routes through
     here (TWM-188) so a typo or stray string can never silently persist.
-    This intentionally validates the VALUE only — full from-stage/to-stage
-    transition-graph enforcement is deferred until the write sites that
-    still disagree on the graph (the `matching`/`planning` self-writes, the
-    missing `recommended -> matching` refinement edge, `plan_ready`'s own
-    write) are fixed under their own TWM-188 items; enforcing a strict graph
-    before then would either encode those bugs as "legal" or break the
-    flows that still rely on them.
+    Full from-stage/to-stage transition-graph enforcement is rolled out one
+    stage at a time via `ENFORCED_FROM_STAGES` — see its comment — rather
+    than all at once, since several stages still carry documented gaps that
+    would make a global switch reject flows that are supposed to work.
     """
     if new_stage not in VALID_STAGES:
         raise InvalidTripCommandError(f"{new_stage!r} is not a valid trip stage.")
+    current_stage = state.get("stage")
+    if current_stage in ENFORCED_FROM_STAGES:
+        allowed = STAGE_TRANSITIONS.get(current_stage, frozenset())
+        if new_stage not in allowed:
+            if logger is not None:
+                logger.warning(
+                    "Rejected an illegal trip stage transition.",
+                    event="be.trip.stage.transition_rejected",
+                    source="application",
+                    trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+                    from_stage=current_stage,
+                    to_stage=new_stage,
+                    context=context,
+                )
+            raise InvalidTripCommandError(
+                f"Illegal trip stage transition: {current_stage!r} -> {new_stage!r}."
+            )
     state["stage"] = new_stage
 
 

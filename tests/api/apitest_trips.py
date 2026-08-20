@@ -1958,6 +1958,39 @@ def test_start_planning_invokes_guide_from_backend_owned_destination(api_client:
     assert saved["planner_state"]["revision"] == 1
 
 
+def test_start_planning_rejects_when_stage_is_not_new_or_matched(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeCommandEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "recommended",
+        "active_agent": None,
+        "advisor_state": None,
+        "matcher_state": None,
+        "planner_state": None,
+        "trip_context": {"destination": "Rishikesh"},
+    }
+    trip = _create_seeded_trip(
+        api_client, repository, title="Rishikesh", trip_state=state
+    )
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "start_planning",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+    assert engine.calls == []
+    saved = api_client.get(f"/trips/{trip['id']}").json()
+    assert saved["version"] == 1
+    assert saved["trip_state"]["stage"] == "recommended"
+
+
 def test_scout_planner_intent_starts_guide_from_owned_context(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakePlannerIntentEngine()
