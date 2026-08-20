@@ -21,6 +21,7 @@ from .planner_commands import apply_guide, guide_has_started
 from .scout_commands import apply_scout
 from .state import (
     canonical_state,
+    set_stage,
     shape_command_trip_state,
     snapshot_touchable_branches,
     touched_branches,
@@ -158,10 +159,6 @@ class TripCommandService:
             return apply_accept_itinerary_revision(self.logger, state)
         if payload.command == "keep_current_itinerary":
             return apply_keep_current_itinerary(self.logger, state)
-        if payload.command == "new_journey":
-            state.clear()
-            state.update(canonical_state({}))
-            return {"message": None, "agent_meta": None}
         if payload.command == "continue":
             if state.get("stage") == "planning" or state.get("active_agent") == "guide":
                 if guide_has_started(state):
@@ -181,7 +178,7 @@ class TripCommandService:
                 raise InvalidTripCommandError(
                     "Select or provide a destination before starting planning."
                 )
-            state["stage"] = "planning"
+            set_stage(state, "planning")
             state["active_agent"] = "guide"
             return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
         if payload.command == "approve_plan":
@@ -189,7 +186,7 @@ class TripCommandService:
         if payload.command == "scout_entry":
             return await apply_scout(self.engine, self.logger, state, payload.message or "", latest_recommendation)
         if payload.command == "discover_entry":
-            state["stage"] = "matching"
+            set_stage(state, "matching")
             state["active_agent"] = "meridian"
             return await apply_meridian(self.engine, self.logger, state, payload.message, latest_recommendation)
         if payload.command == "more_like_this":
@@ -212,7 +209,7 @@ class TripCommandService:
                     "agent_meta": None,
                 }
             state["trip_context"]["destinations"] = [destination]
-            state["stage"] = "planning"
+            set_stage(state, "planning")
             state["active_agent"] = "guide"
             return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
 

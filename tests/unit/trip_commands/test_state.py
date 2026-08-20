@@ -1,6 +1,9 @@
 """Trip-context merge semantics shared across Scout, Meridian, and Guide."""
 
-from twm.services.trip_commands.state import merge_trip_context
+import pytest
+
+from twm.services.trip_commands.errors import InvalidTripCommandError
+from twm.services.trip_commands.state import VALID_STAGES, merge_trip_context, set_stage
 
 
 def test_merge_trip_context_unions_preferences_case_insensitively() -> None:
@@ -34,3 +37,37 @@ def test_merge_trip_context_recurses_into_nested_dicts() -> None:
     merge_trip_context(target, {"selected_option": {"name": "B"}})
 
     assert target["selected_option"] == {"id": "a", "name": "B"}
+
+
+def test_set_stage_writes_a_valid_stage() -> None:
+    state = {"stage": "new"}
+
+    set_stage(state, "matching")
+
+    assert state["stage"] == "matching"
+
+
+@pytest.mark.parametrize("stage", sorted(VALID_STAGES))
+def test_set_stage_accepts_every_canonical_stage(stage: str) -> None:
+    state = {"stage": "new"}
+
+    set_stage(state, stage)
+
+    assert state["stage"] == stage
+
+
+def test_set_stage_rejects_an_out_of_enum_value() -> None:
+    state = {"stage": "matching"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, "mtching")
+
+    # Rejected write must not have mutated state.
+    assert state["stage"] == "matching"
+
+
+def test_set_stage_rejects_empty_string() -> None:
+    state = {"stage": "matching"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, "")

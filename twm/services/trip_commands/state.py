@@ -1,7 +1,15 @@
 """TripState shaping and merge helpers shared across command handlers."""
 
 import copy
-from typing import Any
+from typing import Any, get_args
+
+from ...schemas.scout import ScoutStage
+from .errors import InvalidTripCommandError
+
+# The canonical stage set (TWM-188) — `ScoutStage` is the single source of
+# truth for valid values; this frozenset exists only for O(1) membership
+# checks in `set_stage`.
+VALID_STAGES: frozenset[str] = frozenset(get_args(ScoutStage))
 
 
 # trip_context fields every specialist (Scout, Meridian, Guide) can extract
@@ -49,6 +57,24 @@ def merge_operational_state(target: dict[str, Any], source: dict[str, Any]) -> N
             merge_operational_state(child, value)
         else:
             target[key] = copy.deepcopy(value)
+
+
+def set_stage(state: dict[str, Any], new_stage: str) -> None:
+    """Write `stage`, validated against the canonical stage set.
+
+    Every `state["stage"] = ...` write site in trip_commands routes through
+    here (TWM-188) so a typo or stray string can never silently persist.
+    This intentionally validates the VALUE only — full from-stage/to-stage
+    transition-graph enforcement is deferred until the write sites that
+    still disagree on the graph (the `matching`/`planning` self-writes, the
+    missing `recommended -> matching` refinement edge, `plan_ready`'s own
+    write) are fixed under their own TWM-188 items; enforcing a strict graph
+    before then would either encode those bugs as "legal" or break the
+    flows that still rely on them.
+    """
+    if new_stage not in VALID_STAGES:
+        raise InvalidTripCommandError(f"{new_stage!r} is not a valid trip stage.")
+    state["stage"] = new_stage
 
 
 def canonical_state(value: dict[str, Any]) -> dict[str, Any]:

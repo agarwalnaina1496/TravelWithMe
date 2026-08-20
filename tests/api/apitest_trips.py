@@ -2100,6 +2100,25 @@ def test_discover_entry_invokes_meridian_with_no_scout_call(api_client: TestClie
     assert saved["trip_state"]["stage"] in {"matching", "recommended"}
 
 
+def test_new_journey_command_is_rejected_not_silently_applied(api_client: TestClient):
+    # TWM-188: new_journey had zero UI call sites and is removed from the
+    # accepted-command enum rather than kept as dead, reachable behavior.
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "new_journey",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_matcher_round_archives_to_dedicated_table_not_trip_state(api_client: TestClient):
     """TWM-153: any terminal matcher outcome (including a failure status,
     not just SUCCESS) is archived to matcher_recommendations, never appended

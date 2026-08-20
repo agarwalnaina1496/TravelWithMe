@@ -26,6 +26,11 @@ class ScoutAdvisorState(BaseModel):
     )
 
 
+# Canonical trip-stage enum — the single source of truth for every place
+# `stage` is read, written, or validated across Backend and (via TripSummary)
+# the API surface. `recommendation_ready` is slated for removal (TWM-188);
+# `plan_ready` is reserved here ahead of the Guide-side write that will
+# start emitting it (TWM-188) — neither changes trip_commands behavior yet.
 ScoutStage = Literal[
     "new",
     "matching",
@@ -33,6 +38,7 @@ ScoutStage = Literal[
     "recommended",
     "matched",
     "planning",
+    "plan_ready",
     "planned",
 ]
 

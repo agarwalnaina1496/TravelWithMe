@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .common import AgentMeta
 from .logistics import LogisticsConfirmationInput
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
-from .scout import BoundedMessage
+from .scout import BoundedMessage, ScoutStage
 
 
 class MeridianRefinementReference(BaseModel):
@@ -81,7 +81,7 @@ SUMMARY_TRIP_CONTEXT_FIELDS = (
 
 
 class TripSummaryState(BaseModel):
-    stage: str = "new"
+    stage: ScoutStage = "new"
     itinerary_state: TripSummaryItineraryState = Field(default_factory=TripSummaryItineraryState)
     trip_context: dict[str, Any] = Field(default_factory=dict)
     # TWM-182: a cheap derived planning-progress signal — never the full
@@ -170,7 +170,6 @@ TripCommandName = Literal[
     "select_destination",
     "start_planning",
     "approve_plan",
-    "new_journey",
     "scout_entry",
     "discover_entry",
     "known_destination_entry",
