@@ -19,17 +19,30 @@ VALID_STAGES: frozenset[str] = frozenset(get_args(ScoutStage))
 # exists purely as a single documented reference; update it in the same
 # change as any fix that adds, removes, or corrects an edge, and wire it
 # into `set_stage` as an enforced check once every edge below is accurate.
+#
+# Two unguarded write sites affect nearly every "to: planning"/"to: matched"
+# entry below, not just one from-stage, so they're called out once here
+# rather than repeated per entry:
+#   - start_planning (service.py) checks only that a destination exists in
+#     trip_context — no current-stage precondition — so "planning" is
+#     technically reachable from ANY non-terminal stage today, not just
+#     the "matched" edge documented below.
+#   - select_destination (matcher_commands.py) checks only that
+#     latest_recommendation exists — no current-stage precondition — so
+#     "matched" is technically reachable from any stage where a
+#     recommendation row is still fetchable, not just from "recommended".
+# Both are confirmed gaps to close once enforcement is scoped, not
+# intentional design.
 STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     "new": frozenset({
         "matching",   # discover_entry, or Scout handing off with matcher intent
         "planning",   # known_destination_entry/start_planning, or Scout planner intent
     }),
     "matching": frozenset({
-        # NEEDS_CLARIFICATION no-op self-write (matcher_commands.py:86) —
-        # stage is already "matching" whenever this runs; to be deleted,
-        # not an intentional edge (TWM-188).
-        "matching",
         "recommended",  # apply_meridian succeeds with a candidate list
+        # NEEDS_CLARIFICATION performs no stage write (removed, TWM-188) —
+        # stage is already "matching" whenever apply_meridian runs, so
+        # there is no self-loop here to document.
     }),
     "recommendation_ready": frozenset(),  # dead value, no write site produces it; slated for removal (TWM-188 item 2)
     "recommended": frozenset({
@@ -42,16 +55,23 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
         "planning",  # start_planning, once a destination is set
     }),
     "planning": frozenset({
-        # Every Guide revision turn no-op self-write
-        # (planner_commands.py:137) — re-asserted even while day_plan stays
-        # empty; to be deleted once plan_ready's own write lands (TWM-188).
-        "planning",
-        "matching",  # _reopen_destination_discovery — unconditional today;
-        # will branch on latest_recommendation into "recommended" (revisit)
-        # vs "matching" (fresh discovery) once that fix lands (TWM-188).
+        # Every Guide revision turn performs no stage write (removed,
+        # TWM-188) — stage is already "planning" whenever apply_guide's
+        # non-freeze path runs, so there is no self-loop here to document.
+        "matching",  # _reopen_destination_discovery — unconditional today,
+        # regardless of trip history.
+        # "recommended" (revisit an existing recommendation list when
+        # latest_recommendation is not None, traveler chooses "revisit"
+        # over "fresh discovery") is a confirmed GAP, not yet wired —
+        # _reopen_destination_discovery always targets "matching" today,
+        # never branching into "recommended" (TWM-188).
         "planned",   # approve_plan -> _apply_plan_freeze
     }),
-    "plan_ready": frozenset(),  # reserved — no write site produces this yet (TWM-188)
+    # Reserved — no write site produces "plan_ready" yet (TWM-188 item 8).
+    # Once it lands: "planned" (approve_plan -> _apply_plan_freeze, same as
+    # "planning" today) and a transient "planning" (a revision request,
+    # mirroring "recommended" -> "matching" — day_plan itself never clears).
+    "plan_ready": frozenset(),
     "planned": frozenset(),     # terminal — confirmed no backward transition exists
 }
 

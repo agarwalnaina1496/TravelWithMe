@@ -83,7 +83,10 @@ async def apply_meridian(
         "agent_meta": response.agent_meta.model_dump(mode="json"),
     }
     if response.status == "NEEDS_CLARIFICATION":
-        set_stage(state, "matching")
+        # No stage write here: apply_meridian only ever runs once stage is
+        # already "matching" (set upstream by discover_entry, Scout's
+        # matcher handoff, or the refinement paths) — re-asserting the same
+        # value was a no-op, not a real transition (TWM-188).
         state["active_agent"] = "meridian"
     else:
         payload = response.model_dump(mode="json", exclude={"state_delta"}, exclude_none=True)

@@ -134,7 +134,12 @@ async def apply_guide(
         )
 
     state["active_agent"] = "guide"
-    set_stage(state, "planning")
+    # No stage write here: every caller of apply_guide reaching this point
+    # (START or TRAVELER_MESSAGE) already has stage="planning" set upstream
+    # (start_planning/known_destination_entry, or Scout's planner handoff)
+    # — re-asserting it on every revision turn was a no-op, not a real
+    # transition (TWM-188). plan_ready's own write (a later item) is what
+    # will actually change stage once day_plan first becomes non-empty.
     logger.info(
         "Applied Backend-owned Guide revision.",
         event="be.trip.guide.revision_applied",
