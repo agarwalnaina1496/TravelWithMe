@@ -269,6 +269,8 @@ class TripCommandService:
             return await apply_meridian(self.engine, self.logger, state, payload.message, latest_recommendation)
         if payload.command == "more_like_this":
             refinement = payload.refinement
+            if state.get("stage") == "recommended":
+                set_stage(state, "matching", self.logger, context="more_like_this")
             return await apply_meridian(
                 self.engine,
                 self.logger,
@@ -297,6 +299,8 @@ class TripCommandService:
         if state.get("active_agent") == "meridian" or state.get("stage") in {
             "matching", "recommendation_ready", "recommended"
         }:
+            if state.get("stage") == "recommended":
+                set_stage(state, "matching", self.logger, context="refinement_traveler_message")
             return await apply_meridian(self.engine, self.logger, state, message, latest_recommendation)
         return await apply_scout(self.engine, self.logger, state, message, latest_recommendation)
 

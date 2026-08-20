@@ -47,10 +47,10 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     }),
     "recommendation_ready": frozenset(),  # dead value, no write site produces it; slated for removal (TWM-188 item 2)
     "recommended": frozenset({
-        "matched",  # select_destination
-        # "matching" (refinement via more_like_this / the refinement
-        # drawer) is a confirmed GAP, not yet wired — those paths currently
-        # leave stage at "recommended" instead of flipping back (TWM-188).
+        "matched",   # select_destination
+        "matching",  # more_like_this / refinement-triggered traveler_message,
+        # transiently, while Meridian reprocesses (TWM-188) — apply_meridian
+        # flips it back to "recommended" once it responds.
     }),
     "matched": frozenset({
         "planning",  # start_planning, once a destination is set
@@ -128,10 +128,12 @@ def merge_operational_state(target: dict[str, Any], source: dict[str, Any]) -> N
 # removed, missing edges added) and safe to enforce. Grown one stage at a
 # time (TWM-188) rather than flipped on globally, since a stage still
 # carrying a known gap would make enforcement reject a flow that's supposed
-# to work. "new" is the first stage enforced: its only two write sites
-# (discover_entry/known_destination_entry/start_planning, and Scout's
-# matcher/planner intent handoff) now agree with STAGE_TRANSITIONS["new"].
-ENFORCED_FROM_STAGES: frozenset[str] = frozenset({"new"})
+# to work. "new" was the first stage enforced. "matching" is the second:
+# its only outgoing write site (apply_meridian's success path, to
+# "recommended") already agreed with the table — added alongside the
+# "recommended" -> "matching" refinement fix (more_like_this / the
+# refinement-triggered traveler_message path) since both land together.
+ENFORCED_FROM_STAGES: frozenset[str] = frozenset({"new", "matching"})
 
 
 def set_stage(

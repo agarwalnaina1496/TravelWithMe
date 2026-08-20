@@ -145,3 +145,25 @@ def test_set_stage_from_new_does_not_log_when_no_logger_given() -> None:
 
     with pytest.raises(InvalidTripCommandError):
         set_stage(state, "planned")
+
+
+# "matching" is the second stage with enforced transitions (TWM-188).
+
+
+@pytest.mark.parametrize("target", sorted(STAGE_TRANSITIONS["matching"]))
+def test_set_stage_from_matching_accepts_its_documented_edges(target: str) -> None:
+    state = {"stage": "matching"}
+
+    set_stage(state, target)
+
+    assert state["stage"] == target
+
+
+@pytest.mark.parametrize("target", sorted(VALID_STAGES - STAGE_TRANSITIONS["matching"]))
+def test_set_stage_from_matching_rejects_every_other_target(target: str) -> None:
+    state = {"stage": "matching"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, target)
+
+    assert state["stage"] == "matching"
