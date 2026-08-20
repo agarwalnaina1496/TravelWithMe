@@ -2860,6 +2860,129 @@ def test_guide_reversal_from_plan_ready_transiently_flips_through_planning(
     assert trip_state["active_agent"] == "meridian"
 
 
+def test_guide_reversal_prompts_a_choice_when_recommendations_already_exist(
+    api_client: TestClient,
+):
+    """TWM-188 item 3: a trip that already has a recommendation list from
+    Discover must not silently pick a stage on reopen — it prompts the
+    traveler to choose, leaving stage/planner state untouched until they
+    decide."""
+    repository = MemoryTripRepository()
+    engine = FakeGuideReversalEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = _seeded_guide_places_state()
+    trip = _create_seeded_trip(api_client, repository, title="Goa", trip_state=state)
+    _seed_recommendation(repository, UUID(trip["id"]), options=[
+        {"rank": 1, "type": "single", "destination_id": "goa", "name": "Goa"}
+    ])
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Actually, let's not do Goa, suggest somewhere else.",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["guide"]
+    trip_state = response.json()["trip"]["trip_state"]
+    assert trip_state["stage"] == "planning"
+    assert trip_state["active_agent"] == "guide"
+    assert trip_state["planner_state"]["conversation_context"]["awaiting"] == "destination_reopen_choice"
+    assert trip_state["planner_state"]["places"] == ["Baga Beach"]
+
+
+def test_reopen_destination_revisit_returns_to_existing_recommendations(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeGuideReversalEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = _seeded_guide_places_state()
+    state["planner_state"]["conversation_context"] = {"awaiting": "destination_reopen_choice"}
+    trip = _create_seeded_trip(api_client, repository, title="Goa", trip_state=state)
+    _seed_recommendation(repository, UUID(trip["id"]), options=[
+        {"rank": 1, "type": "single", "destination_id": "goa", "name": "Goa"}
+    ])
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "reopen_destination_revisit",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert engine.calls == []
+    trip_state = response.json()["trip"]["trip_state"]
+    assert trip_state["stage"] == "recommended"
+    assert trip_state["active_agent"] is None
+    assert trip_state["planner_state"]["places"] == []
+    assert "destinations" not in trip_state["trip_context"]
+    # No new matcher round is triggered — the already-archived recommendation
+    # is still exactly what it was.
+    assert len(repository.recommendations[UUID(trip["id"])]) == 1
+    assert repository.recommendations[UUID(trip["id"])][0].options[0]["destination_id"] == "goa"
+
+
+def test_reopen_destination_fresh_starts_a_new_meridian_conversation(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeGuideReversalEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = _seeded_guide_places_state()
+    state["planner_state"]["conversation_context"] = {"awaiting": "destination_reopen_choice"}
+    trip = _create_seeded_trip(api_client, repository, title="Goa", trip_state=state)
+    _seed_recommendation(repository, UUID(trip["id"]), options=[
+        {"rank": 1, "type": "single", "destination_id": "goa", "name": "Goa"}
+    ])
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "reopen_destination_fresh",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["meridian"]
+    trip_state = response.json()["trip"]["trip_state"]
+    assert trip_state["stage"] == "matching"
+    assert trip_state["active_agent"] == "meridian"
+    assert "destinations" not in trip_state["trip_context"]
+
+
+def test_reopen_destination_choice_commands_reject_without_a_pending_prompt(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeGuideReversalEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(api_client, repository, title="Goa", trip_state=_seeded_guide_places_state())
+
+    for command in ("reopen_destination_revisit", "reopen_destination_fresh"):
+        response = api_client.post(
+            f"/trips/{trip['id']}/commands",
+            json={"command": command, "expected_version": 1, "idempotency_key": str(uuid4())},
+        )
+        assert response.status_code == 422
+
+    assert engine.calls == []
+    assert repository.trips[UUID(trip["id"])].version == 1
+
+
 def test_guide_ordinary_edit_does_not_trigger_reversal(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeGuideOrdinaryEditEngine()

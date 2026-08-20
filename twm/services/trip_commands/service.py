@@ -18,7 +18,13 @@ from .logistics_commands import (
     apply_keep_current_itinerary,
 )
 from .matcher_commands import apply_meridian, select_destination
-from .planner_commands import apply_guide, guide_has_started
+from .planner_commands import (
+    apply_guide,
+    apply_reopen_fresh,
+    apply_reopen_revisit,
+    guide_has_started,
+    has_pending_reopen_choice,
+)
 from .scout_commands import apply_scout
 from .state import (
     canonical_state,
@@ -283,6 +289,14 @@ class TripCommandService:
             set_stage(state, "matching", self.logger, context="discover_entry")
             state["active_agent"] = "meridian"
             return await apply_meridian(self.engine, self.logger, state, payload.message, latest_recommendation)
+        if payload.command in {"reopen_destination_revisit", "reopen_destination_fresh"}:
+            if not has_pending_reopen_choice(state):
+                raise InvalidTripCommandError(
+                    "No pending destination-reopen choice to resolve."
+                )
+            if payload.command == "reopen_destination_revisit":
+                return apply_reopen_revisit(self.logger, state)
+            return await apply_reopen_fresh(self.engine, self.logger, state, None, latest_recommendation)
         if payload.command == "more_like_this":
             refinement = payload.refinement
             if state.get("stage") == "recommended":
