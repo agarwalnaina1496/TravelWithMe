@@ -31,7 +31,7 @@ class ScoutAdvisorState(BaseModel):
 # the API surface. `recommendation_ready` is slated for removal (TWM-188);
 # `plan_ready` is reserved here ahead of the Guide-side write that will
 # start emitting it (TWM-188) — neither changes trip_commands behavior yet.
-ScoutStage = Literal[
+TripStage = Literal[
     "new",
     "matching",
     "recommendation_ready",
@@ -46,7 +46,7 @@ ScoutStage = Literal[
 class ScoutTripState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    stage: ScoutStage = "new"
+    stage: TripStage = "new"
     trip_context: TripContext = Field(default_factory=TripContext)
     advisor_state: ScoutAdvisorState = Field(default_factory=ScoutAdvisorState)
 

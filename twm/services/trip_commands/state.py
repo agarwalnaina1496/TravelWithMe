@@ -3,13 +3,13 @@
 import copy
 from typing import Any, get_args
 
-from ...schemas.scout import ScoutStage
+from ...schemas.scout import TripStage
 from .errors import InvalidTripCommandError
 
-# The canonical stage set (TWM-188) — `ScoutStage` is the single source of
+# The canonical stage set (TWM-188) — `TripStage` is the single source of
 # truth for valid values; this frozenset exists only for O(1) membership
 # checks in `set_stage`.
-VALID_STAGES: frozenset[str] = frozenset(get_args(ScoutStage))
+VALID_STAGES: frozenset[str] = frozenset(get_args(TripStage))
 
 # STAGE_TRANSITIONS documents the from-stage -> {legal to-stage} graph as it
 # exists in code TODAY (TWM-188) — it is NOT enforced anywhere yet. Today's
