@@ -2196,6 +2196,102 @@ def test_scout_entry_requires_message(api_client: TestClient):
     assert response.status_code == 422
 
 
+def test_scout_entry_on_an_already_meridian_owned_trip_does_not_call_scout(
+    api_client: TestClient,
+):
+    """TWM-188 item 4: this is the regression test for the bug this item
+    fixes — a resume that (mistakenly, since the frontend was fixed to
+    never send this) sends scout_entry for a trip already owned by
+    Meridian must not re-run Scout's intent detection, which could
+    otherwise silently flip active_agent to Guide."""
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "matching",
+        "active_agent": "meridian",
+        "trip_context": {"destination_scope": "mountains"},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "scout_entry",
+            "message": "Actually, suggest somewhere warm.",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["meridian"]
+    saved = response.json()["trip"]["trip_state"]
+    assert saved["stage"] == "recommended"
+    assert saved["active_agent"] is None
+
+
+def test_scout_entry_on_an_already_guide_owned_trip_does_not_call_scout(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeCommandEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "planning",
+        "active_agent": "guide",
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
+        "planner_state": {
+            "conversation_context": {"awaiting": "anything_else"},
+            "places": ["Triveni Ghat"],
+            "day_plan": [],
+            "revision": 1,
+        },
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "scout_entry",
+            "message": "Nothing else.",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["guide"]
+    assert engine.calls[0][1]["guide_event"] == "TRAVELER_MESSAGE"
+
+
+def test_scout_entry_on_a_trip_with_no_active_agent_still_invokes_scout(
+    api_client: TestClient,
+):
+    # Regression guard for the other direction: a genuinely Scout-owned
+    # trip (no active_agent handed off yet) must still route to Scout.
+    repository = MemoryTripRepository()
+    engine = FakeCommandEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "scout_entry",
+            "message": "Where should I go for a 2 week end-of-year trip?",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["scout"]
+
+
 def test_discover_entry_passes_the_travelers_first_message_directly_to_meridian(
     api_client: TestClient,
 ):

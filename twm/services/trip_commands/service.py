@@ -262,7 +262,23 @@ class TripCommandService:
         if payload.command == "approve_plan":
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None, latest_recommendation)
         if payload.command == "scout_entry":
-            return await apply_scout(self.engine, self.logger, state, payload.message or "", latest_recommendation)
+            # TWM-188 item 4: defense-in-depth — nothing in the live product
+            # sends scout_entry for an already-owned trip today (the
+            # frontend was fixed to send traveler_message/continue instead),
+            # but if something ever does by mistake, degrade to the
+            # already-correct active_agent-aware routing below instead of
+            # blindly re-running Scout's intent detection and risking a
+            # silent agent flip.
+            message = payload.message or ""
+            if state.get("stage") == "planning" or state.get("active_agent") == "guide":
+                return await apply_guide(self.engine, self.logger, state, "TRAVELER_MESSAGE", message, latest_recommendation)
+            if state.get("active_agent") == "meridian" or state.get("stage") in {
+                "matching", "recommended"
+            }:
+                if state.get("stage") == "recommended":
+                    set_stage(state, "matching", self.logger, context="refinement_traveler_message")
+                return await apply_meridian(self.engine, self.logger, state, message, latest_recommendation)
+            return await apply_scout(self.engine, self.logger, state, message, latest_recommendation)
         if payload.command == "discover_entry":
             set_stage(state, "matching", self.logger, context="discover_entry")
             state["active_agent"] = "meridian"
