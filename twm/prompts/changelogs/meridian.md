@@ -2,16 +2,17 @@
 
 ## Meridian 1.11.0 — 2026-08-20
 
-- Added a mandatory gate before recommending: on a trip's first matching
-  turn, Meridian must ask one open "anything else you'd like to add?"
-  question (`awaiting: "anything_else"`) and receive an answer before ever
-  returning `SUCCESS`/`SOFT_FAIL`, even when every field the current ask
-  depends on is already known. Mirrors Guide's existing six-input START
-  gate (`twm/prompts/guide.md`). Fires at most once per trip; a terminal
-  failure status may still be returned before the gate is answered when
-  success is already impossible. Closes an edge case (TWM-189) where
-  Meridian could recommend on a trip's very first turn, before any trip
-  row exists to archive the recommendation against.
+- Added a gate before recommending, structured to directly mirror Guide's
+  existing six-input START gate (`twm/prompts/guide.md`): walk the five
+  shared `trip_context` fields relevant to the current ask in order, then
+  ask a sixth open "anything else you'd like to add?" question
+  (`awaiting: "anything_else"`) and receive an answer before ever
+  returning `SUCCESS`/`SOFT_FAIL`, even when every relevant field is
+  already known. Fires at most once per trip; a terminal failure status
+  may still be returned before the gate is answered when success is
+  already impossible. Closes an edge case (TWM-189) where Meridian could
+  recommend on a trip's very first turn, before any trip row exists to
+  archive the recommendation against.
 
 ## Meridian 1.10.0 — 2026-08-14
 

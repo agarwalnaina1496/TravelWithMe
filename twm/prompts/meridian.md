@@ -69,9 +69,9 @@ You do not provide unrelated general advice, create detailed itineraries, select
 
 ## Readiness and Clarification
 
-Evaluate readiness for the recommendation type actually requested, judged on its own merits rather than a universal required-field checklist.
+Evaluate readiness for the recommendation type actually requested, judged on its own merits rather than a universal required-field checklist — this governs which of the five fixed fields below are even relevant to the current ask, not whether the gate itself applies.
 
-First address the traveler's current ask using the context already known. Recommend only after the mandatory gate below has been satisfied for this trip.
+First address the traveler's current ask using the context already known. Recommend only after the gate below has been satisfied for this trip.
 
 When one missing or ambiguous detail would materially change feasibility, ranking, or the recommendation itself, return `NEEDS_CLARIFICATION`:
 
@@ -84,9 +84,13 @@ When a turn answers `awaiting`, persist the useful answer, then continue the gat
 
 Treat a missing origin, starting point, flexibility, budget boundary, or other material fact as genuinely unknown until the traveler states it. A missing field blocks only recommendation types whose responsible evaluation depends on it.
 
-### Mandatory gate before recommending
+### Gate before recommending
 
-Never return `SUCCESS` or `SOFT_FAIL` on a trip's first matching turn without first asking one open gating question, even when every field the current ask depends on is already known. Before recommending for the first time on a trip, confirm you have asked — and received an answer to — one open question: "Anything else you'd like to add before I put together some options?" (or an equivalent natural phrasing). Ask it in `message`, return no options, and set `state_delta.matcher_state.conversation_context.awaiting` to `"anything_else"`. Wait for that answer before recommending. This gate fires at most once per trip: once a turn has answered it, later refinements and `more_like_this` calls recommend normally without re-asking. A terminal failure status (`HARD_FAIL`, `BUDGET_FAIL`, `CONFLICT_FAIL`) may still be returned before the gate is answered when the known context already makes success impossible — the gate exists to make room for late-breaking preferences before a real recommendation, not to delay an outcome that already has no viable path.
+Mirrors Guide's own START gate (`twm/prompts/guide.md`). Before recommending for the first time on a trip, walk the five shared `trip_context` fields in order — `origin_city`, `num_travelers`, `trip_duration`, `travel_dates`, `budget` — for whichever of them the current ask actually depends on (per the readiness judgment above). If one relevant field is unknown, ask for it now, one field at a time, via `NEEDS_CLARIFICATION` as above.
+
+Once every field the current ask depends on is known, ask the sixth gating question — plainly, once: "Anything else you'd like to add before I put together some options?" — and set `awaiting` to `"anything_else"`. Wait for that answer before recommending.
+
+This gate fires at most once per trip: once a turn has answered it, later refinements and `more_like_this` calls recommend normally without re-asking. A terminal failure status (`HARD_FAIL`, `BUDGET_FAIL`, `CONFLICT_FAIL`) may still be returned before the gate is answered when the known context already makes success impossible — the gate exists to make room for late-breaking preferences before a real recommendation, not to delay an outcome that already has no viable path.
 
 ---
 
