@@ -36,6 +36,37 @@ class TripCreateRequest(BaseModel):
 
     title: str = Field(min_length=1, max_length=120)
     product_mode: Literal["self_led", "twm_led"] = "self_led"
+    trip_context: dict[str, Any] = Field(min_length=1)
+
+
+# The two commands that can legitimately start a trip with no trip_id yet
+# (TWM-189) — scout_entry is excluded: TWM-188 confirms it is only ever
+# reached as a resume of an already-existing trip, never a fresh entry.
+FirstMessageCommandName = Literal["discover_entry", "known_destination_entry"]
+
+
+class TripFirstMessageRequest(BaseModel):
+    """First-message orchestration input (TWM-189) — no trip exists yet, so
+    there is no expected_version/idempotency replay the way TripCommandRequest
+    has for an established trip."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: FirstMessageCommandName
+    title: str = Field(default="Untitled Trip", min_length=1, max_length=120)
+    product_mode: Literal["self_led", "twm_led"] = "self_led"
+    message: BoundedMessage | None = None
+    destination: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_command_fields(self) -> "TripFirstMessageRequest":
+        if self.command == "known_destination_entry" and not (
+            self.destination and self.destination.strip()
+        ):
+            raise ValueError("known_destination_entry requires destination")
+        if self.command != "known_destination_entry" and self.destination is not None:
+            raise ValueError("destination is allowed only for known_destination_entry")
+        return self
 
 
 class TripRenameRequest(BaseModel):

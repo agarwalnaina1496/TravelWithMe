@@ -4,9 +4,10 @@ import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from ...persistence.contracts import RecommendationRecord, TripCommandRecord, TripOwner, TripRecord, TripRepository
-from ...schemas.trips import TripCommandRequest, TripCommandResponse, TripResponse
+from ...schemas.trips import TripCommandRequest, TripCommandResponse, TripFirstMessageRequest, TripResponse
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from .atlas_commands import apply_atlas
@@ -127,6 +128,79 @@ class TripCommandService:
                 source_guide_revision=new_itinerary_version["source_guide_revision"],
             )
         return response
+
+    async def execute_first_message(
+        self, owner: TripOwner, payload: TripFirstMessageRequest
+    ) -> TripCommandResponse:
+        """TWM-189: runs the traveler's first turn entirely in memory —
+        against a state with no trip_id yet — and only calls
+        repository.create_trip() if that agent call succeeds. No DB row
+        exists to roll back or delete on failure, so sequencing alone
+        prevents orphan rows.
+
+        Restricted to discover_entry/known_destination_entry (TWM-188
+        confirms scout_entry is never reached with no trip_id — only as a
+        resume of an already-existing trip). Both are safe to persist via
+        create_trip() alone: known_destination_entry's Guide turn is gated
+        behind six required inputs before it can ever produce a day_plan
+        (twm/prompts/guide.md), and discover_entry's Meridian turn is now
+        gated the same way before it can ever produce a recommendation
+        (twm/prompts/meridian.md, TWM-189) — so neither can produce a
+        recommendation/itinerary archive-table row on a first turn that
+        repository.create_trip() would have no path to persist.
+        """
+        state = canonical_state({})
+        command_payload = TripCommandRequest(
+            command=payload.command,
+            expected_version=1,
+            idempotency_key=uuid4(),
+            message=payload.message,
+            destination=payload.destination,
+        )
+        try:
+            result = await self._apply(state, command_payload, None)
+        except Exception as error:
+            self.logger.warning(
+                "First-message agent call failed; no trip was created.",
+                event="be.trip.first_message.failed",
+                source="application",
+                command=payload.command,
+                error_type=type(error).__name__,
+                detail=str(error)[:500],
+            )
+            raise
+        for leaked_key in ("new_recommendation", "new_itinerary_version"):
+            if result.pop(leaked_key, None) is not None:
+                self.logger.warning(
+                    "First-message agent turn produced an archive-table "
+                    "result before any trip existed to archive it against; "
+                    "discarding it — this should be unreachable once the "
+                    "Meridian/Guide gates hold.",
+                    event="be.trip.first_message.unexpected_archive_result",
+                    source="application",
+                    command=payload.command,
+                    leaked_key=leaked_key,
+                )
+        trip = await self.repository.create_trip(
+            owner.guest_session_id, owner.user_id, payload.title, payload.product_mode, state, {}
+        )
+        self.logger.info(
+            "Created trip from first-message orchestration.",
+            event="be.trip.created",
+            source="application",
+            trip_id=str(trip.id),
+            command=payload.command,
+            version=trip.version,
+        )
+        return TripCommandResponse(
+            trip=TripResponse(
+                id=trip.id, title=trip.title, product_mode=trip.product_mode,
+                trip_state=trip.trip_state, ui_state=trip.ui_state, version=trip.version,
+                created_at=trip.created_at, updated_at=trip.updated_at,
+            ),
+            message=result["message"],
+            agent_meta=result.get("agent_meta"),
+        )
 
     @staticmethod
     def _replay(record: TripCommandRecord, request_hash: str) -> TripCommandResponse:
