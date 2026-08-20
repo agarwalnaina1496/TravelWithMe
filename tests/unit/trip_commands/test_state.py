@@ -54,7 +54,10 @@ def test_set_stage_writes_a_valid_stage() -> None:
 
 @pytest.mark.parametrize("stage", sorted(VALID_STAGES))
 def test_set_stage_accepts_every_canonical_stage(stage: str) -> None:
-    state = {"stage": "new"}
+    # Starts from an unenforced from-stage (no "stage" key at all) so this
+    # only exercises value-in-enum validation, not the transition graph —
+    # "new" now enforces its own edges, see the tests below.
+    state: dict = {}
 
     set_stage(state, stage)
 
@@ -94,3 +97,51 @@ def test_stage_transitions_targets_are_all_canonical_stages() -> None:
 
 def test_stage_transitions_planned_is_terminal() -> None:
     assert STAGE_TRANSITIONS["planned"] == frozenset()
+
+
+# "new" is the first stage with enforced transitions (TWM-188).
+
+
+@pytest.mark.parametrize("target", sorted(STAGE_TRANSITIONS["new"]))
+def test_set_stage_from_new_accepts_its_documented_edges(target: str) -> None:
+    state = {"stage": "new"}
+
+    set_stage(state, target)
+
+    assert state["stage"] == target
+
+
+@pytest.mark.parametrize("target", sorted(VALID_STAGES - STAGE_TRANSITIONS["new"]))
+def test_set_stage_from_new_rejects_every_other_target(target: str) -> None:
+    state = {"stage": "new"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, target)
+
+    assert state["stage"] == "new"
+
+
+def test_set_stage_from_new_logs_a_warning_on_rejection() -> None:
+    state = {"stage": "new", "trip_id": "trip-123"}
+    logged: list[dict] = []
+
+    class _StubLogger:
+        def warning(self, message, **fields):
+            logged.append({"message": message, **fields})
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, "planned", _StubLogger(), context="start_planning")
+
+    assert len(logged) == 1
+    assert logged[0]["event"] == "be.trip.stage.transition_rejected"
+    assert logged[0]["trip_id"] == "trip-123"
+    assert logged[0]["from_stage"] == "new"
+    assert logged[0]["to_stage"] == "planned"
+    assert logged[0]["context"] == "start_planning"
+
+
+def test_set_stage_from_new_does_not_log_when_no_logger_given() -> None:
+    state = {"stage": "new"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, "planned")

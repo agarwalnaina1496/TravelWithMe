@@ -60,13 +60,13 @@ async def apply_scout(
         ] = response.message
     if response.intent == "matcher":
         state["trip_context"].pop("selected_option", None)
-        set_stage(state, "matching")
+        set_stage(state, "matching", logger, context="scout_intent_matcher")
         state["active_agent"] = "meridian"
         from .matcher_commands import apply_meridian
 
         return await apply_meridian(engine, logger, state, message, latest_recommendation)
     if response.intent == "planner":
-        set_stage(state, "planning")
+        set_stage(state, "planning", logger, context="scout_intent_planner")
         state["active_agent"] = "guide"
         from .planner_commands import apply_guide
 
