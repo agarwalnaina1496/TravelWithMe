@@ -54,6 +54,12 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     }),
     "matched": frozenset({
         "planning",  # start_planning, once a destination is set
+        "matching",  # a matched trip's traveler_message with no active_agent
+        # set falls through to apply_scout (the generic dispatch's
+        # guide/meridian conditions don't match "matched"); Scout can then
+        # hand off to Meridian on fresh matcher intent, clearing the
+        # obsolete selected_option (scout_commands.py) — a real, tested
+        # reconsider-the-destination flow, not a bug.
     }),
     "planning": frozenset({
         # Every Guide revision turn performs no stage write (removed,
@@ -133,7 +139,19 @@ def merge_operational_state(target: dict[str, Any], source: dict[str, Any]) -> N
 # "recommended") already agreed with the table — added alongside the
 # "recommended" -> "matching" refinement fix (more_like_this / the
 # refinement-triggered traveler_message path) since both land together.
-ENFORCED_FROM_STAGES: frozenset[str] = frozenset({"new", "matching"})
+# "recommended" and "matched" are the third and fourth: "recommended"'s
+# outgoing write sites (select_destination -> "matched", more_like_this/
+# refinement -> "matching") already agreed with the table. "matched"
+# needed one table correction first — a matched trip's traveler_message
+# with no active_agent set falls through to apply_scout, which can hand
+# off to Meridian on fresh matcher intent (matched -> matching, clearing
+# the obsolete selection); this is a real, tested flow, not a bug, so it's
+# now a documented edge rather than an omission. As a side effect,
+# enforcing "matched" also closes select_destination's own missing
+# current-stage precondition for the one case an enforced from-stage can
+# now catch: a stray re-selection while a trip is already "matched" is
+# rejected, since "matched" -> "matched" isn't a legal edge.
+ENFORCED_FROM_STAGES: frozenset[str] = frozenset({"new", "matching", "recommended", "matched"})
 
 
 def set_stage(

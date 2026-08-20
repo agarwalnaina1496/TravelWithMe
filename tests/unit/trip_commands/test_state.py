@@ -167,3 +167,44 @@ def test_set_stage_from_matching_rejects_every_other_target(target: str) -> None
         set_stage(state, target)
 
     assert state["stage"] == "matching"
+
+
+# "recommended" and "matched" are the third and fourth enforced stages (TWM-188).
+
+
+@pytest.mark.parametrize("target", sorted(STAGE_TRANSITIONS["recommended"]))
+def test_set_stage_from_recommended_accepts_its_documented_edges(target: str) -> None:
+    state = {"stage": "recommended"}
+
+    set_stage(state, target)
+
+    assert state["stage"] == target
+
+
+@pytest.mark.parametrize("target", sorted(VALID_STAGES - STAGE_TRANSITIONS["recommended"]))
+def test_set_stage_from_recommended_rejects_every_other_target(target: str) -> None:
+    state = {"stage": "recommended"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, target)
+
+    assert state["stage"] == "recommended"
+
+
+@pytest.mark.parametrize("target", sorted(STAGE_TRANSITIONS["matched"]))
+def test_set_stage_from_matched_accepts_its_documented_edges(target: str) -> None:
+    state = {"stage": "matched"}
+
+    set_stage(state, target)
+
+    assert state["stage"] == target
+
+
+@pytest.mark.parametrize("target", sorted(VALID_STAGES - STAGE_TRANSITIONS["matched"]))
+def test_set_stage_from_matched_rejects_every_other_target(target: str) -> None:
+    state = {"stage": "matched"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, target)
+
+    assert state["stage"] == "matched"

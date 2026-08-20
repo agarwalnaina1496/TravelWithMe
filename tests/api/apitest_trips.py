@@ -905,6 +905,42 @@ def test_deterministic_selection_uses_latest_backend_recommendation(api_client: 
     }
 
 
+def test_select_destination_rejects_a_stray_reselection_when_already_matched(api_client: TestClient):
+    """TWM-188: select_destination itself still has no current-stage
+    precondition, but enforcing "matched" as a from-stage catches the one
+    case that matters in practice — a stray re-selection while a trip is
+    already matched is rejected, since "matched" -> "matched" isn't a legal
+    edge (only "matched" -> "planning" is)."""
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
+    state = {
+        "stage": "matched",
+        "active_agent": None,
+        "trip_context": {"selected_option": {"type": "single", "id": "rishikesh", "name": "Rishikesh"}},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+    _seed_recommendation(repository, UUID(trip["id"]), options=[
+        {"rank": 1, "type": "single", "destination_id": "gokarna", "name": "Gokarna"}
+    ])
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "select_destination",
+            "option_id": "gokarna",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+    saved = api_client.get(f"/trips/{trip['id']}").json()
+    assert saved["version"] == 1
+    assert saved["trip_state"]["stage"] == "matched"
+    assert saved["trip_state"]["trip_context"]["selected_option"]["id"] == "rishikesh"
+
+
 def test_traveler_message_generates_places_and_day_plan_together(api_client: TestClient):
     """Single-step generation: once places are already known and no day plan
     exists yet, the same TRAVELER_MESSAGE turn that completes trip context
