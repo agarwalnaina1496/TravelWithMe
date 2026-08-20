@@ -77,6 +77,11 @@ class MemoryUserRepository:
     async def list_trips(self, owner):
         return [trip for trip in self.trips.values() if _owned_by(trip, owner)]
 
+    async def trip_ids_with_recommendations(self, owner, trip_ids):
+        # No recommendation storage in this fake — auth/claim tests never
+        # seed one, so an always-empty result is a safe, honest default.
+        return set()
+
     async def create_trip(self, guest_id, user_id, title, product_mode, trip_state, ui_state):
         now = datetime.now(timezone.utc)
         trip = TripRecord(uuid4(), guest_id, user_id, title, product_mode, trip_state, ui_state, 1, now, now)

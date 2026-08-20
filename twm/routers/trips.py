@@ -70,14 +70,17 @@ def _response(record: TripRecord) -> TripResponse:
     )
 
 
-def _summary(record: TripRecord) -> TripSummary:
-    """GET /trips (TWM-159, extended TWM-182): a small My Trips/Landing
+def _summary(record: TripRecord, has_recommendation: bool) -> TripSummary:
+    """GET /trips (TWM-159, extended TWM-182, TWM-190): a small My Trips/Landing
     recap, not the full trip_state — the list screen never reads matcher/
     logistics state or the itinerary result, so none of it belongs on a
     list card. planner_state contributes only a cheap derived
     awaiting/has_day_plan/has_places signal (never the nested day_plan/
     frozen_plan/history) — enough for the traveler-facing card to tell
-    "mid-conversation" from "draft ready" without a second fetch."""
+    "mid-conversation" from "draft ready" without a second fetch.
+    has_recommendation is looked up separately (matcher_recommendations
+    lives in its own table, never embedded in trip_state) — see list_trips's
+    batched trip_ids_with_recommendations call."""
     trip_state = record.trip_state
     trip_context = trip_state.get("trip_context") or {}
     recap = {key: trip_context[key] for key in SUMMARY_TRIP_CONTEXT_FIELDS if key in trip_context}
@@ -93,6 +96,7 @@ def _summary(record: TripRecord) -> TripSummary:
             awaiting=conversation_context.get("awaiting"),
             has_day_plan=bool(planner_state.get("day_plan")),
             has_places=bool(planner_state.get("places")),
+            has_recommendation=has_recommendation,
         ),
         version=record.version, created_at=record.created_at, updated_at=record.updated_at,
     )
@@ -112,6 +116,9 @@ async def list_trips(request: Request, response: Response, persistence: Persiste
     owner = await _resolve_owner(request, response, persistence, current_user)
     trips = await persistence.repository.list_trips(owner)
     populated_trips = [t for t in trips if _has_trip_context(t)]
+    recommendation_ids = await persistence.repository.trip_ids_with_recommendations(
+        owner, [t.id for t in populated_trips]
+    )
     logger.info(
         "Listed guest trips.",
         event="be.trip.listed",
@@ -121,7 +128,9 @@ async def list_trips(request: Request, response: Response, persistence: Persiste
         count=len(populated_trips),
         empty_excluded=len(trips) - len(populated_trips),
     )
-    return TripListResponse(trips=[_summary(t) for t in populated_trips])
+    return TripListResponse(trips=[
+        _summary(t, has_recommendation=t.id in recommendation_ids) for t in populated_trips
+    ])
 
 
 @router.post("", response_model=TripResponse, status_code=201)
