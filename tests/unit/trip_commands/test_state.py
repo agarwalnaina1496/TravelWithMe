@@ -208,3 +208,67 @@ def test_set_stage_from_matched_rejects_every_other_target(target: str) -> None:
         set_stage(state, target)
 
     assert state["stage"] == "matched"
+
+
+# "planning" is the fifth enforced stage (TWM-188 item 8).
+
+
+@pytest.mark.parametrize("target", sorted(STAGE_TRANSITIONS["planning"]))
+def test_set_stage_from_planning_accepts_its_documented_edges(target: str) -> None:
+    state = {"stage": "planning"}
+
+    set_stage(state, target)
+
+    assert state["stage"] == target
+
+
+@pytest.mark.parametrize("target", sorted(VALID_STAGES - STAGE_TRANSITIONS["planning"]))
+def test_set_stage_from_planning_rejects_every_other_target(target: str) -> None:
+    state = {"stage": "planning"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, target)
+
+    assert state["stage"] == "planning"
+
+
+def test_set_stage_from_planning_rejects_planned_directly() -> None:
+    # approve_plan now always requires a non-empty day_plan, which always
+    # means stage is already "plan_ready" by the time it fires — a direct
+    # planning -> planned write is no longer legal.
+    state = {"stage": "planning"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, "planned")
+
+
+# "plan_ready" and "planned" are the sixth and seventh enforced stages.
+
+
+@pytest.mark.parametrize("target", sorted(STAGE_TRANSITIONS["plan_ready"]))
+def test_set_stage_from_plan_ready_accepts_its_documented_edges(target: str) -> None:
+    state = {"stage": "plan_ready"}
+
+    set_stage(state, target)
+
+    assert state["stage"] == target
+
+
+@pytest.mark.parametrize("target", sorted(VALID_STAGES - STAGE_TRANSITIONS["plan_ready"]))
+def test_set_stage_from_plan_ready_rejects_every_other_target(target: str) -> None:
+    state = {"stage": "plan_ready"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, target)
+
+    assert state["stage"] == "plan_ready"
+
+
+@pytest.mark.parametrize("target", sorted(VALID_STAGES))
+def test_set_stage_from_planned_rejects_everything_including_itself(target: str) -> None:
+    state = {"stage": "planned"}
+
+    with pytest.raises(InvalidTripCommandError):
+        set_stage(state, target)
+
+    assert state["stage"] == "planned"

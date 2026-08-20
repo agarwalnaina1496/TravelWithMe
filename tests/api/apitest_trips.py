@@ -973,6 +973,9 @@ def test_traveler_message_generates_places_and_day_plan_together(api_client: Tes
     day_plan = saved["planner_state"]["day_plan"]
     assert day_plan
     assert all(day["pace"] in {"relaxed", "balanced", "packed"} for day in day_plan)
+    # TWM-188 item 8: the first turn that produces a non-empty day_plan
+    # flips stage to "plan_ready", not "planning".
+    assert saved["stage"] == "plan_ready"
 
 
 class FakeGuideClearsGateWithoutPlanEngine(FakeCommandEngine):
@@ -1217,8 +1220,13 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
     engine = FakeGuideLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
+    # TWM-188 item 8: a real trip with a non-empty day_plan is always at
+    # "plan_ready" by the time approve_plan can legally fire (day_plan
+    # non-empty implies plan_ready once apply_guide starts writing it) —
+    # "planning" with an already-populated day_plan is a stale shape this
+    # test no longer seeds.
     state = {
-        "stage": "planning", "active_agent": "guide",
+        "stage": "plan_ready", "active_agent": "guide",
         "trip_context": {
             "destinations": ["Rishikesh"], "trip_duration": 1,
             "preferences": ["pilgrimage"], "exclusions": ["rafting"],
@@ -2719,6 +2727,41 @@ def test_guide_reversal_reopens_destination_discovery_in_same_command(api_client
     assert superseded[0]["destination_context"] == ["Goa"]
     assert superseded[0]["planner_state"]["places"] == ["Baga Beach"]
     assert trip_state["planner_state"]["places"] == []
+
+
+def test_guide_reversal_from_plan_ready_transiently_flips_through_planning(
+    api_client: TestClient,
+):
+    """TWM-188 item 8: reopening destination discovery from an already-ready
+    plan must still work — apply_guide's transient plan_ready->planning
+    flip has to land before _reopen_destination_discovery's own
+    planning->matching write, or this would 422 under "planning"
+    enforcement (plan_ready -> matching isn't a legal edge)."""
+    repository = MemoryTripRepository()
+    engine = FakeGuideReversalEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = _seeded_guide_places_state()
+    state["stage"] = "plan_ready"
+    state["planner_state"]["day_plan"] = [
+        {"day_number": 1, "date": None, "places": ["Baga Beach"], "pace": "balanced", "buffer_note": None}
+    ]
+    trip = _create_seeded_trip(api_client, repository, title="Goa", trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Actually, let's not do Goa, suggest somewhere else.",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    trip_state = response.json()["trip"]["trip_state"]
+    assert trip_state["stage"] == "matching"
+    assert trip_state["active_agent"] == "meridian"
 
 
 def test_guide_ordinary_edit_does_not_trigger_reversal(api_client: TestClient):

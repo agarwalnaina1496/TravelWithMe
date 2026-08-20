@@ -12,28 +12,19 @@ from .errors import InvalidTripCommandError
 # checks in `set_stage`.
 VALID_STAGES: frozenset[str] = frozenset(get_args(TripStage))
 
-# STAGE_TRANSITIONS documents the from-stage -> {legal to-stage} graph as it
-# exists in code TODAY (TWM-188) — it is NOT enforced anywhere yet. Today's
-# write sites don't yet agree on a consistent graph (see the inline notes
-# below), so gating writes against this table now would either encode a
-# known bug as "legal" or break a flow that still relies on it. This table
-# exists purely as a single documented reference; update it in the same
-# change as any fix that adds, removes, or corrects an edge, and wire it
-# into `set_stage` as an enforced check once every edge below is accurate.
+# STAGE_TRANSITIONS documents the from-stage -> {legal to-stage} graph.
+# Enforced incrementally via ENFORCED_FROM_STAGES below, one stage at a
+# time (TWM-188) rather than flipped on globally — a stage still carrying
+# an inaccurate edge would make enforcement reject a flow that's supposed
+# to work, or silently legalize a bug. Update this table in the same change
+# as any fix that adds, removes, or corrects an edge.
 #
-# Two unguarded write sites affect nearly every "to: planning"/"to: matched"
-# entry below, not just one from-stage, so they're called out once here
-# rather than repeated per entry:
-#   - start_planning (service.py) checks only that a destination exists in
-#     trip_context — no current-stage precondition — so "planning" is
-#     technically reachable from ANY non-terminal stage today, not just
-#     the "matched" edge documented below.
-#   - select_destination (matcher_commands.py) checks only that
-#     latest_recommendation exists — no current-stage precondition — so
-#     "matched" is technically reachable from any stage where a
-#     recommendation row is still fetchable, not just from "recommended".
-# Both are confirmed gaps to close once enforcement is scoped, not
-# intentional design.
+# start_planning (service.py) and select_destination (matcher_commands.py)
+# both used to lack a current-stage precondition entirely — "planning" and
+# "matched" were technically reachable from anywhere. Both gaps are closed
+# now (start_planning: new/matched only; select_destination: caught
+# indirectly once "matched" became an enforced from-stage, since
+# "matched" -> "matched" isn't a legal edge).
 STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     "new": frozenset({
         "matching",   # discover_entry, or Scout handing off with matcher intent
@@ -62,23 +53,26 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
         # reconsider-the-destination flow, not a bug.
     }),
     "planning": frozenset({
-        # Every Guide revision turn performs no stage write (removed,
-        # TWM-188) — stage is already "planning" whenever apply_guide's
-        # non-freeze path runs, so there is no self-loop here to document.
+        "plan_ready",  # apply_guide's revision turn first produces (or
+        # re-produces, after a revision) a non-empty day_plan (TWM-188
+        # item 8) — mirrors "matching" -> "recommended" on the Discover side.
         "matching",  # _reopen_destination_discovery — unconditional today,
         # regardless of trip history.
         # "recommended" (revisit an existing recommendation list when
         # latest_recommendation is not None, traveler chooses "revisit"
         # over "fresh discovery") is a confirmed GAP, not yet wired —
         # _reopen_destination_discovery always targets "matching" today,
-        # never branching into "recommended" (TWM-188).
+        # never branching into "recommended" (TWM-188 item 3, deferred).
+        # "planned" is no longer a direct edge from here — approve_plan
+        # requires a non-empty day_plan (_validate_guide_event), which now
+        # always means stage is already "plan_ready" by the time it fires.
+    }),
+    "plan_ready": frozenset({
+        "planning",  # a revision request on an existing plan, transiently,
+        # while Guide reprocesses (TWM-188 item 8) — mirrors
+        # "recommended" -> "matching"; day_plan itself is never cleared.
         "planned",   # approve_plan -> _apply_plan_freeze
     }),
-    # Reserved — no write site produces "plan_ready" yet (TWM-188 item 8).
-    # Once it lands: "planned" (approve_plan -> _apply_plan_freeze, same as
-    # "planning" today) and a transient "planning" (a revision request,
-    # mirroring "recommended" -> "matching" — day_plan itself never clears).
-    "plan_ready": frozenset(),
     "planned": frozenset(),     # terminal — confirmed no backward transition exists
 }
 
@@ -151,7 +145,24 @@ def merge_operational_state(target: dict[str, Any], source: dict[str, Any]) -> N
 # current-stage precondition for the one case an enforced from-stage can
 # now catch: a stray re-selection while a trip is already "matched" is
 # rejected, since "matched" -> "matched" isn't a legal edge.
-ENFORCED_FROM_STAGES: frozenset[str] = frozenset({"new", "matching", "recommended", "matched"})
+#
+# "planning", "plan_ready", and "planned" are the fifth, sixth, and
+# seventh: needed apply_guide to actually start writing "plan_ready"
+# (TWM-188 item 8) before "planning"'s own edges were accurate enough to
+# enforce — day_plan becoming non-empty now always flips stage there, and
+# a revision request on an already-ready plan transiently flips back to
+# "planning" first. _reopen_destination_discovery's history-aware
+# "recommended" branch (item 3) is still deferred — "planning" only ever
+# targets "matching" for that flow today, which is still what the table
+# documents, so enforcing "planning" doesn't require that fix first.
+# "plan_ready"'s and "planned"'s own outgoing write sites already agreed
+# with the table (approve_plan always runs with day_plan non-empty, which
+# now always means stage is already "plan_ready"; nothing writes stage
+# post-freeze), so both were safe to add alongside "planning".
+ENFORCED_FROM_STAGES: frozenset[str] = frozenset({
+    "new", "matching", "recommended", "matched",
+    "planning", "plan_ready", "planned",
+})
 
 
 def set_stage(
