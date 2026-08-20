@@ -36,7 +36,6 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
         # stage is already "matching" whenever apply_meridian runs, so
         # there is no self-loop here to document.
     }),
-    "recommendation_ready": frozenset(),  # dead value, no write site produces it; slated for removal (TWM-188 item 2)
     "recommended": frozenset({
         "matched",   # select_destination
         "matching",  # more_like_this / refinement-triggered traveler_message,

@@ -241,7 +241,7 @@ class TripCommandService:
                     )
                 return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
             if state.get("active_agent") == "meridian" or state.get("stage") in {
-                "matching", "recommendation_ready", "recommended"
+                "matching", "recommended"
             }:
                 return await apply_meridian(self.engine, self.logger, state, None, latest_recommendation)
             return await apply_scout(self.engine, self.logger, state, None, latest_recommendation)
@@ -297,7 +297,7 @@ class TripCommandService:
         if state.get("stage") == "planning" or state.get("active_agent") == "guide":
             return await apply_guide(self.engine, self.logger, state, "TRAVELER_MESSAGE", message, latest_recommendation)
         if state.get("active_agent") == "meridian" or state.get("stage") in {
-            "matching", "recommendation_ready", "recommended"
+            "matching", "recommended"
         }:
             if state.get("stage") == "recommended":
                 set_stage(state, "matching", self.logger, context="refinement_traveler_message")
