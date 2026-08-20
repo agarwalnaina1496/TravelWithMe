@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from twm.dependencies import get_current_user, get_engine, get_logger, get_trip_persistence
@@ -477,7 +478,7 @@ def _create_seeded_trip(
     trip_state=None,
     ui_state=None,
 ):
-    created = api_client.post("/trips", json={"title": title}).json()
+    created = api_client.post("/trips", json={"title": title, "trip_context": {"destination": "Test"}}).json()
     trip_id = UUID(created["id"])
     record = repository.trips[trip_id]
     repository.trips[trip_id] = replace(
@@ -521,7 +522,7 @@ def test_guest_trip_crud_without_delete_and_version_conflict(api_client: TestCli
     cookie = empty.headers["set-cookie"]
     assert "HttpOnly" in cookie and "Max-Age=15552000" in cookie
 
-    created = api_client.post("/trips", json={"title": "Rishikesh"})
+    created = api_client.post("/trips", json={"title": "Rishikesh", "trip_context": {"destination": "Test"}})
     assert created.status_code == 201
     trip = created.json()
     assert trip["version"] == 1
@@ -573,6 +574,43 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
     assert "ui_state" not in summary
     assert "matcher_state" not in summary["trip_state"]
     assert "planner_state" not in summary["trip_state"]
+
+
+def test_list_trips_excludes_a_trip_with_no_trip_context(api_client: TestClient):
+    """TWM-188: a trip is orphaned (created but the first real command
+    never landed) unless trip_context is non-empty — such a trip should
+    never appear as a real trip in My Trips/Landing. TWM-189 makes this
+    unreachable via POST /trips itself (trip_context is now required and
+    validated non-empty at the schema level) — the filter stays in place
+    as defense-in-depth for any row that predates that change, so this
+    test seeds the orphan directly into the repository rather than via
+    the (now-stricter) endpoint."""
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    _create_seeded_trip(api_client, repository, title="Never started", trip_state={})
+
+    listed = api_client.get("/trips")
+
+    assert listed.status_code == 200
+    assert listed.json()["trips"] == []
+
+
+def test_list_trips_still_returns_trips_with_non_empty_trip_context(
+    api_client: TestClient,
+):
+    """The exclusion is specific to trip_context, not to any trip missing
+    other optional fields."""
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    _create_seeded_trip(
+        api_client, repository, title="Goa", trip_state={"trip_context": {"origin": "Delhi"}}
+    )
+
+    listed = api_client.get("/trips")
+
+    assert listed.status_code == 200
+    assert len(listed.json()["trips"]) == 1
+    assert listed.json()["trips"][0]["title"] == "Goa"
 
 
 # TWM-182: added alongside the openTrip fetch-timing fix in TWM-UI —
@@ -628,7 +666,14 @@ def test_guest_cannot_access_another_guests_trip():
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_current_user] = lambda: None
     with TestClient(app) as owner, TestClient(app) as stranger:
-        trip_id = owner.post("/trips", json={"title": "Delhi"}).json()["id"]
+        created = owner.post("/trips", json={"title": "Delhi", "trip_context": {"destination": "Test"}}).json()
+        trip_id = created["id"]
+        # TWM-188: list_trips excludes empty trip_context — give this trip
+        # real content so it's the ownership-isolation check that's under
+        # test here, not the empty-trip filter.
+        repository.trips[UUID(trip_id)] = replace(
+            repository.trips[UUID(trip_id)], trip_state={"trip_context": {"destinations": ["Delhi"]}}
+        )
         assert stranger.get(f"/trips/{trip_id}").status_code == 404
         assert stranger.patch(f"/trips/{trip_id}", json={"expected_version": 1, "title": "Mine"}).status_code == 404
         assert stranger.get("/trips").json() == {"trips": []}
@@ -656,7 +701,7 @@ def test_list_get_and_rename_log_structured_success_and_not_found_events(api_cli
     assert listed["level"] == "INFO"
     assert listed["fields"]["count"] == 0
 
-    trip_id = api_client.post("/trips", json={"title": "Delhi"}).json()["id"]
+    trip_id = api_client.post("/trips", json={"title": "Delhi", "trip_context": {"destination": "Test"}}).json()["id"]
 
     api_client.get(f"/trips/{trip_id}")
     fetched = next(event for event in sink.events if event["event"] == "be.trip.fetched")
@@ -679,12 +724,36 @@ def test_list_get_and_rename_log_structured_success_and_not_found_events(api_cli
 def test_trip_contract_rejects_invalid_version_and_mode(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    assert api_client.post("/trips", json={"title": "Trip", "product_mode": "concierge"}).status_code == 422
+    assert api_client.post("/trips", json={"title": "Trip", "product_mode": "concierge", "trip_context": {"destination": "Test"}}).status_code == 422
     assert api_client.post(
         "/trips", json={"title": "Trip", "trip_state": {}, "ui_state": {}}
     ).status_code == 422
     unknown_id = UUID(int=0)
     assert api_client.put(f"/trips/{unknown_id}", json={}).status_code == 405
+
+
+def test_create_trip_rejects_missing_or_empty_trip_context(api_client: TestClient):
+    # TWM-189: POST /trips can no longer create a content-less (orphan) row —
+    # trip_context is required and validated non-empty at the schema level.
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    missing = api_client.post("/trips", json={"title": "Trip"})
+    assert missing.status_code == 422
+    empty = api_client.post("/trips", json={"title": "Trip", "trip_context": {}})
+    assert empty.status_code == 422
+    assert repository.trips == {}
+
+
+def test_create_trip_with_trip_context_creates_one_populated_row(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    response = api_client.post(
+        "/trips", json={"title": "Trip", "trip_context": {"destination": "Goa"}}
+    )
+    assert response.status_code == 201
+    saved = response.json()
+    assert saved["trip_state"]["trip_context"] == {"destination": "Goa"}
+    assert len(repository.trips) == 1
 
 
 def test_ui_state_update_preserves_canonical_trip_state(api_client: TestClient):
@@ -713,7 +782,7 @@ def test_ui_state_contract_rejects_trip_state_and_foreign_owner():
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_current_user] = lambda: None
     with TestClient(app) as owner, TestClient(app) as stranger:
-        created = owner.post("/trips", json={"title": "Trip"}).json()
+        created = owner.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
         rejected = owner.patch(
             f"/trips/{created['id']}/ui-state",
             json={"expected_version": 1, "ui_state": {}, "trip_state": {}},
@@ -732,7 +801,7 @@ def test_trip_command_loads_owned_state_and_replays_idempotently(api_client: Tes
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Rishikesh"}).json()
+    trip = api_client.post("/trips", json={"title": "Rishikesh", "trip_context": {"destination": "Test"}}).json()
     payload = {
         "command": "traveler_message",
         "message": "I want to visit Rishikesh",
@@ -762,7 +831,7 @@ def test_command_response_omits_untouched_branches_and_advisor_state(api_client:
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Rishikesh"}).json()
+    trip = api_client.post("/trips", json={"title": "Rishikesh", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -797,7 +866,7 @@ def test_trip_command_rejects_browser_state_and_reused_key(api_client: TestClien
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
     key = str(uuid4())
     base = {"command": "traveler_message", "message": "hello", "expected_version": 1, "idempotency_key": key}
     assert api_client.post(f"/trips/{trip['id']}/commands", json={**base, "trip_state": {}}).status_code == 422
@@ -1496,7 +1565,7 @@ def test_get_current_itinerary_returns_the_active_version_result(api_client: Tes
 def test_get_current_itinerary_404_before_any_itinerary_generated(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.get(f"/trips/{trip['id']}/itinerary")
 
@@ -1829,7 +1898,7 @@ def test_scout_matcher_intent_hands_off_to_meridian_in_same_command(api_client: 
     engine = FakeHandoffEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Mountains"}).json()
+    trip = api_client.post("/trips", json={"title": "Mountains", "trip_context": {"destination": "Test"}}).json()
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
         json={
@@ -1894,7 +1963,7 @@ def test_scout_planner_intent_starts_guide_from_owned_context(api_client: TestCl
     engine = FakePlannerIntentEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Rishikesh"}).json()
+    trip = api_client.post("/trips", json={"title": "Rishikesh", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1921,7 +1990,7 @@ def test_start_planning_requires_backend_owned_destination(api_client: TestClien
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"origin": "Delhi"}}).json()
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
         json={
@@ -1940,7 +2009,7 @@ def test_continue_resumes_backend_selected_agent_without_message(api_client: Tes
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
     payload = {
         "command": "continue",
         "expected_version": 1,
@@ -1993,7 +2062,7 @@ def test_scout_entry_invokes_scout_only(api_client: TestClient):
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2017,7 +2086,7 @@ def test_scout_entry_hands_off_to_meridian_in_same_command(api_client: TestClien
     engine = FakeHandoffEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Mountains"}).json()
+    trip = api_client.post("/trips", json={"title": "Mountains", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2040,7 +2109,7 @@ def test_scout_entry_requires_message(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2060,7 +2129,7 @@ def test_discover_entry_passes_the_travelers_first_message_directly_to_meridian(
     engine = FakeHandoffEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2082,7 +2151,7 @@ def test_discover_entry_invokes_meridian_with_no_scout_call(api_client: TestClie
     engine = FakeHandoffEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2105,7 +2174,7 @@ def test_new_journey_command_is_rejected_not_silently_applied(api_client: TestCl
     # accepted-command enum rather than kept as dead, reachable behavior.
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2127,7 +2196,7 @@ def test_matcher_round_archives_to_dedicated_table_not_trip_state(api_client: Te
     engine = FakeHandoffEngine()  # meridian returns HARD_FAIL
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
     trip_id = UUID(trip["id"])
     payload = {"command": "discover_entry", "message": "Delhi", "expected_version": 1, "idempotency_key": str(uuid4())}
 
@@ -2146,7 +2215,7 @@ def test_matcher_round_archives_to_dedicated_table_not_trip_state(api_client: Te
 def test_get_recommendations_404_before_any_matcher_round(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.get(f"/trips/{trip['id']}/recommendations")
 
@@ -2167,7 +2236,7 @@ def test_known_destination_entry_invokes_guide_with_no_scout_or_meridian_call(ap
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2196,7 +2265,7 @@ def test_known_destination_entry_missing_destination_returns_deterministic_clari
     engine = FakeCommandEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -2213,6 +2282,110 @@ def test_known_destination_entry_missing_destination_returns_deterministic_clari
     saved = response.json()["trip"]
     assert saved["version"] == 2
     assert saved["trip_state"]["stage"] == "new"
+
+
+class FakeFailingEngine(FakeCommandEngine):
+    """TWM-189: simulates an agent-service failure on the first turn — the
+    orchestration must create zero trip rows when this happens."""
+
+    async def scout(self, trip_state, message):
+        raise RuntimeError("agent service unavailable")
+
+    async def meridian(self, trip_state, message):
+        raise RuntimeError("agent service unavailable")
+
+    async def guide(self, trip_state, message):
+        raise RuntimeError("agent service unavailable")
+
+
+def test_first_message_discover_entry_creates_exactly_one_populated_trip(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+
+    response = api_client.post(
+        "/trips/first-message",
+        json={"command": "discover_entry", "message": "Suggest mountains", "title": "Mountains"},
+    )
+
+    assert response.status_code == 201
+    assert [call[0] for call in engine.calls] == ["meridian"]
+    assert len(repository.trips) == 1
+    saved = response.json()["trip"]
+    assert saved["version"] == 1
+    # FakeHandoffEngine's meridian returns a terminal HARD_FAIL, which still
+    # produces a new_recommendation (the archive-table result this
+    # orchestration has no path to persist before a trip exists) — this
+    # also exercises the "discard + log a warning" fallback for that case.
+    assert saved["trip_state"]["stage"] == "recommended"
+
+
+def test_first_message_known_destination_entry_creates_exactly_one_populated_trip(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeCommandEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+
+    response = api_client.post(
+        "/trips/first-message",
+        json={"command": "known_destination_entry", "destination": "Goa"},
+    )
+
+    assert response.status_code == 201
+    assert [call[0] for call in engine.calls] == ["guide"]
+    assert len(repository.trips) == 1
+    # Confirms known_destination_entry writes destinations before Guide is
+    # ever invoked, same as the established-trip path's own test above.
+    assert engine.calls[0][1]["trip_context"]["destinations"] == ["Goa"]
+    saved = response.json()["trip"]
+    assert saved["version"] == 1
+    assert saved["trip_state"]["stage"] == "planning"
+
+
+def test_first_message_known_destination_entry_requires_destination(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
+
+    response = api_client.post("/trips/first-message", json={"command": "known_destination_entry"})
+
+    assert response.status_code == 422
+    assert repository.trips == {}
+
+
+def test_first_message_creates_no_trip_when_agent_call_fails(api_client: TestClient):
+    # The core "no orphan possible" guarantee (TWM-189): a failed agent
+    # call must leave zero trip rows, confirmed against the repository
+    # directly, not just the error response.
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: FakeFailingEngine()
+
+    with pytest.raises(RuntimeError):
+        api_client.post(
+            "/trips/first-message",
+            json={"command": "discover_entry", "message": "Suggest mountains"},
+        )
+
+    assert repository.trips == {}
+
+
+def test_first_message_scout_entry_is_not_accepted(api_client: TestClient):
+    # TWM-188/189: scout_entry is only ever reachable as a resume of an
+    # already-existing trip — the first-message endpoint (no trip_id yet)
+    # must not accept it.
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
+
+    response = api_client.post(
+        "/trips/first-message",
+        json={"command": "scout_entry", "message": "Where should I go?"},
+    )
+
+    assert response.status_code == 422
+    assert repository.trips == {}
 
 
 class FakeMoreLikeThisEngine(FakeCommandEngine):
@@ -2354,7 +2527,7 @@ def test_refinement_field_rejected_for_other_commands(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
-    trip = api_client.post("/trips", json={"title": "Trip"}).json()
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Test"}}).json()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",

@@ -14,6 +14,7 @@ from ..schemas.trips import (
     TripCommandRequest,
     TripCommandResponse,
     TripCreateRequest,
+    TripFirstMessageRequest,
     TripItineraryResponse,
     TripItineraryVersionSummary,
     TripItineraryVersionsResponse,
@@ -97,29 +98,75 @@ def _summary(record: TripRecord) -> TripSummary:
     )
 
 
+def _has_trip_context(record: TripRecord) -> bool:
+    """TWM-188: a trip with no trip_context yet only exists because
+    creation (POST /trips) is lazy but not atomic with the first real
+    command — if that first command never lands (network failure, an
+    abandoned tab), the record is an orphan, not a real trip. My Trips/
+    Landing should never see it."""
+    return bool(record.trip_state.get("trip_context"))
+
+
 @router.get("", response_model=TripListResponse)
 async def list_trips(request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
     owner = await _resolve_owner(request, response, persistence, current_user)
     trips = await persistence.repository.list_trips(owner)
+    visible_trips = [t for t in trips if _has_trip_context(t)]
     logger.info(
         "Listed guest trips.",
         event="be.trip.listed",
         source="http",
         guest_id=str(owner.guest_session_id),
         authenticated=owner.is_authenticated,
-        count=len(trips),
+        count=len(visible_trips),
+        empty_excluded=len(trips) - len(visible_trips),
     )
-    return TripListResponse(trips=[_summary(t) for t in trips])
+    return TripListResponse(trips=[_summary(t) for t in visible_trips])
 
 
 @router.post("", response_model=TripResponse, status_code=201)
 async def create_trip(payload: TripCreateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
     owner = await _resolve_owner(request, response, persistence, current_user)
     trip = await persistence.repository.create_trip(
-        owner.guest_session_id, owner.user_id, payload.title, payload.product_mode, {}, {}
+        owner.guest_session_id, owner.user_id, payload.title, payload.product_mode, {"trip_context": payload.trip_context}, {}
     )
     logger.info("Created guest trip.", event="be.trip.created", source="http", trip_id=str(trip.id), version=trip.version)
     return _response(trip)
+
+
+@router.post("/first-message", response_model=TripCommandResponse, status_code=201)
+async def start_trip_from_first_message(
+    payload: TripFirstMessageRequest,
+    request: Request,
+    response: Response,
+    persistence: Persistence,
+    engine: Engine,
+    logger: Logger,
+    current_user: CurrentUser,
+):
+    """TWM-189: the only path that creates a trip on the traveler's first
+    message — runs the agent turn before any row exists, and only persists
+    a row if that turn succeeds, so a failure never leaves an orphan trip.
+    """
+    owner = await _resolve_owner(request, response, persistence, current_user)
+    logger.info(
+        "Received first-message trip start.",
+        event="be.trip.first_message.received",
+        source="http",
+        command=payload.command,
+    )
+    service = TripCommandService(persistence.repository, engine, logger)
+    try:
+        return await service.execute_first_message(owner, payload)
+    except InvalidTripCommandError as error:
+        logger.warning(
+            "Rejected invalid first-message trip start.",
+            event="be.trip.first_message.invalid",
+            source="http",
+            command=payload.command,
+            detail=str(error),
+        )
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.get("/{trip_id}", response_model=TripResponse)

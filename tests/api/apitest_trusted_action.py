@@ -59,7 +59,7 @@ def _service(repository):
 
 
 def _create_trip(api_client: TestClient, *, title: str = "Kerala Backwaters") -> str:
-    created = api_client.post("/trips", json={"title": title})
+    created = api_client.post("/trips", json={"title": title, "trip_context": {"destination": "Test"}})
     assert created.status_code == 201
     return created.json()["id"]
 

@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +14,16 @@ from twm.persistence.contracts import DuplicateEmailError, GuestSession, TripRec
 from twm.persistence.service import TripPersistenceService
 from twm.persistence.settings import DatabaseSettings
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
+
+
+def _give_trip_context(repository, trip_id: str) -> None:
+    """TWM-188: list_trips excludes empty trip_context — tests that create
+    a trip via POST /trips and then expect it to be listable need real
+    content, or they're testing the empty-trip filter by accident."""
+    key = UUID(trip_id)
+    repository.trips[key] = replace(
+        repository.trips[key], trip_state={"trip_context": {"destinations": ["Somewhere"]}}
+    )
 
 
 def _owned_by(trip: TripRecord, owner) -> bool:
@@ -251,8 +261,10 @@ def test_guest_with_trips_who_signs_up_gets_them_claimed_and_visible_under_the_a
     app.dependency_overrides[get_auth_service] = lambda: _auth_service(repository)
     app.dependency_overrides[get_trip_persistence] = lambda: _persistence(repository)
 
-    api_client.post("/trips", json={"title": "Rishikesh"})
-    api_client.post("/trips", json={"title": "Goa"})
+    trip_a = api_client.post("/trips", json={"title": "Rishikesh", "trip_context": {"destination": "Test"}}).json()
+    trip_b = api_client.post("/trips", json={"title": "Goa", "trip_context": {"destination": "Test"}}).json()
+    _give_trip_context(repository, trip_a["id"])
+    _give_trip_context(repository, trip_b["id"])
 
     signup = api_client.post("/auth/signup", json={"email": "traveler@example.com", "password": "hunter22!!"})
     assert signup.status_code == 201
@@ -283,7 +295,8 @@ def test_a_returning_user_on_a_fresh_session_sees_only_their_claimed_trips(api_c
     app.dependency_overrides[get_trip_persistence] = lambda: _persistence(repository)
 
     with TestClient(app) as first_browser:
-        first_browser.post("/trips", json={"title": "Rishikesh"})
+        created = first_browser.post("/trips", json={"title": "Rishikesh", "trip_context": {"destination": "Test"}}).json()
+        _give_trip_context(repository, created["id"])
         first_browser.post("/auth/signup", json={"email": "traveler@example.com", "password": "hunter22!!"})
         first_browser.post("/auth/login", json={"email": "traveler@example.com", "password": "hunter22!!"})
 
@@ -302,7 +315,7 @@ def test_foreign_trip_access_returns_404_for_an_authenticated_user(api_client: T
     app.dependency_overrides[get_trip_persistence] = lambda: _persistence(repository)
 
     with TestClient(app) as stranger:
-        foreign_trip_id = stranger.post("/trips", json={"title": "Not yours"}).json()["id"]
+        foreign_trip_id = stranger.post("/trips", json={"title": "Not yours", "trip_context": {"destination": "Test"}}).json()["id"]
 
     with TestClient(app) as traveler:
         traveler.post("/auth/signup", json={"email": "traveler@example.com", "password": "hunter22!!"})
