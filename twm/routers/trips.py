@@ -111,17 +111,17 @@ def _has_trip_context(record: TripRecord) -> bool:
 async def list_trips(request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
     owner = await _resolve_owner(request, response, persistence, current_user)
     trips = await persistence.repository.list_trips(owner)
-    visible_trips = [t for t in trips if _has_trip_context(t)]
+    populated_trips = [t for t in trips if _has_trip_context(t)]
     logger.info(
         "Listed guest trips.",
         event="be.trip.listed",
         source="http",
         guest_id=str(owner.guest_session_id),
         authenticated=owner.is_authenticated,
-        count=len(visible_trips),
-        empty_excluded=len(trips) - len(visible_trips),
+        count=len(populated_trips),
+        empty_excluded=len(trips) - len(populated_trips),
     )
-    return TripListResponse(trips=[_summary(t) for t in visible_trips])
+    return TripListResponse(trips=[_summary(t) for t in populated_trips])
 
 
 @router.post("", response_model=TripResponse, status_code=201)
