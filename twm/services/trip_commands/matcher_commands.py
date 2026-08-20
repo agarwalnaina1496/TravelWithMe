@@ -8,7 +8,7 @@ from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_meridian_response
 from .errors import InvalidTripCommandError
-from .state import merge_operational_state, merge_trip_context
+from .state import merge_operational_state, merge_trip_context, set_stage
 
 
 def _prior_options(latest: RecommendationRecord | None) -> list[dict[str, Any]]:
@@ -83,13 +83,16 @@ async def apply_meridian(
         "agent_meta": response.agent_meta.model_dump(mode="json"),
     }
     if response.status == "NEEDS_CLARIFICATION":
-        state["stage"] = "matching"
+        # No stage write here: apply_meridian only ever runs once stage is
+        # already "matching" (set upstream by discover_entry, Scout's
+        # matcher handoff, or the refinement paths) — re-asserting the same
+        # value was a no-op, not a real transition (TWM-188).
         state["active_agent"] = "meridian"
     else:
         payload = response.model_dump(mode="json", exclude={"state_delta"}, exclude_none=True)
         payload["version"] = (latest.version if latest else 0) + 1
         result["new_recommendation"] = payload
-        state["stage"] = "recommended"
+        set_stage(state, "recommended")
         state["active_agent"] = None
     return result
 
@@ -129,6 +132,6 @@ def select_destination(state: dict[str, Any], option_id: str, latest: Recommenda
     state["trip_context"]["selected_option"] = {
         "type": option["type"], "id": identity, "name": option["name"]
     }
-    state["stage"] = "matched"
+    set_stage(state, "matched")
     state["active_agent"] = None
     return {"message": f"{option['name']} is confirmed.", "agent_meta": None}

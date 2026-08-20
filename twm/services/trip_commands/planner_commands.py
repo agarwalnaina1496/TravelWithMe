@@ -8,7 +8,7 @@ from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_guide_response
 from .errors import InvalidTripCommandError
-from .state import merge_trip_context
+from .state import merge_trip_context, set_stage
 
 
 def guide_has_started(state: dict[str, Any]) -> bool:
@@ -134,7 +134,12 @@ async def apply_guide(
         )
 
     state["active_agent"] = "guide"
-    state["stage"] = "planning"
+    # No stage write here: every caller of apply_guide reaching this point
+    # (START or TRAVELER_MESSAGE) already has stage="planning" set upstream
+    # (start_planning/known_destination_entry, or Scout's planner handoff)
+    # — re-asserting it on every revision turn was a no-op, not a real
+    # transition (TWM-188). plan_ready's own write (a later item) is what
+    # will actually change stage once day_plan first becomes non-empty.
     logger.info(
         "Applied Backend-owned Guide revision.",
         event="be.trip.guide.revision_applied",
@@ -168,7 +173,7 @@ def _apply_plan_freeze(
     planner["revision"] = revision
     planner["frozen_plan"] = {"guide_state": guide_state, "guide_revision": revision}
     state["active_agent"] = None
-    state["stage"] = "planned"
+    set_stage(state, "planned")
     logger.info(
         "Applied Backend-owned Guide revision.",
         event="be.trip.guide.revision_applied",
@@ -214,7 +219,7 @@ async def _reopen_destination_discovery(
     state["trip_context"].pop("destination", None)
     state["trip_context"].pop("destinations", None)
     state["trip_context"].pop("selected_option", None)
-    state["stage"] = "matching"
+    set_stage(state, "matching")
     state["active_agent"] = "meridian"
     logger.info(
         "Backend validated a pre-itinerary Guide to Meridian reversal.",

@@ -7,7 +7,7 @@ from ...schemas.scout import ScoutRequest
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_scout_response
-from .state import merge_trip_context
+from .state import merge_trip_context, set_stage
 
 
 async def apply_scout(
@@ -60,13 +60,13 @@ async def apply_scout(
         ] = response.message
     if response.intent == "matcher":
         state["trip_context"].pop("selected_option", None)
-        state["stage"] = "matching"
+        set_stage(state, "matching")
         state["active_agent"] = "meridian"
         from .matcher_commands import apply_meridian
 
         return await apply_meridian(engine, logger, state, message, latest_recommendation)
     if response.intent == "planner":
-        state["stage"] = "planning"
+        set_stage(state, "planning")
         state["active_agent"] = "guide"
         from .planner_commands import apply_guide
 
