@@ -905,6 +905,42 @@ def test_deterministic_selection_uses_latest_backend_recommendation(api_client: 
     }
 
 
+def test_select_destination_rejects_a_stray_reselection_when_already_matched(api_client: TestClient):
+    """TWM-188: select_destination itself still has no current-stage
+    precondition, but enforcing "matched" as a from-stage catches the one
+    case that matters in practice — a stray re-selection while a trip is
+    already matched is rejected, since "matched" -> "matched" isn't a legal
+    edge (only "matched" -> "planning" is)."""
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
+    state = {
+        "stage": "matched",
+        "active_agent": None,
+        "trip_context": {"selected_option": {"type": "single", "id": "rishikesh", "name": "Rishikesh"}},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+    _seed_recommendation(repository, UUID(trip["id"]), options=[
+        {"rank": 1, "type": "single", "destination_id": "gokarna", "name": "Gokarna"}
+    ])
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "select_destination",
+            "option_id": "gokarna",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+    saved = api_client.get(f"/trips/{trip['id']}").json()
+    assert saved["version"] == 1
+    assert saved["trip_state"]["stage"] == "matched"
+    assert saved["trip_state"]["trip_context"]["selected_option"]["id"] == "rishikesh"
+
+
 def test_traveler_message_generates_places_and_day_plan_together(api_client: TestClient):
     """Single-step generation: once places are already known and no day plan
     exists yet, the same TRAVELER_MESSAGE turn that completes trip context
@@ -2509,6 +2545,79 @@ def test_more_like_this_refines_around_the_referenced_option(api_client: TestCli
     assert fetched.status_code == 200
     assert fetched.json()["options"][0]["destination_id"] == "gokarna"
     assert fetched.json()["version"] == 2
+
+
+class FakeMoreLikeThisClarificationEngine(FakeCommandEngine):
+    """Meridian asks a clarifying question instead of returning candidates
+    right away — the trip must land on "matching" (not stay "recommended"),
+    since apply_meridian's NEEDS_CLARIFICATION branch performs no stage
+    write of its own (TWM-188)."""
+
+    async def meridian(self, trip_state, message):
+        self.calls.append(("meridian", trip_state, message))
+        return AgentExecution(
+            response={
+                "status": "NEEDS_CLARIFICATION",
+                "message": "What matters most for the next destination?",
+                "state_delta": {"trip_context": {}, "matcher_state": {
+                    "conversation_context": {"last_meridian_message": "What matters most for the next destination?", "awaiting": "preferences"}
+                }},
+                "options": [],
+            },
+            prompt_release=PromptRelease("meridian", "1.0.0", "test"),
+        )
+
+
+def test_more_like_this_transiently_sets_matching_while_meridian_reprocesses(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeMoreLikeThisClarificationEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_recommended_trip_with_goa_option(api_client, repository)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "more_like_this",
+            "refinement": {
+                "type": "MORE_LIKE_THIS",
+                "reference": {"type": "single", "id": "goa"},
+                "instructions": "Somewhere quieter",
+            },
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["meridian"]
+    saved = response.json()["trip"]["trip_state"]
+    assert saved["stage"] == "matching"
+
+
+def test_refinement_traveler_message_transiently_sets_matching_while_meridian_reprocesses(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    engine = FakeMoreLikeThisClarificationEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_recommended_trip_with_goa_option(api_client, repository)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Actually somewhere quieter than Goa",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [call[0] for call in engine.calls] == ["meridian"]
+    saved = response.json()["trip"]["trip_state"]
+    assert saved["stage"] == "matching"
 
 
 def test_more_like_this_rejects_unknown_reference_without_mutating_state(
