@@ -3,7 +3,12 @@
 import pytest
 
 from twm.services.trip_commands.errors import InvalidTripCommandError
-from twm.services.trip_commands.state import VALID_STAGES, merge_trip_context, set_stage
+from twm.services.trip_commands.state import (
+    STAGE_TRANSITIONS,
+    VALID_STAGES,
+    merge_trip_context,
+    set_stage,
+)
 
 
 def test_merge_trip_context_unions_preferences_case_insensitively() -> None:
@@ -71,3 +76,21 @@ def test_set_stage_rejects_empty_string() -> None:
 
     with pytest.raises(InvalidTripCommandError):
         set_stage(state, "")
+
+
+# STAGE_TRANSITIONS is documented, not yet enforced (TWM-188) — these
+# guards only keep the table structurally consistent with VALID_STAGES so
+# it stays trustworthy as a reference until enforcement is wired in.
+
+
+def test_stage_transitions_has_an_entry_for_every_canonical_stage() -> None:
+    assert set(STAGE_TRANSITIONS.keys()) == VALID_STAGES
+
+
+def test_stage_transitions_targets_are_all_canonical_stages() -> None:
+    for from_stage, targets in STAGE_TRANSITIONS.items():
+        assert targets <= VALID_STAGES, f"{from_stage} has an out-of-enum target: {targets - VALID_STAGES}"
+
+
+def test_stage_transitions_planned_is_terminal() -> None:
+    assert STAGE_TRANSITIONS["planned"] == frozenset()

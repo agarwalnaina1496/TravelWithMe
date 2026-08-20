@@ -11,6 +11,50 @@ from .errors import InvalidTripCommandError
 # checks in `set_stage`.
 VALID_STAGES: frozenset[str] = frozenset(get_args(ScoutStage))
 
+# STAGE_TRANSITIONS documents the from-stage -> {legal to-stage} graph as it
+# exists in code TODAY (TWM-188) — it is NOT enforced anywhere yet. Today's
+# write sites don't yet agree on a consistent graph (see the inline notes
+# below), so gating writes against this table now would either encode a
+# known bug as "legal" or break a flow that still relies on it. This table
+# exists purely as a single documented reference; update it in the same
+# change as any fix that adds, removes, or corrects an edge, and wire it
+# into `set_stage` as an enforced check once every edge below is accurate.
+STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
+    "new": frozenset({
+        "matching",   # discover_entry, or Scout handing off with matcher intent
+        "planning",   # known_destination_entry/start_planning, or Scout planner intent
+    }),
+    "matching": frozenset({
+        # NEEDS_CLARIFICATION no-op self-write (matcher_commands.py:86) —
+        # stage is already "matching" whenever this runs; to be deleted,
+        # not an intentional edge (TWM-188).
+        "matching",
+        "recommended",  # apply_meridian succeeds with a candidate list
+    }),
+    "recommendation_ready": frozenset(),  # dead value, no write site produces it; slated for removal (TWM-188 item 2)
+    "recommended": frozenset({
+        "matched",  # select_destination
+        # "matching" (refinement via more_like_this / the refinement
+        # drawer) is a confirmed GAP, not yet wired — those paths currently
+        # leave stage at "recommended" instead of flipping back (TWM-188).
+    }),
+    "matched": frozenset({
+        "planning",  # start_planning, once a destination is set
+    }),
+    "planning": frozenset({
+        # Every Guide revision turn no-op self-write
+        # (planner_commands.py:137) — re-asserted even while day_plan stays
+        # empty; to be deleted once plan_ready's own write lands (TWM-188).
+        "planning",
+        "matching",  # _reopen_destination_discovery — unconditional today;
+        # will branch on latest_recommendation into "recommended" (revisit)
+        # vs "matching" (fresh discovery) once that fix lands (TWM-188).
+        "planned",   # approve_plan -> _apply_plan_freeze
+    }),
+    "plan_ready": frozenset(),  # reserved — no write site produces this yet (TWM-188)
+    "planned": frozenset(),     # terminal — confirmed no backward transition exists
+}
+
 
 # trip_context fields every specialist (Scout, Meridian, Guide) can extract
 # into independently — a later specialist's delta must accumulate onto an
