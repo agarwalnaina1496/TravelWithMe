@@ -57,6 +57,13 @@ async def apply_guide(
     previous_awaiting = planner.get("conversation_context", {}).get("awaiting")
     previous_day_plan_empty = not planner.get("day_plan")
 
+    # TWM-188 item 8: a revision request on an already-ready plan
+    # transiently flips stage back to "planning" while Guide reprocesses,
+    # mirroring recommended<->matching — day_plan itself isn't cleared
+    # here, only replaced/left unchanged once Guide responds below.
+    if event == "TRAVELER_MESSAGE" and state.get("stage") == "plan_ready":
+        set_stage(state, "planning", logger, context="guide_revision_request")
+
     request = GuideRequest.model_validate(
         {
             "event": event,
@@ -133,13 +140,16 @@ async def apply_guide(
             preferences_present=bool(trip_context.get("preferences")),
         )
 
+    # TWM-188 item 8: plan_ready mirrors recommended's role on the Discover
+    # side — set whenever day_plan is non-empty after this turn, whether
+    # this is the first draft or a subsequent revision response. Every
+    # other apply_guide turn (still-gating START/TRAVELER_MESSAGE with an
+    # empty day_plan) leaves stage at "planning", set upstream by
+    # start_planning/known_destination_entry/Scout's planner handoff.
+    if day_plan_length:
+        set_stage(state, "plan_ready", logger, context="guide_plan_ready")
+
     state["active_agent"] = "guide"
-    # No stage write here: every caller of apply_guide reaching this point
-    # (START or TRAVELER_MESSAGE) already has stage="planning" set upstream
-    # (start_planning/known_destination_entry, or Scout's planner handoff)
-    # — re-asserting it on every revision turn was a no-op, not a real
-    # transition (TWM-188). plan_ready's own write (a later item) is what
-    # will actually change stage once day_plan first becomes non-empty.
     logger.info(
         "Applied Backend-owned Guide revision.",
         event="be.trip.guide.revision_applied",
