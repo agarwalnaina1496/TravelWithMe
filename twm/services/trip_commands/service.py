@@ -25,7 +25,6 @@ from .planner_commands import (
     guide_has_started,
     has_pending_reopen_choice,
 )
-from .scout_commands import apply_scout
 from .state import (
     canonical_state,
     set_stage,
@@ -246,11 +245,15 @@ class TripCommandService:
                         "Send a traveler message to continue an existing Guide session."
                     )
                 return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
+            if state.get("stage") == "matched":
+                self._reopen_matching_from_matched(state, context="continue_from_matched")
             if state.get("active_agent") == "meridian" or state.get("stage") in {
                 "matching", "recommended"
             }:
                 return await apply_meridian(self.engine, self.logger, state, None, latest_recommendation)
-            return await apply_scout(self.engine, self.logger, state, None, latest_recommendation)
+            raise InvalidTripCommandError(
+                "No agent can continue this trip from its current state."
+            )
         if payload.command == "select_destination":
             return select_destination(state, payload.option_id or "", latest_recommendation)
         if payload.command == "start_planning":
@@ -308,13 +311,28 @@ class TripCommandService:
         message = payload.message or ""
         if state.get("stage") == "planning" or state.get("active_agent") == "guide":
             return await apply_guide(self.engine, self.logger, state, "TRAVELER_MESSAGE", message, latest_recommendation)
+        if state.get("stage") == "recommended":
+            set_stage(state, "matching", self.logger, context="refinement_traveler_message")
+        elif state.get("stage") == "matched":
+            self._reopen_matching_from_matched(state, context="matched_reconsider_traveler_message")
         if state.get("active_agent") == "meridian" or state.get("stage") in {
             "matching", "recommended"
         }:
-            if state.get("stage") == "recommended":
-                set_stage(state, "matching", self.logger, context="refinement_traveler_message")
             return await apply_meridian(self.engine, self.logger, state, message, latest_recommendation)
-        return await apply_scout(self.engine, self.logger, state, message, latest_recommendation)
+        raise InvalidTripCommandError(
+            "No agent can receive this message from the trip's current state."
+        )
+
+    def _reopen_matching_from_matched(self, state: dict[str, Any], *, context: str) -> None:
+        """A matched trip reconsidering its destination goes straight back
+        to Meridian — this used to route through apply_scout's own matcher-
+        intent handoff (scout_commands.py), which is no longer reachable
+        now that scout_entry is gone; this reproduces its two effects
+        (clear the now-obsolete selection, flip stage) deterministically
+        instead, since there's no genuine ambiguity left to classify at
+        this exact point in the flow."""
+        state["trip_context"].pop("selected_option", None)
+        set_stage(state, "matching", self.logger, context=context)
 
     @staticmethod
     def _has_planning_destination(trip_context: dict[str, Any]) -> bool:
