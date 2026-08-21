@@ -254,7 +254,7 @@ class TripCommandService:
                 "No agent can continue this trip from its current state."
             )
         if payload.command == "select_destination":
-            return select_destination(state, payload.option_id or "", latest_recommendation)
+            return select_destination(self.logger, state, payload.option_id or "", latest_recommendation)
         if payload.command == "start_planning":
             if not self._has_planning_destination(state["trip_context"]):
                 raise InvalidTripCommandError(

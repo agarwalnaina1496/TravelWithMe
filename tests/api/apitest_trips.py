@@ -850,8 +850,19 @@ def test_trip_command_rejects_browser_state_and_reused_key(api_client: TestClien
 
 def test_deterministic_selection_uses_latest_backend_recommendation(api_client: TestClient):
     repository = MemoryTripRepository()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True,
+            environment="test",
+            payload_mode=PayloadMode.METADATA,
+            max_field_size=256,
+        ),
+        sink,
+    )
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
+    app.dependency_overrides[get_logger] = lambda: logger
     state = {
         "stage": "recommended",
         "active_agent": None,
@@ -884,6 +895,13 @@ def test_deterministic_selection_uses_latest_backend_recommendation(api_client: 
     # own precondition and the trip summary/recap have exactly one field
     # to check, never a per-path fallback.
     assert saved["trip_context"]["destinations"] == ["Rishikesh"]
+    # Same observability as the structurally analogous plan_ready ->
+    # planned transition (_apply_plan_freeze's be.trip.guide.revision_applied).
+    selected = [event for event in sink.events if event["event"] == "be.trip.matcher.destination_selected"]
+    assert len(selected) == 1
+    assert selected[0]["fields"]["trip_id"] == trip["id"]
+    assert selected[0]["fields"]["option_type"] == "single"
+    assert selected[0]["fields"]["option_id"] == "rishikesh"
 
 
 def test_reopening_matching_from_matched_clears_both_destination_signals(api_client: TestClient):

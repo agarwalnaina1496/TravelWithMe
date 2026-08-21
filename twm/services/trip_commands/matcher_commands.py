@@ -116,7 +116,12 @@ def _validate_refinement_reference(
         )
 
 
-def select_destination(state: dict[str, Any], option_id: str, latest: RecommendationRecord | None) -> dict[str, Any]:
+def select_destination(
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    option_id: str,
+    latest: RecommendationRecord | None,
+) -> dict[str, Any]:
     if not latest:
         raise InvalidTripCommandError("No recommendation is available to select.")
     option = next(
@@ -147,4 +152,12 @@ def select_destination(state: dict[str, Any], option_id: str, latest: Recommenda
     state["trip_context"]["destinations"] = [option["name"]]
     set_stage(state, "matched")
     state["active_agent"] = None
+    logger.info(
+        "Applied Backend-owned destination selection.",
+        event="be.trip.matcher.destination_selected",
+        source="application",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        option_type=option["type"],
+        option_id=identity,
+    )
     return {"message": f"{option['name']} is confirmed.", "agent_meta": None}
