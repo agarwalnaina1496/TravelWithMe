@@ -1,5 +1,19 @@
 # Scout prompt changelog
 
+## Scout 1.10.0 — 2026-08-21
+
+- Removes every line describing what the UI or Backend does — the prompt
+  states Scout's own job and contract only. Reworded: "the UI hands
+  ownership to that specialist. The UI then routes later specialist-phase
+  turns..." → "that phase is no longer yours to route or answer for —
+  return the extracted context and step back", "read-only UI lifecycle
+  context" → "read-only lifecycle context — never write to it", "The
+  receiving specialist or UI owns the visible response" → "you are handing
+  this phase off, not answering it", "The application owns lifecycle
+  state..." → a direct negative instruction (never include those fields),
+  "Active specialist continuations are routed by the UI to their
+  specialist" removed entirely (not something Scout needs to know).
+
 ## Scout 1.9.0 — 2026-08-14
 
 - Renames the `duration_days` fixed shared key to `trip_duration`, matching

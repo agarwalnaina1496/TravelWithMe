@@ -1,5 +1,17 @@
 # Atlas prompt changelog
 
+## Atlas 1.5.0 — 2026-08-21
+
+- Removes every line describing what Backend does — the prompt states
+  Atlas's own job and contract only. Reworded: "supplied by the Backend"
+  → "you receive", "The Backend calculates totals from the returned
+  lines" → "Totals are calculated from the returned lines", "Use the
+  Backend-supplied JSON Schema" → "Use the supplied JSON Schema". Removed
+  entirely: "that status is set by the Backend once a traveler actually
+  confirms it" and "the Backend attaches trusted prompt provenance" (Atlas
+  doesn't need to know why it must not generate `agent_meta` or mark
+  bookings confirmed — only that it must not).
+
 ## Atlas 1.4.0 — 2026-08-13
 
 - Removes the `travel_options`/`stay_options` suggested-option lists entirely.
