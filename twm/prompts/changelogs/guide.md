@@ -1,5 +1,18 @@
 # Guide prompt changelog
 
+## Guide 3.1.0 — 2026-08-21
+
+- `START` now extracts `destinations` (and any other fixed fields the
+  traveler volunteers unprompted) from `message` on the traveler's very
+  first turn, when `trip_context.destinations` isn't already known.
+  Previously the known-destination entry path relied on Backend writing
+  `trip_context.destinations` directly from the raw traveler-typed field
+  before Guide ever ran — which broke when that field contained more than
+  a bare destination name (e.g. "to Ladakh, from Bangalore, couple" got
+  stored as a literal destination). Backend no longer writes
+  `trip_context` on this path at all; the raw message is passed straight
+  through as `message` on the `START` event, same as every other turn.
+
 ## Guide 3.0.0 — 2026-08-14
 
 - Breaking flow change: removes the two-phase `PLACES_DRAFT` →

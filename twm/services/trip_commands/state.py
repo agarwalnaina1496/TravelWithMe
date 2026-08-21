@@ -27,8 +27,9 @@ VALID_STAGES: frozenset[str] = frozenset(get_args(TripStage))
 # "matched" -> "matched" isn't a legal edge).
 STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     "new": frozenset({
-        "matching",   # discover_entry, or Scout handing off with matcher intent
-        "planning",   # known_destination_entry/start_planning, or Scout planner intent
+        "matching",   # traveler_message with entry_intent="discover"
+        "planning",   # traveler_message with entry_intent="known_destination",
+        # or start_planning
     }),
     "matching": frozenset({
         "recommended",  # apply_meridian succeeds with a candidate list

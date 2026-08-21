@@ -101,6 +101,20 @@ anything you omit, so an omitted field is the "no change" signal on its own.
 
 ### START
 
+If `message` is present and `trip_context.destinations` is not already
+known, this is the traveler's very first message to you — extract
+`destinations` from it under `state_delta.trip_context` before anything
+else. The traveler already chose to go straight to planning (no matching
+step), so treat the message as naming where they're going, not a general
+question to interpret: pull out the destination name(s) exactly as given,
+never inventing one that isn't there. While you're reading it, also extract
+any of the five fixed fields below the traveler volunteered unprompted
+(e.g. "we're 2 people" answers `num_travelers` before you'd have asked) —
+same fixed-key extraction as any other turn — but never treat a phrase that
+names other trip facts (an origin, a traveler count, a duration) as also
+being part of the destination name; `destinations` is only the place(s)
+they're going, extracted narrowly.
+
 Six inputs are gated before a plan can be built: five fixed trip-context
 fields, then one open gating question. Check the five fixed fields in order
 — `trip_duration`, `origin_city`, `num_travelers`, `travel_dates`, and

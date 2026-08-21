@@ -40,33 +40,27 @@ class TripCreateRequest(BaseModel):
     trip_context: dict[str, Any] = Field(min_length=1)
 
 
-# The two commands that can legitimately start a trip with no trip_id yet
-# (TWM-189).
-FirstMessageCommandName = Literal["discover_entry", "known_destination_entry"]
+# Which specialist should own a trip from its very first message onward —
+# the traveler's own up-front choice (Discover vs. Plan a Trip), not
+# something Scout classifies. Meaningful only on a trip's first turn;
+# TripCommandRequest.entry_intent carries the same signal for that one
+# case, and is ignored on every later turn once an agent already owns
+# the trip.
+EntryIntent = Literal["discover", "known_destination"]
 
 
 class TripFirstMessageRequest(BaseModel):
-    """First-message orchestration input (TWM-189) — no trip exists yet, so
+    """First-turn orchestration input (TWM-189) — no trip exists yet, so
     there is no expected_version/idempotency replay the way TripCommandRequest
-    has for an established trip."""
+    has for an established trip. Always a traveler_message-shaped turn;
+    entry_intent decides which specialist receives it."""
 
     model_config = ConfigDict(extra="forbid")
 
-    command: FirstMessageCommandName
+    entry_intent: EntryIntent
     title: str = Field(default="Untitled Trip", min_length=1, max_length=120)
     product_mode: Literal["self_led", "twm_led"] = "self_led"
-    message: BoundedMessage | None = None
-    destination: str | None = Field(default=None, min_length=1, max_length=200)
-
-    @model_validator(mode="after")
-    def validate_command_fields(self) -> "TripFirstMessageRequest":
-        if self.command == "known_destination_entry" and not (
-            self.destination and self.destination.strip()
-        ):
-            raise ValueError("known_destination_entry requires destination")
-        if self.command != "known_destination_entry" and self.destination is not None:
-            raise ValueError("destination is allowed only for known_destination_entry")
-        return self
+    message: BoundedMessage
 
 
 class TripRenameRequest(BaseModel):
@@ -207,8 +201,6 @@ TripCommandName = Literal[
     "select_destination",
     "start_planning",
     "approve_plan",
-    "discover_entry",
-    "known_destination_entry",
     "more_like_this",
     "reopen_destination_revisit",
     "reopen_destination_fresh",
@@ -219,10 +211,6 @@ TripCommandName = Literal[
 ]
 
 _MESSAGE_COMMANDS = {"traveler_message"}
-# discover_entry may optionally carry the traveler's first message (e.g. an
-# answer to "where are you traveling from?") — unlike the commands above,
-# it's never required, since Meridian can still be invoked cold.
-_OPTIONAL_MESSAGE_COMMANDS = {"discover_entry"}
 
 
 class TripCommandRequest(BaseModel):
@@ -234,8 +222,15 @@ class TripCommandRequest(BaseModel):
     expected_version: int = Field(ge=1)
     idempotency_key: UUID
     message: BoundedMessage | None = None
+    # Meaningful only on a trip's first turn (no agent owns it yet) — the
+    # traveler's own Discover-vs-Plan-a-Trip choice, not something Scout
+    # classifies. Ignored on any later turn once an agent already owns the
+    # trip (TripCommandName no longer has separate discover_entry/
+    # known_destination_entry commands for this — it's carried as data on
+    # the one traveler_message command instead, same shape whether it's
+    # this trip's first turn or its fiftieth).
+    entry_intent: EntryIntent | None = None
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
-    destination: str | None = Field(default=None, min_length=1, max_length=200)
     refinement: MeridianRefinement | None = None
     logistics_confirmation: LogisticsConfirmationInput | None = None
 
@@ -255,12 +250,12 @@ class TripCommandRequest(BaseModel):
             raise ValueError(
                 "logistics_confirmation is allowed only for confirm_logistics"
             )
-        if self.command not in _MESSAGE_COMMANDS and self.command not in _OPTIONAL_MESSAGE_COMMANDS and self.message is not None:
-            raise ValueError("message is allowed only for traveler_message or discover_entry")
+        if self.command not in _MESSAGE_COMMANDS and self.message is not None:
+            raise ValueError("message is allowed only for traveler_message")
+        if self.command != "traveler_message" and self.entry_intent is not None:
+            raise ValueError("entry_intent is allowed only for traveler_message")
         if self.command != "select_destination" and self.option_id is not None:
             raise ValueError("option_id is allowed only for select_destination")
-        if self.command != "known_destination_entry" and self.destination is not None:
-            raise ValueError("destination is allowed only for known_destination_entry")
         if self.command != "more_like_this" and self.refinement is not None:
             raise ValueError("refinement is allowed only for more_like_this")
         return self
