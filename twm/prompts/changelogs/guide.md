@@ -1,5 +1,23 @@
 # Guide prompt changelog
 
+## Guide 3.3.0 — 2026-08-21
+
+- Removes every line describing what Backend, the UI, or another
+  specialist does — the prompt states Guide's own job and contract only.
+  Reworded: "The Backend supplies..." → "You receive...", "Backend keeps
+  the existing value for anything you omit" → "An omitted field is itself
+  the 'no change' signal", "shared across Travel With Me" → "genuinely
+  shared facts", "accumulate ... across turns and specialists" →
+  "accumulate over time", "Follow the Backend-supplied JSON Schema" →
+  "Follow the supplied JSON Schema". Removed entirely: the sentence
+  explaining Backend applies `APPROVE_PLAN` deterministically (Guide never
+  receiving that event is unaffected either way — the explanation of *why*
+  added nothing Guide needed), and "Backend discards any content... /
+  Backend and the next specialist own the full visible response from
+  here" from the reopen-destination section (Guide's own required output —
+  empty `state_delta`, a brief acknowledgment — is unchanged; what happens
+  to it afterward isn't Guide's concern).
+
 ## Guide 3.2.0 — 2026-08-21
 
 - Collapses `START`/`TRAVELER_MESSAGE` into a single `MESSAGE` event —

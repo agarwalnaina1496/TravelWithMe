@@ -120,7 +120,7 @@ def test_active_phase_prompt_releases_are_complete() -> None:
     assert load_prompt_versions() == {
         "scout": "1.9.0",
         "meridian": "1.11.0",
-        "guide": "3.2.0",
+        "guide": "3.3.0",
         "atlas": "1.4.0",
     }
     guide_prompt = load_prompt_release("guide").content
