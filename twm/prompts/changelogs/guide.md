@@ -1,7 +1,26 @@
 # Guide prompt changelog
 
-## Guide 3.3.0 — 2026-08-21
+## Guide 3.1.0 — 2026-08-21
 
+- Root-cause fix for the Ladakh bug: the known-destination entry path
+  previously relied on a command handler writing `trip_context.destinations`
+  directly from the raw traveler-typed field before Guide ever ran — which
+  broke when that field contained more than a bare destination name (e.g.
+  "to Ladakh, from Bangalore, couple" got stored as a literal destination).
+  The handler no longer writes `trip_context` on this path at all; the raw
+  message is passed straight through as `message`, and `destinations` joins
+  the gate sequence as Guide's own first-checked extraction step, alongside
+  the five fixed fields and the sixth open gating question.
+- Collapses the `START`/`TRAVELER_MESSAGE` event split into a single
+  `MESSAGE` event. Guide's behavior was already meant to be uniform every
+  turn (extract whatever `message` contains, check the gates in order, ask
+  the next missing one or generate the plan once all are known), so the two
+  near-duplicate "Event behavior" sections describing the same fixed-field
+  gating logic twice are replaced by one "Gating and extraction" section.
+  `GuideEvent` shrinks to `Literal["MESSAGE", "APPROVE_PLAN"]` (Guide still
+  never receives `APPROVE_PLAN`); the `guide_event` field is dropped from
+  the agent payload entirely, since it named a distinction that no longer
+  exists.
 - Removes every line describing what Backend, the UI, or another
   specialist does — the prompt states Guide's own job and contract only.
   Reworded: "The Backend supplies..." → "You receive...", "Backend keeps
@@ -10,41 +29,11 @@
   shared facts", "accumulate ... across turns and specialists" →
   "accumulate over time", "Follow the Backend-supplied JSON Schema" →
   "Follow the supplied JSON Schema". Removed entirely: the sentence
-  explaining Backend applies `APPROVE_PLAN` deterministically (Guide never
-  receiving that event is unaffected either way — the explanation of *why*
-  added nothing Guide needed), and "Backend discards any content... /
-  Backend and the next specialist own the full visible response from
-  here" from the reopen-destination section (Guide's own required output —
-  empty `state_delta`, a brief acknowledgment — is unchanged; what happens
-  to it afterward isn't Guide's concern).
-
-## Guide 3.2.0 — 2026-08-21
-
-- Collapses `START`/`TRAVELER_MESSAGE` into a single `MESSAGE` event —
-  Guide's behavior was already meant to be uniform every turn (extract
-  whatever `message` contains, check the gates in order, ask the next
-  missing one or generate the plan once all are known), so the two
-  near-duplicate "Event behavior" sections describing the same fixed-field
-  gating logic twice are replaced by one. `destinations` joins the gate
-  sequence as its own first-checked step instead of being a special
-  first-message-only extraction. `GuideEvent` shrinks to
-  `Literal["MESSAGE", "APPROVE_PLAN"]`; `APPROVE_PLAN` is unchanged —
-  Guide still never receives it, Backend applies it deterministically.
-  Backend's `guide_event` field is dropped from the agent payload entirely
-  (it named the removed distinction and served no other purpose).
-
-## Guide 3.1.0 — 2026-08-21
-
-- `START` now extracts `destinations` (and any other fixed fields the
-  traveler volunteers unprompted) from `message` on the traveler's very
-  first turn, when `trip_context.destinations` isn't already known.
-  Previously the known-destination entry path relied on Backend writing
-  `trip_context.destinations` directly from the raw traveler-typed field
-  before Guide ever ran — which broke when that field contained more than
-  a bare destination name (e.g. "to Ladakh, from Bangalore, couple" got
-  stored as a literal destination). Backend no longer writes
-  `trip_context` on this path at all; the raw message is passed straight
-  through as `message` on the `START` event, same as every other turn.
+  explaining Backend applies `APPROVE_PLAN` deterministically, and "Backend
+  discards any content... / Backend and the next specialist own the full
+  visible response from here" from the reopen-destination section (Guide's
+  own required output — empty `state_delta`, a brief acknowledgment — is
+  unchanged; what happens to it afterward isn't Guide's concern).
 
 ## Guide 3.0.0 — 2026-08-14
 

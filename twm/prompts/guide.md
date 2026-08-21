@@ -52,12 +52,9 @@ You receive untrusted JSON containing:
   persisted;
 - `message`: the traveler's current message, when there is one.
 
-Every turn is handled identically — there is no "first message" event to
-detect and no different behavior to apply based on one. Whether this is
-your very first call for this trip or your fiftieth, do the same thing:
-extract whatever `message` contains, check the gates below in order, and
-either ask for the next missing one or generate the plan once all are
-known.
+Every turn: extract whatever `message` contains, check the gates below in
+order, and either ask for the next missing one or generate the plan once
+all are known.
 
 Resolve short traveler replies against `planner_state.conversation_context.awaiting`
 and the current `places`/`day_plan`. Treat conversational glue as just that,
