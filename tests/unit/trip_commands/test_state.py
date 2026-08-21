@@ -11,20 +11,17 @@ from twm.services.trip_commands.state import (
 )
 
 
-def test_merge_trip_context_unions_preferences_case_insensitively() -> None:
+def test_merge_trip_context_overwrites_a_free_form_list_field() -> None:
+    # No field name (not even "preferences"/"exclusions") gets special
+    # union-merge treatment any more — every specialist invents its own
+    # semantic key for a free-form fact, so there's no shared name to
+    # union across turns/specialists onto. A later delta for the same key
+    # simply replaces the prior value, same as any other field.
     target = {"preferences": ["pilgrimage", "relaxed"]}
 
-    merge_trip_context(target, {"preferences": ["PILGRIMAGE", "quiet"]})
+    merge_trip_context(target, {"preferences": ["quiet"]})
 
-    assert target["preferences"] == ["pilgrimage", "relaxed", "quiet"]
-
-
-def test_merge_trip_context_unions_exclusions_and_coerces_non_list_prior_value() -> None:
-    target = {"exclusions": "not-a-list-yet"}
-
-    merge_trip_context(target, {"exclusions": ["river rafting"]})
-
-    assert target["exclusions"] == ["river rafting"]
+    assert target["preferences"] == ["quiet"]
 
 
 def test_merge_trip_context_overwrites_non_union_fields() -> None:

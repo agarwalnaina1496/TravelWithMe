@@ -341,16 +341,12 @@ class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
                     },
                     "practical_notes": [],
                     "sources": [],
-                    "assumptions": (
-                        [
-                            {
-                                "category": "dates",
-                                "detail": "Assumed a start date since none was confirmed.",
-                            }
-                        ]
-                        if not working_plan.get("start_date")
-                        else []
-                    ),
+                    "assumptions": [
+                        {
+                            "category": "dates",
+                            "detail": "Assumed a start date since none was confirmed.",
+                        }
+                    ],
                 },
                 "unresolved": [],
             },
@@ -1279,7 +1275,6 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
     assert frozen["guide_state"] == {
         "destinations": ["Rishikesh"],
         "trip_duration": 1,
-        "start_date": None,
         "places": ["Triveni Ghat"],
         "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}],
     }
@@ -1294,11 +1289,10 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
     assert api_client.get(f"/trips/{trip['id']}").json()["version"] == 2
 
 
-def _frozen_plan_trip_state(*, guide_revision=5, trip_duration=1, start_date=None):
+def _frozen_plan_trip_state(*, guide_revision=5, trip_duration=1):
     guide_state = {
         "destinations": ["Rishikesh"],
         "trip_duration": trip_duration,
-        "start_date": start_date,
         "places": ["Triveni Ghat"],
         "day_plan": [
             {"day_number": day, "date": None, "places": ["Triveni Ghat"] if day == 1 else [], "pace": "balanced", "buffer_note": None}
@@ -1308,7 +1302,7 @@ def _frozen_plan_trip_state(*, guide_revision=5, trip_duration=1, start_date=Non
     return {
         "stage": "planned",
         "active_agent": None,
-        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": trip_duration, "start_date": start_date},
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": trip_duration},
         "planner_state": {
             "conversation_context": {"awaiting": None},
             "places": ["Triveni Ghat"],
@@ -1847,13 +1841,13 @@ class FakeGuidePreferenceEngine(FakeCommandEngine):
         )
 
 
-def test_guide_preference_delta_unions_with_earlier_specialist_context(
+def test_guide_free_form_delta_overwrites_rather_than_unions(
     api_client: TestClient,
 ):
-    """trip_context.preferences/exclusions accumulate as a case-insensitive
-    union across specialists and turns instead of the later write silently
-    overwriting the earlier one — same accumulation Scout/Meridian already
-    get from merge_trip_context."""
+    """No trip_context field name gets special union-merge treatment —
+    "preferences" is just a semantic key Guide chose here, the same as any
+    other freely chosen key. A later delta for that key replaces the prior
+    value, same as merge_trip_context's default behavior everywhere else."""
     repository = MemoryTripRepository()
     engine = FakeGuidePreferenceEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -1887,10 +1881,9 @@ def test_guide_preference_delta_unions_with_earlier_specialist_context(
 
     assert response.status_code == 200
     preferences = response.json()["trip"]["trip_state"]["trip_context"]["preferences"]
-    # "PILGRIMAGE" (Guide) case-insensitively dedupes against "pilgrimage"
-    # (already there); "relaxed" (already there) survives untouched; "quiet"
-    # (Guide) is newly added.
-    assert preferences == ["pilgrimage", "relaxed", "quiet"]
+    # FakeGuidePreferenceEngine's canned delta is ["PILGRIMAGE", "quiet"] —
+    # it replaces the prior ["pilgrimage", "relaxed"] entirely.
+    assert preferences == ["PILGRIMAGE", "quiet"]
 
 
 class FakeGuideMisallocatedDayPlanEngine(FakeCommandEngine):
@@ -2895,7 +2888,6 @@ def test_guide_reversal_is_rejected_once_the_plan_is_frozen(api_client: TestClie
         "guide_state": {
             "destinations": state["trip_context"]["destinations"],
             "trip_duration": None,
-            "start_date": None,
             "places": state["planner_state"]["places"],
             "day_plan": [],
         },

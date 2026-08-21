@@ -79,7 +79,6 @@ def build_working_plan(guide_state: dict[str, Any]) -> AtlasWorkingPlan:
         {
             "destinations": guide_state["destinations"],
             "trip_duration": guide_state["trip_duration"],
-            "start_date": guide_state.get("start_date"),
             "approved_places": guide_state["places"],
             "days": [
                 {

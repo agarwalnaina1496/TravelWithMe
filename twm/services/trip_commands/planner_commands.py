@@ -143,7 +143,6 @@ async def apply_guide(
             places_count=places_count,
             day_plan_length=day_plan_length,
             budget_present=bool(trip_context.get("budget")),
-            preferences_present=bool(trip_context.get("preferences")),
         )
 
     # TWM-188 item 8: plan_ready mirrors recommended's role on the Discover
@@ -181,7 +180,6 @@ def _apply_plan_freeze(
     guide_state = {
         "destinations": trip_context.get("destinations") or [],
         "trip_duration": trip_context.get("trip_duration"),
-        "start_date": trip_context.get("start_date"),
         "places": planner.get("places") or [],
         "day_plan": planner.get("day_plan") or [],
     }

@@ -34,6 +34,23 @@
   visible response from here" from the reopen-destination section (Guide's
   own required output — empty `state_delta`, a brief acknowledgment — is
   unchanged; what happens to it afterward isn't Guide's concern).
+- Drops `start_date`, `preferences`, and `exclusions` as named fields
+  anywhere in the prompt — only the five fixed keys are named; every other
+  extracted fact gets a freely chosen semantic key, no exceptions. This
+  also removes backend special-casing that assumed those exact names:
+  `start_date` is no longer forwarded from the frozen plan into Atlas's
+  `working_plan` (Atlas now always treats the trip-level start date as
+  unconfirmed — it never had a reliable way to receive one under a
+  free-form key anyway), and `preferences`/`exclusions` no longer get
+  case-insensitive union-merge treatment in `merge_trip_context` (every
+  trip_context field, fixed or free-form, now merges the same way: the
+  latest delta simply replaces the prior value for that key).
+- Merges the "Input" section into a new "Your job" section stating Guide's
+  behavior directly, instead of an itemized JSON-shape description that
+  implied a fixed set of fields is always present — the actual content of
+  `trip_context` varies by entry path (Discover-selected vs. extracted
+  from a known-destination message), so describing it as an unconditional
+  contract was misleading.
 
 ## Guide 3.0.0 — 2026-08-14
 
