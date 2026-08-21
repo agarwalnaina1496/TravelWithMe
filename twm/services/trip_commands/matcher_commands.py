@@ -72,11 +72,12 @@ async def apply_meridian(
         status="success",
         response=response_data,
     )
+    # No selected_option/recommendations pop needed here — MeridianStateDelta's
+    # own reject_ui_owned_state validator already raises before this point if
+    # either is present, so response.state_delta can never carry them.
     trip_delta = response.state_delta.trip_context.model_dump(mode="json")
-    trip_delta.pop("selected_option", None)
     merge_trip_context(state["trip_context"], trip_delta)
     matcher_delta = dict(response.state_delta.matcher_state)
-    matcher_delta.pop("recommendations", None)
     merge_operational_state(state["matcher_state"], matcher_delta)
     result: dict[str, Any] = {
         "message": response.message,
