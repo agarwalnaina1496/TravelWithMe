@@ -44,12 +44,11 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     }),
     "matched": frozenset({
         "planning",  # start_planning, once a destination is set
-        "matching",  # a matched trip's traveler_message with no active_agent
-        # set falls through to apply_scout (the generic dispatch's
-        # guide/meridian conditions don't match "matched"); Scout can then
-        # hand off to Meridian on fresh matcher intent, clearing the
-        # obsolete selected_option (scout_commands.py) — a real, tested
-        # reconsider-the-destination flow, not a bug.
+        "matching",  # a matched trip's traveler_message/continue with no
+        # genuine ambiguity to classify (the destination is already
+        # chosen, planning hasn't started) — service.py's
+        # _reopen_matching_from_matched routes straight back to Meridian,
+        # clearing the obsolete selected_option deterministically.
     }),
     "planning": frozenset({
         "plan_ready",  # apply_guide's revision turn first produces (or
@@ -135,11 +134,11 @@ def merge_operational_state(target: dict[str, Any], source: dict[str, Any]) -> N
 # "recommended" and "matched" are the third and fourth: "recommended"'s
 # outgoing write sites (select_destination -> "matched", more_like_this/
 # refinement -> "matching") already agreed with the table. "matched"
-# needed one table correction first — a matched trip's traveler_message
-# with no active_agent set falls through to apply_scout, which can hand
-# off to Meridian on fresh matcher intent (matched -> matching, clearing
-# the obsolete selection); this is a real, tested flow, not a bug, so it's
-# now a documented edge rather than an omission. As a side effect,
+# needed one table correction first — a matched trip's traveler_message/
+# continue routes straight back to Meridian (matched -> matching, clearing
+# the obsolete selection via service.py's _reopen_matching_from_matched);
+# this is a real, tested flow, not a bug, so it's now a documented edge
+# rather than an omission. As a side effect,
 # enforcing "matched" also closes select_destination's own missing
 # current-stage precondition for the one case an enforced from-stage can
 # now catch: a stray re-selection while a trip is already "matched" is
