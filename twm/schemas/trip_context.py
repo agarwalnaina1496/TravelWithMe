@@ -6,6 +6,17 @@ them under these exact names. Everything else keeps a freely chosen
 semantic key, so `extra="allow"` preserves Scout's free-form extraction.
 Values stay untyped and verbatim for every field, fixed or not — a range,
 "flexible", a month, "don't know yet", an approximate headcount.
+
+`destinations` is a second, separately-named field — not one of the five
+`FIXED_KEYS` — because it isn't genuinely 3-way shared the same way: only
+Guide gates on it as an input (Meridian produces destinations, never
+consumes one; Scout doesn't reference it). It's the one canonical
+"what's the destination" signal for both entry paths — Backend writes it
+directly when a Discover-path option is selected (`select_destination`),
+Guide extracts it from the traveler's own message on the known-destination
+path — so every downstream reader (Guide's own gate, plan-freeze, the
+trip summary/recap surfaces) has exactly one field to check, never a
+per-path fallback.
 """
 
 from typing import Any, Optional
@@ -16,6 +27,15 @@ from pydantic import BaseModel, ConfigDict, model_serializer
 # fixed-key references from this single source instead of re-hardcoding it.
 FIXED_KEYS = ("origin_city", "num_travelers", "trip_duration", "travel_dates", "budget")
 
+DESTINATIONS_KEY = "destinations"
+
+# Every addressable (non-extra) TripContext field — used only to decide
+# which fields must not round-trip as an explicit null when unset (see the
+# serializer below). Not the same thing as "shared across every phase";
+# see DESTINATIONS_KEY's own docstring note above for why it's separate
+# from FIXED_KEYS.
+_ADDRESSABLE_KEYS = (*FIXED_KEYS, DESTINATIONS_KEY)
+
 
 class TripContext(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -25,17 +45,18 @@ class TripContext(BaseModel):
     trip_duration: Optional[Any] = None
     travel_dates: Optional[Any] = None
     budget: Optional[Any] = None
+    destinations: Optional[list[str]] = None
 
     @model_serializer(mode="wrap")
     def _omit_unset_fixed_keys(self, handler: Any) -> dict[str, Any]:
-        # The five fixed keys default to None purely to make them addressable
-        # fields; unlike extra keys (which simply don't exist unless
-        # supplied), an unset fixed key must not round-trip as an explicit
+        # These addressable keys default to None purely to make them
+        # addressable fields; unlike extra keys (which simply don't exist
+        # unless supplied), an unset one must not round-trip as an explicit
         # null. An extra key explicitly set to null (e.g. Guide clearing
         # start_date) is untouched here.
         data = handler(self)
         return {
             key: value
             for key, value in data.items()
-            if value is not None or key not in FIXED_KEYS
+            if value is not None or key not in _ADDRESSABLE_KEYS
         }

@@ -129,9 +129,21 @@ def select_destination(state: dict[str, Any], option_id: str, latest: Recommenda
     if option is None:
         raise InvalidTripCommandError("Selected option is not in the latest recommendations.")
     identity = option.get("circuit_id") or option.get("destination_id")
-    state["trip_context"]["selected_option"] = {
+    # Backend/UI identity state, not a traveler-provided fact — lives as
+    # its own top-level branch (twm/services/trip_commands/state.py),
+    # never inside trip_context. No agent reads it back on any later turn;
+    # its only readers are Destinations.jsx's re-selection matching and
+    # TripPreview.jsx's entry-path analytics label, both cross-phase UI
+    # concerns, not Meridian's own operational memory.
+    state["selected_option"] = {
         "type": option["type"], "id": identity, "name": option["name"]
     }
+    # The one canonical "what's the destination" signal (twm/schemas/
+    # trip_context.py) — written here for the Discover path exactly like
+    # Guide writes it for the known-destination path, so every downstream
+    # reader (Guide's own gate, plan-freeze, the trip summary/recap) has
+    # exactly one field to check.
+    state["trip_context"]["destinations"] = [option["name"]]
     set_stage(state, "matched")
     state["active_agent"] = None
     return {"message": f"{option['name']} is confirmed.", "agent_meta": None}

@@ -101,6 +101,38 @@ def test_commit_command_raises_version_conflict_on_stale_expected_version():
     assert excinfo.value.current_version == 3
 
 
+def test_selected_option_survives_a_commit_and_reload_round_trip():
+    """Regression test: selected_option is a core trip_state field (small,
+    always-present, alongside stage/active_agent/trip_context) — not one
+    of the dedicated branch tables — so it must round-trip through
+    _CORE_STATE_FIELDS the same way trip_context already does. Forgetting
+    to list it there would let it compute correctly in memory and appear
+    in that one command's response, but never actually persist — a
+    silent, hard-to-notice data loss this test exists to catch."""
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_id = _seed_trip(db, guest_id, core_state={
+        "status": "free", "stage": "recommended", "active_agent": None, "trip_context": {},
+    })
+
+    asyncio.run(repository.commit_command(
+        _owner(guest_id), trip_id, expected_version=1,
+        idempotency_key=uuid4(), request_hash="hash",
+        trip_state={
+            "status": "free", "stage": "matched", "active_agent": None,
+            "trip_context": {"destinations": ["Goa"]},
+            "selected_option": {"type": "single", "id": "goa", "name": "Goa"},
+        },
+        response_trip_state={"trip_id": str(trip_id)}, response={"message": None, "agent_meta": None},
+        touched_branches=frozenset(),
+    ))
+
+    trip = asyncio.run(repository.get_trip(_owner(guest_id), trip_id))
+
+    assert trip.trip_state["selected_option"] == {"type": "single", "id": "goa", "name": "Goa"}
+
+
 def test_get_trip_composes_blob_branches_from_dedicated_tables():
     db = FakeDatabase(SCHEMA)
     repository = _repository(db)

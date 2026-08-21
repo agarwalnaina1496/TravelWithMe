@@ -212,16 +212,14 @@ def _supersede_planner_state(state: dict[str, Any]) -> None:
     superseded.append(
         {
             "planner_state": _guide_planner_snapshot(state),
-            "destination_context": state["trip_context"].get("destinations")
-            or state["trip_context"].get("destination"),
+            "destination_context": state["trip_context"].get("destinations"),
         }
     )
     planner["conversation_context"] = {}
     planner["places"] = []
     planner["day_plan"] = []
-    state["trip_context"].pop("destination", None)
     state["trip_context"].pop("destinations", None)
-    state["trip_context"].pop("selected_option", None)
+    state["selected_option"] = None
 
 
 def has_pending_reopen_choice(state: dict[str, Any]) -> bool:
