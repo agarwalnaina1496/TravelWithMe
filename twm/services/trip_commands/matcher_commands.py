@@ -72,11 +72,12 @@ async def apply_meridian(
         status="success",
         response=response_data,
     )
+    # No selected_option/recommendations pop needed here — MeridianStateDelta's
+    # own reject_ui_owned_state validator already raises before this point if
+    # either is present, so response.state_delta can never carry them.
     trip_delta = response.state_delta.trip_context.model_dump(mode="json")
-    trip_delta.pop("selected_option", None)
     merge_trip_context(state["trip_context"], trip_delta)
     matcher_delta = dict(response.state_delta.matcher_state)
-    matcher_delta.pop("recommendations", None)
     merge_operational_state(state["matcher_state"], matcher_delta)
     result: dict[str, Any] = {
         "message": response.message,
@@ -115,7 +116,12 @@ def _validate_refinement_reference(
         )
 
 
-def select_destination(state: dict[str, Any], option_id: str, latest: RecommendationRecord | None) -> dict[str, Any]:
+def select_destination(
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    option_id: str,
+    latest: RecommendationRecord | None,
+) -> dict[str, Any]:
     if not latest:
         raise InvalidTripCommandError("No recommendation is available to select.")
     option = next(
@@ -146,4 +152,12 @@ def select_destination(state: dict[str, Any], option_id: str, latest: Recommenda
     state["trip_context"]["destinations"] = [option["name"]]
     set_stage(state, "matched")
     state["active_agent"] = None
+    logger.info(
+        "Applied Backend-owned destination selection.",
+        event="be.trip.matcher.destination_selected",
+        source="application",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        option_type=option["type"],
+        option_id=identity,
+    )
     return {"message": f"{option['name']} is confirmed.", "agent_meta": None}

@@ -52,8 +52,8 @@ class TripContext(BaseModel):
         # These addressable keys default to None purely to make them
         # addressable fields; unlike extra keys (which simply don't exist
         # unless supplied), an unset one must not round-trip as an explicit
-        # null. An extra key explicitly set to null (e.g. Guide clearing
-        # start_date) is untouched here.
+        # null. An extra key explicitly set to null (e.g. an agent clearing
+        # a free-form fact it previously extracted) is untouched here.
         data = handler(self)
         return {
             key: value

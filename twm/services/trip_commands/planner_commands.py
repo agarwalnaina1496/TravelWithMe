@@ -8,7 +8,7 @@ from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_guide_response
 from .errors import InvalidTripCommandError
-from .state import merge_trip_context, set_stage
+from .state import merge_operational_state, merge_trip_context, set_stage
 
 
 def guide_has_started(state: dict[str, Any]) -> bool:
@@ -44,16 +44,17 @@ async def apply_guide(
             "The approved plan is frozen and cannot be changed."
         )
 
-    _validate_guide_event(event, state)
-
     if event == "APPROVE_PLAN":
         # Guide has nothing to decide here — the day plan is preserved
         # exactly and the plan freezes. Doing this deterministically instead
         # of round-tripping through the LLM only to have Backend validate
         # the plan came back unchanged saves a call with no loss of
         # quality: there is no traveler input for Guide to interpret here.
+        if not state["planner_state"].get("day_plan"):
+            raise InvalidTripCommandError("Only the latest day plan can be approved.")
         return _apply_plan_freeze(logger, state)
 
+    started_before_this_turn = guide_has_started(state)
     previous_awaiting = planner.get("conversation_context", {}).get("awaiting")
     previous_day_plan_empty = not planner.get("day_plan")
 
@@ -61,7 +62,7 @@ async def apply_guide(
     # transiently flips stage back to "planning" while Guide reprocesses,
     # mirroring recommended<->matching — day_plan itself isn't cleared
     # here, only replaced/left unchanged once Guide responds below.
-    if event == "TRAVELER_MESSAGE" and state.get("stage") == "plan_ready":
+    if state.get("stage") == "plan_ready":
         set_stage(state, "planning", logger, context="guide_revision_request")
 
     request = GuideRequest.model_validate(
@@ -74,8 +75,10 @@ async def apply_guide(
             "message": message,
         }
     )
+    # No guide_event field on the agent payload — every MESSAGE turn is
+    # handled identically (see guide.md), so there is nothing for Guide to
+    # branch on. APPROVE_PLAN never reaches here (handled above).
     agent_state = request.trip_state.model_dump(mode="json")
-    agent_state["guide_event"] = request.event
     request_data = request.model_dump(mode="json", exclude_none=True)
     trip_id = str(state.get("trip_id")) if state.get("trip_id") else None
     logger.info(
@@ -100,7 +103,10 @@ async def apply_guide(
         response=response_data,
     )
 
-    if event == "TRAVELER_MESSAGE" and response.outcome == "reopen_destination_discovery":
+    # Reconsidering the destination is only meaningful once there's an
+    # existing gate/plan to reconsider — not on the cold first call, which
+    # has nothing yet to walk back from.
+    if started_before_this_turn and response.outcome == "reopen_destination_discovery":
         return await _reopen_destination_discovery(
             engine, logger, state, message, latest_recommendation
         )
@@ -108,19 +114,26 @@ async def apply_guide(
     delta = response.state_delta
     merge_trip_context(state["trip_context"], delta.trip_context.model_dump(mode="json"))
 
+    # Same shared primitive apply_meridian uses for matcher_state — an
+    # agent's own operational memory merges the same way regardless of
+    # which specialist owns it: a dict field recurses (conversation_context
+    # overwrites just its awaiting key), everything else replaces wholesale
+    # when included (places/day_plan), and an omitted field is left alone.
     planner_delta = delta.planner_state
+    planner_delta_dict: dict[str, Any] = {}
     if planner_delta.conversation_context is not None:
-        planner.setdefault("conversation_context", {})["awaiting"] = (
-            planner_delta.conversation_context.awaiting
+        planner_delta_dict["conversation_context"] = (
+            planner_delta.conversation_context.model_dump(mode="json")
         )
     if planner_delta.places is not None:
-        planner["places"] = list(planner_delta.places)
+        planner_delta_dict["places"] = list(planner_delta.places)
     if planner_delta.day_plan is not None:
-        planner["day_plan"] = [
+        planner_delta_dict["day_plan"] = [
             day.model_dump(mode="json") for day in planner_delta.day_plan
         ]
+    merge_operational_state(planner, planner_delta_dict)
 
-    _validate_guide_transition(event, state, planner_delta, previous_awaiting)
+    _validate_guide_transition(state, planner_delta, previous_awaiting)
     planner["revision"] = int(planner.get("revision", 0)) + 1
 
     places_count = len(planner.get("places") or [])
@@ -137,15 +150,14 @@ async def apply_guide(
             places_count=places_count,
             day_plan_length=day_plan_length,
             budget_present=bool(trip_context.get("budget")),
-            preferences_present=bool(trip_context.get("preferences")),
         )
 
     # TWM-188 item 8: plan_ready mirrors recommended's role on the Discover
     # side — set whenever day_plan is non-empty after this turn, whether
     # this is the first draft or a subsequent revision response. Every
-    # other apply_guide turn (still-gating START/TRAVELER_MESSAGE with an
-    # empty day_plan) leaves stage at "planning", set upstream by
-    # start_planning/known_destination_entry/Scout's planner handoff.
+    # other apply_guide turn (still-gating, empty day_plan) leaves stage at
+    # "planning", set upstream by start_planning/entry_intent="known_
+    # destination"/Scout's planner handoff.
     if day_plan_length:
         set_stage(state, "plan_ready", logger, context="guide_plan_ready")
 
@@ -175,7 +187,6 @@ def _apply_plan_freeze(
     guide_state = {
         "destinations": trip_context.get("destinations") or [],
         "trip_duration": trip_context.get("trip_duration"),
-        "start_date": trip_context.get("start_date"),
         "places": planner.get("places") or [],
         "day_plan": planner.get("day_plan") or [],
     }
@@ -234,9 +245,10 @@ async def _reopen_destination_discovery(
     message: str | None,
     latest_recommendation: RecommendationRecord | None,
 ) -> dict[str, Any]:
-    """Backend-validated pre-itinerary Guide reversal — only reachable from
-    a TRAVELER_MESSAGE turn before the plan is frozen (frozen_plan is
-    checked before Guide is ever called).
+    """Backend-validated pre-itinerary Guide reversal — only reachable once
+    Guide has already started (apply_guide's started_before_this_turn
+    guard) and before the plan is frozen (frozen_plan is checked before
+    Guide is ever called).
 
     History-aware (TWM-188 item 3): a known-destination-direct trip
     (latest_recommendation is None, Meridian never ran) has only one
@@ -320,28 +332,11 @@ def apply_reopen_revisit(
     }
 
 
-def _validate_guide_event(event: str, state: dict[str, Any]) -> None:
-    started = guide_has_started(state)
-    if event == "START":
-        if started:
-            raise InvalidTripCommandError("Guide planning has already started.")
-        return
-    if not started:
-        raise InvalidTripCommandError("Start Guide planning before changing the plan.")
-    if event == "APPROVE_PLAN" and not state["planner_state"].get("day_plan"):
-        raise InvalidTripCommandError("Only the latest day plan can be approved.")
-
-
 def _validate_guide_transition(
-    event: str, state: dict[str, Any], planner_delta: Any, previous_awaiting: str | None
+    state: dict[str, Any], planner_delta: Any, previous_awaiting: str | None
 ) -> None:
-    if event == "START" and planner_delta.day_plan is not None:
-        raise InvalidTripCommandError(
-            "Guide returned a day plan for START, which does not build one."
-        )
     if (
-        event == "TRAVELER_MESSAGE"
-        and previous_awaiting == "anything_else"
+        previous_awaiting == "anything_else"
         and not state["planner_state"].get("conversation_context", {}).get("awaiting")
         and planner_delta.day_plan is None
     ):

@@ -1,5 +1,15 @@
 # Meridian prompt changelog
 
+## Meridian 1.12.0 — 2026-08-21
+
+- Removes every line describing what Backend or the UI does — the prompt
+  states Meridian's own job and contract only. Reworded: "Backend-
+  supplied, already-validated More like this signal" → "already-validated
+  More like this signal", "write UI-owned lifecycle state" → "write
+  lifecycle state", "stay UI-owned" → a direct negative instruction (never
+  include those fields), "remain owned by the relevant circuit-feasibility
+  validation elsewhere" → "is out of scope here".
+
 ## Meridian 1.11.0 — 2026-08-20
 
 - Added a gate before recommending, structured to directly mirror Guide's

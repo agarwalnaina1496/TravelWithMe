@@ -143,12 +143,11 @@ class TripCommandService:
         exists to roll back or delete on failure, so sequencing alone
         prevents orphan rows.
 
-        Restricted to discover_entry/known_destination_entry — the only two
-        commands that can ever start a trip with no trip_id yet. Both are
-        safe to persist via create_trip() alone: known_destination_entry's
-        Guide turn is gated
-        behind six required inputs before it can ever produce a day_plan
-        (twm/prompts/guide.md), and discover_entry's Meridian turn is now
+        Always a traveler_message-shaped turn (payload.entry_intent decides
+        Meridian vs. Guide) — the only turn that can ever start a trip with
+        no trip_id yet. Safe to persist via create_trip() alone either way:
+        Guide's turn is gated behind six required inputs before it can ever
+        produce a day_plan (twm/prompts/guide.md), and Meridian's turn is
         gated the same way before it can ever produce a recommendation
         (twm/prompts/meridian.md, TWM-189) — so neither can produce a
         recommendation/itinerary archive-table row on a first turn that
@@ -156,11 +155,11 @@ class TripCommandService:
         """
         state = canonical_state({})
         command_payload = TripCommandRequest(
-            command=payload.command,
+            command="traveler_message",
             expected_version=1,
             idempotency_key=uuid4(),
             message=payload.message,
-            destination=payload.destination,
+            entry_intent=payload.entry_intent,
         )
         try:
             result = await self._apply(state, command_payload, None)
@@ -169,7 +168,7 @@ class TripCommandService:
                 "First-message agent call failed; no trip was created.",
                 event="be.trip.first_message.failed",
                 source="application",
-                command=payload.command,
+                entry_intent=payload.entry_intent,
                 error_type=type(error).__name__,
                 detail=str(error)[:500],
             )
@@ -183,7 +182,7 @@ class TripCommandService:
                     "Meridian/Guide gates hold.",
                     event="be.trip.first_message.unexpected_archive_result",
                     source="application",
-                    command=payload.command,
+                    entry_intent=payload.entry_intent,
                     leaked_key=leaked_key,
                 )
         trip = await self.repository.create_trip(
@@ -194,7 +193,7 @@ class TripCommandService:
             event="be.trip.created",
             source="application",
             trip_id=str(trip.id),
-            command=payload.command,
+            entry_intent=payload.entry_intent,
             version=trip.version,
         )
         return TripCommandResponse(
@@ -244,7 +243,7 @@ class TripCommandService:
                     raise InvalidTripCommandError(
                         "Send a traveler message to continue an existing Guide session."
                     )
-                return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
+                return await apply_guide(self.engine, self.logger, state, "MESSAGE", None, latest_recommendation)
             if state.get("stage") == "matched":
                 self._reopen_matching_from_matched(state, context="continue_from_matched")
             if state.get("active_agent") == "meridian" or state.get("stage") in {
@@ -255,7 +254,7 @@ class TripCommandService:
                 "No agent can continue this trip from its current state."
             )
         if payload.command == "select_destination":
-            return select_destination(state, payload.option_id or "", latest_recommendation)
+            return select_destination(self.logger, state, payload.option_id or "", latest_recommendation)
         if payload.command == "start_planning":
             if not self._has_planning_destination(state["trip_context"]):
                 raise InvalidTripCommandError(
@@ -267,13 +266,9 @@ class TripCommandService:
                 )
             set_stage(state, "planning", self.logger, context="start_planning")
             state["active_agent"] = "guide"
-            return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
+            return await apply_guide(self.engine, self.logger, state, "MESSAGE", None, latest_recommendation)
         if payload.command == "approve_plan":
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None, latest_recommendation)
-        if payload.command == "discover_entry":
-            set_stage(state, "matching", self.logger, context="discover_entry")
-            state["active_agent"] = "meridian"
-            return await apply_meridian(self.engine, self.logger, state, payload.message, latest_recommendation)
         if payload.command in {"reopen_destination_revisit", "reopen_destination_fresh"}:
             if not has_pending_reopen_choice(state):
                 raise InvalidTripCommandError(
@@ -296,21 +291,23 @@ class TripCommandService:
                 if refinement
                 else None,
             )
-        if payload.command == "known_destination_entry":
-            destination = (payload.destination or "").strip()
-            if not destination:
-                return {
-                    "message": "Tell us the destination before starting the plan.",
-                    "agent_meta": None,
-                }
-            state["trip_context"]["destinations"] = [destination]
+        message = payload.message or ""
+        # Turn zero: no agent owns this trip yet, and the traveler's own
+        # Discover-vs-Plan-a-Trip choice decides who gets it — not Scout's
+        # intent detection (there's no ambiguity to classify; the UI button
+        # already answered the question). The raw message goes to that
+        # agent exactly like every later turn's does, so extraction is
+        # never a command-handler's job — only the owning agent's.
+        if payload.entry_intent == "discover":
+            set_stage(state, "matching", self.logger, context="discover_entry")
+            state["active_agent"] = "meridian"
+            return await apply_meridian(self.engine, self.logger, state, message, latest_recommendation)
+        if payload.entry_intent == "known_destination":
             set_stage(state, "planning", self.logger, context="known_destination_entry")
             state["active_agent"] = "guide"
-            return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
-
-        message = payload.message or ""
+            return await apply_guide(self.engine, self.logger, state, "MESSAGE", message, latest_recommendation)
         if state.get("stage") == "planning" or state.get("active_agent") == "guide":
-            return await apply_guide(self.engine, self.logger, state, "TRAVELER_MESSAGE", message, latest_recommendation)
+            return await apply_guide(self.engine, self.logger, state, "MESSAGE", message, latest_recommendation)
         if state.get("stage") == "recommended":
             set_stage(state, "matching", self.logger, context="refinement_traveler_message")
         elif state.get("stage") == "matched":

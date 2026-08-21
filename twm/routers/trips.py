@@ -162,7 +162,7 @@ async def start_trip_from_first_message(
         "Received first-message trip start.",
         event="be.trip.first_message.received",
         source="http",
-        command=payload.command,
+        entry_intent=payload.entry_intent,
     )
     service = TripCommandService(persistence.repository, engine, logger)
     try:
@@ -172,7 +172,7 @@ async def start_trip_from_first_message(
             "Rejected invalid first-message trip start.",
             event="be.trip.first_message.invalid",
             source="http",
-            command=payload.command,
+            entry_intent=payload.entry_intent,
             detail=str(error),
         )
         raise HTTPException(status_code=422, detail=str(error)) from error

@@ -18,7 +18,13 @@ from .trip_context import FIXED_KEYS, TripContext
 
 GuideText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 GuidePace = Literal["relaxed", "balanced", "packed"]
-GuideEvent = Literal["START", "TRAVELER_MESSAGE", "APPROVE_PLAN"]
+# No "is this the first message" distinction — Guide's job is identical
+# every turn (extract whatever the message contains, check the gates in
+# order, ask the next missing one or generate the plan once all are known),
+# whether this is a trip's very first Guide call or its fiftieth. The only
+# genuinely different event is APPROVE_PLAN, which Guide never even
+# receives — Backend applies it deterministically (see apply_guide).
+GuideEvent = Literal["MESSAGE", "APPROVE_PLAN"]
 # Fixed trip-context inputs Guide gates on before a plan can be built. Kept
 # as a small enum (like Meridian's `awaiting`) rather than free text so the
 # UI can drive it with a fixed quick-reply set. Each of the five slugs is
@@ -68,16 +74,18 @@ class GuideTripState(BaseModel):
 class GuideRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    event: GuideEvent = "START"
+    event: GuideEvent = "MESSAGE"
     trip_state: GuideTripState = Field(default_factory=GuideTripState)
+    # Optional: absent on the cold Discover-path transition (a destination
+    # was just selected via select_destination, nothing for the traveler to
+    # say yet) — Guide simply checks the gates and asks the first missing
+    # one. Present on every other MESSAGE turn.
     message: Optional[BoundedMessage] = None
 
     @model_validator(mode="after")
     def validate_request(self) -> "GuideRequest":
-        if self.event == "TRAVELER_MESSAGE" and not (
-            self.message and self.message.strip()
-        ):
-            raise ValueError("TRAVELER_MESSAGE requires a non-empty message")
+        if self.message is not None and not self.message.strip():
+            raise ValueError("message must not be blank when provided")
         validate_phase_state(self.trip_state.model_dump())
         return self
 

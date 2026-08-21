@@ -1,5 +1,57 @@
 # Guide prompt changelog
 
+## Guide 3.1.0 — 2026-08-21
+
+- Root-cause fix for the Ladakh bug: the known-destination entry path
+  previously relied on a command handler writing `trip_context.destinations`
+  directly from the raw traveler-typed field before Guide ever ran — which
+  broke when that field contained more than a bare destination name (e.g.
+  "to Ladakh, from Bangalore, couple" got stored as a literal destination).
+  The handler no longer writes `trip_context` on this path at all; the raw
+  message is passed straight through as `message`, and `destinations` joins
+  the gate sequence as Guide's own first-checked extraction step, alongside
+  the five fixed fields and the sixth open gating question.
+- Collapses the `START`/`TRAVELER_MESSAGE` event split into a single
+  `MESSAGE` event. Guide's behavior was already meant to be uniform every
+  turn (extract whatever `message` contains, check the gates in order, ask
+  the next missing one or generate the plan once all are known), so the two
+  near-duplicate "Event behavior" sections describing the same fixed-field
+  gating logic twice are replaced by one "Gating and extraction" section.
+  `GuideEvent` shrinks to `Literal["MESSAGE", "APPROVE_PLAN"]` (Guide still
+  never receives `APPROVE_PLAN`); the `guide_event` field is dropped from
+  the agent payload entirely, since it named a distinction that no longer
+  exists.
+- Removes every line describing what Backend, the UI, or another
+  specialist does — the prompt states Guide's own job and contract only.
+  Reworded: "The Backend supplies..." → "You receive...", "Backend keeps
+  the existing value for anything you omit" → "An omitted field is itself
+  the 'no change' signal", "shared across Travel With Me" → "genuinely
+  shared facts", "accumulate ... across turns and specialists" →
+  "accumulate over time", "Follow the Backend-supplied JSON Schema" →
+  "Follow the supplied JSON Schema". Removed entirely: the sentence
+  explaining Backend applies `APPROVE_PLAN` deterministically, and "Backend
+  discards any content... / Backend and the next specialist own the full
+  visible response from here" from the reopen-destination section (Guide's
+  own required output — empty `state_delta`, a brief acknowledgment — is
+  unchanged; what happens to it afterward isn't Guide's concern).
+- Drops `start_date`, `preferences`, and `exclusions` as named fields
+  anywhere in the prompt — only the five fixed keys are named; every other
+  extracted fact gets a freely chosen semantic key, no exceptions. This
+  also removes backend special-casing that assumed those exact names:
+  `start_date` is no longer forwarded from the frozen plan into Atlas's
+  `working_plan` (Atlas now always treats the trip-level start date as
+  unconfirmed — it never had a reliable way to receive one under a
+  free-form key anyway), and `preferences`/`exclusions` no longer get
+  case-insensitive union-merge treatment in `merge_trip_context` (every
+  trip_context field, fixed or free-form, now merges the same way: the
+  latest delta simply replaces the prior value for that key).
+- Merges the "Input" section into a new "Your job" section stating Guide's
+  behavior directly, instead of an itemized JSON-shape description that
+  implied a fixed set of fields is always present — the actual content of
+  `trip_context` varies by entry path (Discover-selected vs. extracted
+  from a known-destination message), so describing it as an unconditional
+  contract was misleading.
+
 ## Guide 3.0.0 — 2026-08-14
 
 - Breaking flow change: removes the two-phase `PLACES_DRAFT` →

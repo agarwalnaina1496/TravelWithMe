@@ -75,7 +75,6 @@ class AtlasWorkingPlan(BaseModel):
 
     destinations: list[AtlasText]
     trip_duration: int = Field(ge=1, le=60)
-    start_date: Optional[AtlasText] = None
     approved_places: list[AtlasText] = Field(default_factory=list)
     days: list[AtlasWorkingDay]
 

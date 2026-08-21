@@ -27,8 +27,9 @@ VALID_STAGES: frozenset[str] = frozenset(get_args(TripStage))
 # "matched" -> "matched" isn't a legal edge).
 STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     "new": frozenset({
-        "matching",   # discover_entry, or Scout handing off with matcher intent
-        "planning",   # known_destination_entry/start_planning, or Scout planner intent
+        "matching",   # traveler_message with entry_intent="discover"
+        "planning",   # traveler_message with entry_intent="known_destination",
+        # or start_planning
     }),
     "matching": frozenset({
         "recommended",  # apply_meridian succeeds with a candidate list
@@ -62,8 +63,9 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
         # choice (reopen_destination_revisit) when latest_recommendation is
         # not None — TWM-188 item 3, now wired.
         # "planned" is no longer a direct edge from here — approve_plan
-        # requires a non-empty day_plan (_validate_guide_event), which now
-        # always means stage is already "plan_ready" by the time it fires.
+        # requires a non-empty day_plan (apply_guide's own APPROVE_PLAN
+        # check), which now always means stage is already "plan_ready" by
+        # the time it fires.
     }),
     "plan_ready": frozenset({
         "planning",  # a revision request on an existing plan, transiently,
@@ -75,27 +77,9 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 
 
-# trip_context fields every specialist (Scout, Meridian, Guide) can extract
-# into independently — a later specialist's delta must accumulate onto an
-# earlier one's instead of silently dropping it, so these merge as a
-# case-insensitive-deduplicated union rather than a plain overwrite.
-_TRIP_CONTEXT_UNION_FIELDS = ("preferences", "exclusions")
-
-
 def merge_trip_context(target: dict[str, Any], source: dict[str, Any]) -> None:
     for key, value in source.items():
-        if key in _TRIP_CONTEXT_UNION_FIELDS and isinstance(value, list):
-            current = target.setdefault(key, [])
-            if not isinstance(current, list):
-                current = []
-                target[key] = current
-            seen = {item.casefold() for item in current if isinstance(item, str)}
-            for item in value:
-                if not isinstance(item, str) or item.casefold() in seen:
-                    continue
-                current.append(item)
-                seen.add(item.casefold())
-        elif isinstance(value, dict):
+        if isinstance(value, dict):
             current = target.get(key)
             if not isinstance(current, dict):
                 current = {}

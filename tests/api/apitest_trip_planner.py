@@ -151,7 +151,7 @@ def test_guide_request_logs_share_one_correlated_request_id(
 
     response = api_client.post(
         "/guide",
-        json={"event": "START", "trip_state": {"trip_context": {}}},
+        json={"event": "MESSAGE", "trip_state": {"trip_context": {}}},
     )
 
     assert response.status_code == 200
@@ -160,7 +160,7 @@ def test_guide_request_logs_share_one_correlated_request_id(
     assert len(request_ids) == 1
 
 
-def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> None:
+def test_guide_api_forwards_state_and_message_with_no_guide_event(api_client: TestClient) -> None:
     engine = async_engine()
     engine.guide.return_value = AgentExecution(
         response=guide_places_output(),
@@ -168,7 +168,7 @@ def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> N
     )
     set_engine(api_client, engine)
     payload = {
-        "event": "START",
+        "event": "MESSAGE",
         "trip_state": {
             "trip_context": {
                 "origin_city": "Delhi",
@@ -198,7 +198,6 @@ def test_guide_api_forwards_event_state_and_message(api_client: TestClient) -> N
                 "places": [],
                 "day_plan": [],
             },
-            "guide_event": "START",
         },
         "Plan a relaxed trip.",
     )
@@ -220,7 +219,7 @@ def test_guide_api_accepts_expanded_awaiting_values(api_client: TestClient) -> N
     )
     set_engine(api_client, engine)
     payload = {
-        "event": "START",
+        "event": "MESSAGE",
         "trip_state": {
             "trip_context": {"destinations": ["Ladakh"], "trip_duration": 5},
         },
@@ -251,7 +250,7 @@ def test_guide_api_uses_prompt_schema_and_common_validation(
     response = api_client.post(
         "/guide",
         json={
-            "event": "START",
+            "event": "MESSAGE",
             "trip_state": {
                 "trip_context": {
                     "destinations": ["Rishikesh"],
@@ -270,14 +269,37 @@ def test_guide_api_uses_prompt_schema_and_common_validation(
     )
     assert '"state_delta"' in invocation.system_prompt
     framed_input = json.loads(invocation.user_prompt.split("\n", 1)[1])
-    assert framed_input["trip_state"]["guide_event"] == "START"
+    # No guide_event field — every MESSAGE turn is handled identically
+    # (guide.md), so there is nothing for Guide to branch on.
+    assert "guide_event" not in framed_input["trip_state"]
     assert framed_input["trip_state"]["trip_context"] == {
         "destinations": ["Rishikesh"],
         "trip_duration": 3,
     }
 
 
-def test_guide_traveler_message_requires_message(
+def test_guide_api_accepts_a_message_less_turn(api_client: TestClient) -> None:
+    """The entry-command collapse means message is genuinely optional on a
+    MESSAGE turn — the cold Discover-path transition (a destination was
+    just selected, nothing for the traveler to say yet) has none, and
+    Guide simply checks the gates and asks the first missing one."""
+    engine = async_engine()
+    engine.guide.return_value = AgentExecution(
+        response=guide_places_output(),
+        prompt_release=PromptRelease("guide", "1.1.0", "prompt"),
+    )
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/guide",
+        json={"event": "MESSAGE", "trip_state": {}},
+    )
+
+    assert response.status_code == 200
+    engine.guide.assert_awaited_once()
+
+
+def test_guide_api_rejects_a_blank_message_when_provided(
     api_client: TestClient,
 ) -> None:
     engine = async_engine()
@@ -285,7 +307,7 @@ def test_guide_traveler_message_requires_message(
 
     response = api_client.post(
         "/guide",
-        json={"event": "TRAVELER_MESSAGE", "trip_state": {}},
+        json={"event": "MESSAGE", "trip_state": {}, "message": "   "},
     )
 
     assert response.status_code == 422
