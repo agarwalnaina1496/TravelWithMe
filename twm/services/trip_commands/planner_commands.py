@@ -8,7 +8,7 @@ from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_guide_response
 from .errors import InvalidTripCommandError
-from .state import merge_trip_context, set_stage
+from .state import merge_operational_state, merge_trip_context, set_stage
 
 
 def guide_has_started(state: dict[str, Any]) -> bool:
@@ -114,17 +114,24 @@ async def apply_guide(
     delta = response.state_delta
     merge_trip_context(state["trip_context"], delta.trip_context.model_dump(mode="json"))
 
+    # Same shared primitive apply_meridian uses for matcher_state — an
+    # agent's own operational memory merges the same way regardless of
+    # which specialist owns it: a dict field recurses (conversation_context
+    # overwrites just its awaiting key), everything else replaces wholesale
+    # when included (places/day_plan), and an omitted field is left alone.
     planner_delta = delta.planner_state
+    planner_delta_dict: dict[str, Any] = {}
     if planner_delta.conversation_context is not None:
-        planner.setdefault("conversation_context", {})["awaiting"] = (
-            planner_delta.conversation_context.awaiting
+        planner_delta_dict["conversation_context"] = (
+            planner_delta.conversation_context.model_dump(mode="json")
         )
     if planner_delta.places is not None:
-        planner["places"] = list(planner_delta.places)
+        planner_delta_dict["places"] = list(planner_delta.places)
     if planner_delta.day_plan is not None:
-        planner["day_plan"] = [
+        planner_delta_dict["day_plan"] = [
             day.model_dump(mode="json") for day in planner_delta.day_plan
         ]
+    merge_operational_state(planner, planner_delta_dict)
 
     _validate_guide_transition(state, planner_delta, previous_awaiting)
     planner["revision"] = int(planner.get("revision", 0)) + 1
