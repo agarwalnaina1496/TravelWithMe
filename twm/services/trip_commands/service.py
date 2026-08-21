@@ -144,10 +144,10 @@ class TripCommandService:
         exists to roll back or delete on failure, so sequencing alone
         prevents orphan rows.
 
-        Restricted to discover_entry/known_destination_entry (TWM-188
-        confirms scout_entry is never reached with no trip_id — only as a
-        resume of an already-existing trip). Both are safe to persist via
-        create_trip() alone: known_destination_entry's Guide turn is gated
+        Restricted to discover_entry/known_destination_entry — the only two
+        commands that can ever start a trip with no trip_id yet. Both are
+        safe to persist via create_trip() alone: known_destination_entry's
+        Guide turn is gated
         behind six required inputs before it can ever produce a day_plan
         (twm/prompts/guide.md), and discover_entry's Meridian turn is now
         gated the same way before it can ever produce a recommendation
@@ -267,24 +267,6 @@ class TripCommandService:
             return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
         if payload.command == "approve_plan":
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None, latest_recommendation)
-        if payload.command == "scout_entry":
-            # TWM-188 item 4: defense-in-depth — nothing in the live product
-            # sends scout_entry for an already-owned trip today (the
-            # frontend was fixed to send traveler_message/continue instead),
-            # but if something ever does by mistake, degrade to the
-            # already-correct active_agent-aware routing below instead of
-            # blindly re-running Scout's intent detection and risking a
-            # silent agent flip.
-            message = payload.message or ""
-            if state.get("stage") == "planning" or state.get("active_agent") == "guide":
-                return await apply_guide(self.engine, self.logger, state, "TRAVELER_MESSAGE", message, latest_recommendation)
-            if state.get("active_agent") == "meridian" or state.get("stage") in {
-                "matching", "recommended"
-            }:
-                if state.get("stage") == "recommended":
-                    set_stage(state, "matching", self.logger, context="refinement_traveler_message")
-                return await apply_meridian(self.engine, self.logger, state, message, latest_recommendation)
-            return await apply_scout(self.engine, self.logger, state, message, latest_recommendation)
         if payload.command == "discover_entry":
             set_stage(state, "matching", self.logger, context="discover_entry")
             state["active_agent"] = "meridian"

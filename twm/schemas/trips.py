@@ -40,8 +40,7 @@ class TripCreateRequest(BaseModel):
 
 
 # The two commands that can legitimately start a trip with no trip_id yet
-# (TWM-189) — scout_entry is excluded: TWM-188 confirms it is only ever
-# reached as a resume of an already-existing trip, never a fresh entry.
+# (TWM-189).
 FirstMessageCommandName = Literal["discover_entry", "known_destination_entry"]
 
 
@@ -208,7 +207,6 @@ TripCommandName = Literal[
     "select_destination",
     "start_planning",
     "approve_plan",
-    "scout_entry",
     "discover_entry",
     "known_destination_entry",
     "more_like_this",
@@ -220,7 +218,7 @@ TripCommandName = Literal[
     "keep_current_itinerary",
 ]
 
-_MESSAGE_COMMANDS = {"traveler_message", "scout_entry"}
+_MESSAGE_COMMANDS = {"traveler_message"}
 # discover_entry may optionally carry the traveler's first message (e.g. an
 # answer to "where are you traveling from?") — unlike the commands above,
 # it's never required, since Meridian can still be invoked cold.
@@ -247,10 +245,6 @@ class TripCommandRequest(BaseModel):
             self.message and self.message.strip()
         ):
             raise ValueError("traveler_message requires message")
-        if self.command == "scout_entry" and not (
-            self.message and self.message.strip()
-        ):
-            raise ValueError("scout_entry requires message")
         if self.command == "select_destination" and not self.option_id:
             raise ValueError("select_destination requires option_id")
         if self.command == "more_like_this" and self.refinement is None:
@@ -262,7 +256,7 @@ class TripCommandRequest(BaseModel):
                 "logistics_confirmation is allowed only for confirm_logistics"
             )
         if self.command not in _MESSAGE_COMMANDS and self.command not in _OPTIONAL_MESSAGE_COMMANDS and self.message is not None:
-            raise ValueError("message is allowed only for traveler_message, scout_entry, or discover_entry")
+            raise ValueError("message is allowed only for traveler_message or discover_entry")
         if self.command != "select_destination" and self.option_id is not None:
             raise ValueError("option_id is allowed only for select_destination")
         if self.command != "known_destination_entry" and self.destination is not None:
