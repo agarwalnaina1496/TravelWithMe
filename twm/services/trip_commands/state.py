@@ -63,8 +63,9 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
         # choice (reopen_destination_revisit) when latest_recommendation is
         # not None — TWM-188 item 3, now wired.
         # "planned" is no longer a direct edge from here — approve_plan
-        # requires a non-empty day_plan (_validate_guide_event), which now
-        # always means stage is already "plan_ready" by the time it fires.
+        # requires a non-empty day_plan (apply_guide's own APPROVE_PLAN
+        # check), which now always means stage is already "plan_ready" by
+        # the time it fires.
     }),
     "plan_ready": frozenset({
         "planning",  # a revision request on an existing plan, transiently,

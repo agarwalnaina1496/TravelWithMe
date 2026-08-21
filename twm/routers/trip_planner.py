@@ -35,8 +35,11 @@ async def guide(
         agent="guide",
         payload=request_data,
     )
+    # No guide_event field on the agent payload — every MESSAGE turn is
+    # handled identically (see guide.md); APPROVE_PLAN is never forwarded
+    # to Guide in the real trip-command flow (planner_commands.py), and
+    # this stateless debug route mirrors that by not exposing it either.
     agent_state = payload.trip_state.model_dump(mode="json")
-    agent_state["guide_event"] = payload.event
     execution = await engine.guide(agent_state, payload.message)
     response = _normalize_guide_response(execution)
     response_data = response.model_dump(mode="json", exclude_none=True)

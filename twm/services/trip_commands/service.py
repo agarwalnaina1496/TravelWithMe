@@ -243,7 +243,7 @@ class TripCommandService:
                     raise InvalidTripCommandError(
                         "Send a traveler message to continue an existing Guide session."
                     )
-                return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
+                return await apply_guide(self.engine, self.logger, state, "MESSAGE", None, latest_recommendation)
             if state.get("stage") == "matched":
                 self._reopen_matching_from_matched(state, context="continue_from_matched")
             if state.get("active_agent") == "meridian" or state.get("stage") in {
@@ -266,7 +266,7 @@ class TripCommandService:
                 )
             set_stage(state, "planning", self.logger, context="start_planning")
             state["active_agent"] = "guide"
-            return await apply_guide(self.engine, self.logger, state, "START", None, latest_recommendation)
+            return await apply_guide(self.engine, self.logger, state, "MESSAGE", None, latest_recommendation)
         if payload.command == "approve_plan":
             return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None, latest_recommendation)
         if payload.command in {"reopen_destination_revisit", "reopen_destination_fresh"}:
@@ -305,9 +305,9 @@ class TripCommandService:
         if payload.entry_intent == "known_destination":
             set_stage(state, "planning", self.logger, context="known_destination_entry")
             state["active_agent"] = "guide"
-            return await apply_guide(self.engine, self.logger, state, "START", message, latest_recommendation)
+            return await apply_guide(self.engine, self.logger, state, "MESSAGE", message, latest_recommendation)
         if state.get("stage") == "planning" or state.get("active_agent") == "guide":
-            return await apply_guide(self.engine, self.logger, state, "TRAVELER_MESSAGE", message, latest_recommendation)
+            return await apply_guide(self.engine, self.logger, state, "MESSAGE", message, latest_recommendation)
         if state.get("stage") == "recommended":
             set_stage(state, "matching", self.logger, context="refinement_traveler_message")
         elif state.get("stage") == "matched":

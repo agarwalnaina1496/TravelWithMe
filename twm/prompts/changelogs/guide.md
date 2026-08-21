@@ -1,5 +1,20 @@
 # Guide prompt changelog
 
+## Guide 3.2.0 — 2026-08-21
+
+- Collapses `START`/`TRAVELER_MESSAGE` into a single `MESSAGE` event —
+  Guide's behavior was already meant to be uniform every turn (extract
+  whatever `message` contains, check the gates in order, ask the next
+  missing one or generate the plan once all are known), so the two
+  near-duplicate "Event behavior" sections describing the same fixed-field
+  gating logic twice are replaced by one. `destinations` joins the gate
+  sequence as its own first-checked step instead of being a special
+  first-message-only extraction. `GuideEvent` shrinks to
+  `Literal["MESSAGE", "APPROVE_PLAN"]`; `APPROVE_PLAN` is unchanged —
+  Guide still never receives it, Backend applies it deterministically.
+  Backend's `guide_event` field is dropped from the agent payload entirely
+  (it named the removed distinction and served no other purpose).
+
 ## Guide 3.1.0 — 2026-08-21
 
 - `START` now extracts `destinations` (and any other fixed fields the

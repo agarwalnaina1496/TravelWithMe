@@ -2,7 +2,7 @@
   {
     "id": "rishikesh-start",
     "input": {
-      "event": "START",
+      "event": "MESSAGE",
       "message": "I want a three-day trip to Rishikesh from Delhi for three friends within INR 50,000.",
       "trip_context": {
         "origin_city": "Delhi",
@@ -23,7 +23,7 @@
   {
     "id": "remove-rafting-add-pilgrimage",
     "input": {
-      "event": "TRAVELER_MESSAGE",
+      "event": "MESSAGE",
       "message": "I do not like rafting. Remove it and add a pilgrimage place.",
       "trip_context": {
         "destinations": ["Rishikesh"],
@@ -50,7 +50,7 @@
   {
     "id": "anything-else-answered-generates-plan",
     "input": {
-      "event": "TRAVELER_MESSAGE",
+      "event": "MESSAGE",
       "message": "No, that's everything, thanks.",
       "trip_context": {
         "destinations": ["Rishikesh"],
@@ -80,7 +80,7 @@
   {
     "id": "remove-place-shortens-day-explains-tradeoff",
     "input": {
-      "event": "TRAVELER_MESSAGE",
+      "event": "MESSAGE",
       "message": "Actually, drop Neelkanth Mahadev Temple from day 3, I don't want to do anything that day.",
       "trip_context": {
         "destinations": ["Rishikesh"],
@@ -105,7 +105,7 @@
   {
     "id": "preserve-explicit-circuit",
     "input": {
-      "event": "START",
+      "event": "MESSAGE",
       "message": "Plan Delhi, Agra and Jaipur for seven days in that order.",
       "trip_context": {
         "destinations": ["Delhi", "Agra", "Jaipur"],
@@ -123,7 +123,7 @@
   {
     "id": "missing-duration-start",
     "input": {
-      "event": "START",
+      "event": "MESSAGE",
       "message": "I want to go to Ladakh.",
       "trip_context": {
         "destinations": ["Ladakh"]
@@ -139,7 +139,7 @@
   {
     "id": "missing-origin-start",
     "input": {
-      "event": "START",
+      "event": "MESSAGE",
       "message": "Plan a five day trip to Ladakh.",
       "trip_context": {
         "destinations": ["Ladakh"],
@@ -156,7 +156,7 @@
   {
     "id": "missing-travelers-start",
     "input": {
-      "event": "START",
+      "event": "MESSAGE",
       "message": "Plan a five day trip to Ladakh from Delhi.",
       "trip_context": {
         "destinations": ["Ladakh"],
@@ -174,7 +174,7 @@
   {
     "id": "missing-dates-start",
     "input": {
-      "event": "START",
+      "event": "MESSAGE",
       "message": "Two of us are going from Delhi to Ladakh for five days.",
       "trip_context": {
         "destinations": ["Ladakh"],
@@ -193,7 +193,7 @@
   {
     "id": "missing-budget-start",
     "input": {
-      "event": "START",
+      "event": "MESSAGE",
       "message": "We're not sure of exact dates, maybe sometime in October.",
       "trip_context": {
         "destinations": ["Ladakh"],
@@ -213,7 +213,7 @@
   {
     "id": "all-fixed-inputs-known-start",
     "input": {
-      "event": "START",
+      "event": "MESSAGE",
       "message": "Budget is flexible, around 60 to 70k.",
       "trip_context": {
         "destinations": ["Ladakh"],

@@ -201,7 +201,9 @@ class FakeCommandEngine:
 
     async def guide(self, trip_state, message):
         self.calls.append(("guide", trip_state, message))
-        is_start = trip_state["guide_event"] == "START"
+        # No guide_event on the payload any more — a fresh call has no
+        # places yet, same signal apply_guide's own gating logic uses.
+        is_start = not trip_state["planner_state"].get("places")
         return AgentExecution(
             response={
                 "message": (
@@ -257,12 +259,11 @@ class FakeHandoffEngine(FakeCommandEngine):
 class FakeGuideLifecycleEngine(FakeCommandEngine):
     async def guide(self, trip_state, message):
         self.calls.append(("guide", trip_state, message))
-        event = trip_state["guide_event"]
         planner_state = dict(trip_state["planner_state"])
         # APPROVE_PLAN never reaches the engine — Backend applies it
         # deterministically — so there is no branch for it here.
         planner_delta = {}
-        if event == "TRAVELER_MESSAGE" and planner_state.get("places") and not planner_state.get("day_plan"):
+        if planner_state.get("places") and not planner_state.get("day_plan"):
             # Single-step generation: places already known, no day_plan yet.
             planner_delta["day_plan"] = [
                 {
@@ -986,7 +987,7 @@ def test_traveler_message_generates_places_and_day_plan_together(api_client: Tes
     )
     assert response.status_code == 200
     saved = response.json()["trip"]["trip_state"]
-    assert engine.calls[0][1]["guide_event"] == "TRAVELER_MESSAGE"
+    assert engine.calls[0][0] == "guide"
     assert saved["planner_state"]["revision"] == 3
     day_plan = saved["planner_state"]["day_plan"]
     assert day_plan
@@ -1986,7 +1987,6 @@ def test_start_planning_invokes_guide_from_backend_owned_destination(api_client:
     assert first.status_code == 200
     assert replay.json() == first.json()
     assert [call[0] for call in engine.calls] == ["guide"]
-    assert engine.calls[0][1]["guide_event"] == "START"
     saved = first.json()["trip"]["trip_state"]
     assert saved["stage"] == "planning"
     assert saved["active_agent"] == "guide"
@@ -2309,7 +2309,6 @@ def test_known_destination_entry_intent_invokes_guide_with_the_travelers_raw_mes
     assert response.status_code == 200
     assert [call[0] for call in engine.calls] == ["guide"]
     assert engine.calls[0][2] == "Goa"
-    assert engine.calls[0][1]["guide_event"] == "START"
     # trip_context reaches Guide unmodified — Backend never wrote to it;
     # FakeCommandEngine's canned response is what actually populates
     # destinations here, exactly as a real Guide extraction would.
