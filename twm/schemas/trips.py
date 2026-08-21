@@ -122,6 +122,13 @@ class TripSummaryState(BaseModel):
     awaiting: str | None = None
     has_day_plan: bool = False
     has_places: bool = False
+    # TWM-190: mirrors has_day_plan's role for the Discover side — whether a
+    # matcher round has ever been archived for this trip, regardless of
+    # current stage. Lets a "matching"-stage resume distinguish a genuinely
+    # fresh Meridian conversation from a refinement round awaiting
+    # clarification (stage stays "matching" but a prior recommendation
+    # already exists), without a second fetch.
+    has_recommendation: bool = False
 
 
 class TripSummary(BaseModel):

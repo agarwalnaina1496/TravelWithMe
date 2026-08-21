@@ -131,6 +131,13 @@ class MemoryTripRepository:
         rounds = self.recommendations.get(trip_id) or []
         return rounds[-1] if rounds else None
 
+    async def trip_ids_with_recommendations(self, owner, trip_ids):
+        owned = {trip.id for trip in self.trips.values() if _owned_by(trip, owner)}
+        return {
+            trip_id for trip_id in trip_ids
+            if trip_id in owned and self.recommendations.get(trip_id)
+        }
+
     async def list_itinerary_versions(self, owner, trip_id):
         trip = await self.get_trip(owner, trip_id)
         if not trip:
@@ -570,10 +577,37 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
         "awaiting": None,
         "has_day_plan": False,
         "has_places": False,
+        "has_recommendation": False,
     }
     assert "ui_state" not in summary
     assert "matcher_state" not in summary["trip_state"]
     assert "planner_state" not in summary["trip_state"]
+
+
+def test_list_trips_has_recommendation_reflects_an_archived_matcher_round(api_client: TestClient):
+    """TWM-190: has_recommendation is looked up from the matcher_recommendations
+    table (never embedded in trip_state), independent of current stage —
+    true once any round has ever been archived for the trip, even if a
+    later refinement round is what's actually current."""
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    with_recs = _create_seeded_trip(
+        api_client, repository, title="Has recs",
+        trip_state={"stage": "matching", "trip_context": {"origin": "Delhi"}},
+    )
+    without_recs = _create_seeded_trip(
+        api_client, repository, title="No recs",
+        trip_state={"stage": "matching", "trip_context": {"origin": "Mumbai"}},
+    )
+    _seed_recommendation(repository, UUID(with_recs["id"]), options=[
+        {"rank": 1, "type": "single", "destination_id": "goa", "name": "Goa"}
+    ])
+
+    listed = api_client.get("/trips").json()["trips"]
+    by_title = {trip["title"]: trip["trip_state"]["has_recommendation"] for trip in listed}
+    assert by_title["Has recs"] is True
+    assert by_title["No recs"] is False
 
 
 def test_list_trips_excludes_a_trip_with_no_trip_context(api_client: TestClient):

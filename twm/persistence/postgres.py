@@ -266,6 +266,21 @@ class PostgresTripRepository:
         )
         return _recommendation_record(row) if row else None
 
+    async def trip_ids_with_recommendations(self, owner: TripOwner, trip_ids: list[UUID]) -> set[UUID]:
+        """TWM-190: batched existence check (never the records themselves) for
+        GET /trips's has_recommendation summary signal — mirrors the
+        planner/itinerary batching in list_trips's _batch_list_summary_branches,
+        one query regardless of trip count rather than a per-trip fetch."""
+        if not trip_ids:
+            return set()
+        rows = await self.pool.fetch(
+            f"""SELECT DISTINCT r.trip_id FROM {self.schema}.matcher_recommendations r
+            JOIN {self.schema}.trips t ON t.id = r.trip_id
+            WHERE r.trip_id = ANY($1::uuid[]) AND {_owner_clause(owner, 2, alias="t")}""",
+            trip_ids, _owner_value(owner),
+        )
+        return {row["trip_id"] for row in rows}
+
     async def list_itinerary_versions(self, owner: TripOwner, trip_id: UUID) -> list[ItineraryVersionRecord]:
         rows = await self.pool.fetch(
             f"""SELECT r.* FROM {self.schema}.itinerary_versions r
