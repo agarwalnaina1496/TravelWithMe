@@ -205,6 +205,15 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
     state.setdefault("status", "free")
     state.setdefault("stage", "new")
     state.setdefault("active_agent", "scout")
+    # Backend/UI identity state — which exact Meridian recommendation
+    # option (if any) the traveler picked. Deliberately not inside
+    # trip_context: no agent ever reads it back, and it needs to stay
+    # readable past Meridian's own phase (TripPreview.jsx's entry-path
+    # analytics label reads it during planning/plan_ready/planned). A
+    # top-level sibling of trip_context/matcher_state/planner_state, same
+    # tier as stage/active_agent — set by select_destination
+    # (matcher_commands.py), cleared by the reopen-matching paths.
+    state.setdefault("selected_option", None)
     object_branches = {
         "trip_context": {},
         # advisor_state carries only read-back handoff context (Scout/
@@ -233,7 +242,10 @@ TOUCHABLE_BRANCHES = ("matcher_state", "planner_state", "itinerary_state", "logi
 # Always-present fields a command response needs regardless of what a
 # command touched — everything resume/CTA logic and the next command's
 # routing decision (service.py's stage/active_agent dispatch) depends on.
-_CORE_FIELDS = ("trip_id", "status", "stage", "active_agent", "trip_context")
+# selected_option is small like trip_context (not a large/variable branch),
+# and TripPreview.jsx's entry-path analytics needs it fresh after any
+# command, not only the one that happened to touch it.
+_CORE_FIELDS = ("trip_id", "status", "stage", "active_agent", "trip_context", "selected_option")
 
 
 def snapshot_touchable_branches(state: dict[str, Any]) -> dict[str, Any]:

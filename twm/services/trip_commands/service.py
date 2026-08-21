@@ -331,22 +331,17 @@ class TripCommandService:
         (clear the now-obsolete selection, flip stage) deterministically
         instead, since there's no genuine ambiguity left to classify at
         this exact point in the flow."""
-        state["trip_context"].pop("selected_option", None)
+        state["selected_option"] = None
+        state["trip_context"].pop("destinations", None)
         set_stage(state, "matching", self.logger, context=context)
 
     @staticmethod
     def _has_planning_destination(trip_context: dict[str, Any]) -> bool:
-        selected = trip_context.get("selected_option")
-        if isinstance(selected, dict) and any(
-            selected.get(key) for key in ("id", "name")
-        ):
-            return True
-        for key in ("destination", "destinations", "destination_name"):
-            value = trip_context.get(key)
-            if isinstance(value, str) and value.strip():
-                return True
-            if isinstance(value, list) and any(
-                isinstance(item, str) and item.strip() for item in value
-            ):
-                return True
-        return False
+        # destinations (twm/schemas/trip_context.py) is the one canonical
+        # "what's the destination" signal for both entry paths — written
+        # directly by select_destination for Discover, extracted by Guide
+        # itself for known-destination. No other key means this any more.
+        destinations = trip_context.get("destinations")
+        return bool(destinations) and any(
+            isinstance(item, str) and item.strip() for item in destinations
+        )

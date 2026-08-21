@@ -532,7 +532,7 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
 
     state = {
         "stage": "matching",
-        "trip_context": {"origin_city": "Delhi", "origin": "Delhi", "budget": "₹1,00,000"},
+        "trip_context": {"origin_city": "Delhi", "budget": "₹1,00,000", "not_a_recap_field": "ignored"},
         "matcher_state": {"conversation_context": {"awaiting": None}},
     }
     ui_state = {"destinationsOpenId": "gwalior-orchha-khajuraho-panna"}
@@ -544,7 +544,7 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
     assert summary["trip_state"] == {
         "stage": "matching",
         "itinerary_state": {"status": None},
-        "trip_context": {"origin": "Delhi", "budget": "₹1,00,000"},
+        "trip_context": {"origin_city": "Delhi", "budget": "₹1,00,000"},
         "awaiting": None,
         "has_day_plan": False,
         "has_places": False,
@@ -876,9 +876,51 @@ def test_deterministic_selection_uses_latest_backend_recommendation(api_client: 
     assert response.status_code == 200
     saved = response.json()["trip"]["trip_state"]
     assert saved["stage"] == "matched"
-    assert saved["trip_context"]["selected_option"] == {
+    # Backend/UI identity state — its own top-level branch, never nested
+    # inside trip_context (twm/services/trip_commands/state.py).
+    assert saved["selected_option"] == {
         "type": "single", "id": "rishikesh", "name": "Rishikesh"
     }
+    # The one canonical "what's the destination" signal (twm/schemas/
+    # trip_context.py) — written here for the Discover path exactly like
+    # Guide writes it for the known-destination path, so start_planning's
+    # own precondition and the trip summary/recap have exactly one field
+    # to check, never a per-path fallback.
+    assert saved["trip_context"]["destinations"] == ["Rishikesh"]
+
+
+def test_reopening_matching_from_matched_clears_both_destination_signals(api_client: TestClient):
+    """Regression test: select_destination's selected_option and
+    destinations must be cleared together when a matched trip reconsiders
+    its destination — leaving one stale would let a later start_planning
+    (or the trip summary) see a destination that's no longer actually
+    chosen."""
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "matched",
+        "active_agent": None,
+        "selected_option": {"type": "single", "id": "goa", "name": "Goa"},
+        "trip_context": {"destinations": ["Goa"]},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "traveler_message",
+            "message": "Actually suggest mountains instead",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    saved = response.json()["trip"]["trip_state"]
+    assert saved["selected_option"] is None
+    assert "destinations" not in saved["trip_context"]
 
 
 def test_select_destination_rejects_a_stray_reselection_when_already_matched(api_client: TestClient):
@@ -893,7 +935,7 @@ def test_select_destination_rejects_a_stray_reselection_when_already_matched(api
     state = {
         "stage": "matched",
         "active_agent": None,
-        "trip_context": {"selected_option": {"type": "single", "id": "rishikesh", "name": "Rishikesh"}},
+        "selected_option": {"type": "single", "id": "rishikesh", "name": "Rishikesh"},
     }
     trip = _create_seeded_trip(api_client, repository, trip_state=state)
     _seed_recommendation(repository, UUID(trip["id"]), options=[
@@ -914,7 +956,7 @@ def test_select_destination_rejects_a_stray_reselection_when_already_matched(api
     saved = api_client.get(f"/trips/{trip['id']}").json()
     assert saved["version"] == 1
     assert saved["trip_state"]["stage"] == "matched"
-    assert saved["trip_state"]["trip_context"]["selected_option"]["id"] == "rishikesh"
+    assert saved["trip_state"]["selected_option"]["id"] == "rishikesh"
 
 
 def test_traveler_message_generates_places_and_day_plan_together(api_client: TestClient):
@@ -1924,11 +1966,10 @@ def test_start_planning_invokes_guide_from_backend_owned_destination(api_client:
         "advisor_state": None,
         "matcher_state": None,
         "planner_state": None,
-        "trip_context": {
-            "selected_option": {
-                "type": "single", "id": "rishikesh", "name": "Rishikesh"
-            }
+        "selected_option": {
+            "type": "single", "id": "rishikesh", "name": "Rishikesh"
         },
+        "trip_context": {"destinations": ["Rishikesh"]},
     }
     trip = _create_seeded_trip(
         api_client, repository, title="Rishikesh", trip_state=state
@@ -2051,10 +2092,8 @@ def test_matched_traveler_message_reopens_matching_and_clears_obsolete_selection
     state = {
         "stage": "matched",
         "active_agent": None,
-        "trip_context": {
-            "selected_option": {
-                "type": "single", "id": "goa", "name": "Goa"
-            }
+        "selected_option": {
+            "type": "single", "id": "goa", "name": "Goa"
         },
     }
     trip = _create_seeded_trip(api_client, repository, trip_state=state)
@@ -2070,8 +2109,10 @@ def test_matched_traveler_message_reopens_matching_and_clears_obsolete_selection
 
     assert response.status_code == 200
     assert [call[0] for call in engine.calls] == ["meridian"]
+    # selected_option is never part of trip_context at all any more, so it
+    # never reaches an agent's request either.
     assert "selected_option" not in engine.calls[0][1]["trip_context"]
-    assert "selected_option" not in response.json()["trip"]["trip_state"]["trip_context"]
+    assert response.json()["trip"]["trip_state"]["selected_option"] is None
 
 
 def test_matched_continue_also_reopens_matching_and_clears_obsolete_selection(api_client: TestClient):
@@ -2084,10 +2125,8 @@ def test_matched_continue_also_reopens_matching_and_clears_obsolete_selection(ap
     state = {
         "stage": "matched",
         "active_agent": None,
-        "trip_context": {
-            "selected_option": {
-                "type": "single", "id": "goa", "name": "Goa"
-            }
+        "selected_option": {
+            "type": "single", "id": "goa", "name": "Goa"
         },
     }
     trip = _create_seeded_trip(api_client, repository, trip_state=state)
@@ -2104,7 +2143,7 @@ def test_matched_continue_also_reopens_matching_and_clears_obsolete_selection(ap
     assert [call[0] for call in engine.calls] == ["meridian"]
     assert engine.calls[0][2] is None
     assert "selected_option" not in engine.calls[0][1]["trip_context"]
-    assert "selected_option" not in response.json()["trip"]["trip_state"]["trip_context"]
+    assert response.json()["trip"]["trip_state"]["selected_option"] is None
 
 
 def test_discover_entry_passes_the_travelers_first_message_directly_to_meridian(

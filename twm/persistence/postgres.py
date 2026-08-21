@@ -19,7 +19,7 @@ _ITINERARY_BRANCH = "itinerary_state"
 
 # trips.trip_state now holds only these non-touchable fields; everything
 # else lives in the dedicated branch tables above.
-_CORE_STATE_FIELDS = ("status", "stage", "active_agent", "trip_context", "advisor_state")
+_CORE_STATE_FIELDS = ("status", "stage", "active_agent", "trip_context", "advisor_state", "selected_option")
 
 
 def _owner_clause(owner: TripOwner, index: int, *, alias: str = "") -> str:
