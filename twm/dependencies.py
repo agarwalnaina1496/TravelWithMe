@@ -34,6 +34,7 @@ def get_trusted_action_service(
     return TrustedActionService(
         logger=logger,
         settings=request.app.state.trusted_action_settings,
+        route_classifier=request.app.state.route_classifier,
     )
 
 

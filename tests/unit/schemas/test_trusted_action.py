@@ -288,18 +288,29 @@ def test_trusted_action_cannot_be_built_from_an_atlas_reference_payload():
         TrustedAction(**reference.model_dump())
 
 
-# --- Feasibility: honesty tag for LLM-estimated modes ------------------------
+# --- Feasibility: honesty tag for the route-classifier's judgement ----------
 
 
-def test_computed_mode_must_not_carry_a_verification_tag():
+def test_unknown_status_mode_does_not_require_a_verification_tag():
+    feasibility = ModeFeasibility(
+        mode="flight",
+        status="unknown",
+        duration_source="llm_estimated",
+        reason="Could not confidently assess this route.",
+    )
+    assert feasibility.verification is None
+
+
+def test_unknown_status_mode_can_never_claim_verified():
     with pytest.raises(ValidationError):
         ModeFeasibility(
             mode="flight",
-            status="feasible",
-            duration_source="computed",
-            estimated_duration_minutes=120,
-            reason="Direct flight available.",
-            verification=AtlasReference(status="GENERAL_GUIDANCE"),
+            status="unknown",
+            duration_source="llm_estimated",
+            reason="Could not confidently assess this route.",
+            verification=AtlasReference(
+                status="VERIFIED", source_title="x", source_url="https://example.com/x"
+            ),
         )
 
 
@@ -352,12 +363,14 @@ def test_llm_estimated_duration_over_bound_is_rejected():
         )
 
 
-def test_mode_source_mismatch_is_rejected():
+def test_invalid_duration_source_literal_is_rejected():
+    # duration_source is now always "llm_estimated" (TWM-195) — the old
+    # deterministic "computed" source no longer exists on the contract.
     with pytest.raises(ValidationError):
         ModeFeasibility(
             mode="drive",
             status="feasible",
-            duration_source="llm_estimated",
+            duration_source="computed",
             reason="x",
             verification=AtlasReference(status="GENERAL_GUIDANCE"),
         )
@@ -368,10 +381,18 @@ def test_feasibility_assessment_rejects_duplicate_modes():
         TripFeasibilityAssessment(
             modes=[
                 ModeFeasibility(
-                    mode="flight", status="feasible", duration_source="computed", reason="Direct route."
+                    mode="flight",
+                    status="feasible",
+                    duration_source="llm_estimated",
+                    reason="Direct route.",
+                    verification=AtlasReference(status="GENERAL_GUIDANCE"),
                 ),
                 ModeFeasibility(
-                    mode="flight", status="ruled_out", duration_source="computed", reason="Duplicate."
+                    mode="flight",
+                    status="ruled_out",
+                    duration_source="llm_estimated",
+                    reason="Duplicate.",
+                    verification=AtlasReference(status="GENERAL_GUIDANCE"),
                 ),
             ]
         )
@@ -380,8 +401,20 @@ def test_feasibility_assessment_rejects_duplicate_modes():
 def test_feasibility_assessment_with_mixed_modes_succeeds():
     assessment = TripFeasibilityAssessment(
         modes=[
-            ModeFeasibility(mode="flight", status="feasible", duration_source="computed", reason="Direct route."),
-            ModeFeasibility(mode="drive", status="ruled_out", duration_source="computed", reason="Too far to drive."),
+            ModeFeasibility(
+                mode="flight",
+                status="feasible",
+                duration_source="llm_estimated",
+                reason="Direct route.",
+                verification=AtlasReference(status="GENERAL_GUIDANCE"),
+            ),
+            ModeFeasibility(
+                mode="drive",
+                status="ruled_out",
+                duration_source="llm_estimated",
+                reason="Too far to drive.",
+                verification=AtlasReference(status="GENERAL_GUIDANCE"),
+            ),
             ModeFeasibility(
                 mode="train",
                 status="feasible",

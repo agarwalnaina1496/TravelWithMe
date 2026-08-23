@@ -77,14 +77,18 @@ Security posture (structural, not documentation):
   action as verified evidence or evidence as an actionable link.
 
 Feasibility reasoning (mode/stay comparisons where TWM has no live
-provider): flight and drive duration/distance estimates are Backend-computed
-deterministically and carry no honesty tag (they are not model output).
-Train and bus durations are not derivable deterministically today, so they
-are LLM-estimated, bounded, and must carry the same VERIFIED/GENERAL_GUIDANCE
-tag Atlas already uses (imported directly from ``twm/schemas/atlas.py`` to
-avoid duplicating its honesty-validator logic) — and are structurally
-forbidden from ever claiming ``VERIFIED``, since an LLM duration estimate is
-never fact-checked.
+provider): all four transport modes (flight/train/bus/drive) are judged
+together, per route, by an internal LLM route-mode-plausibility classifier
+(TWM-195, ``twm/services/trusted_action/route_classifier.py``) — there is no
+deterministic distance/routing computation anywhere in this path anymore.
+A rendered judgement (``status`` feasible/ruled_out) must carry the same
+VERIFIED/GENERAL_GUIDANCE tag Atlas already uses (imported directly from
+``twm/schemas/atlas.py`` to avoid duplicating its honesty-validator logic)
+and is structurally forbidden from ever claiming ``VERIFIED``, since a
+classifier judgement is never fact-checked. When the classifier could not
+produce a confident, valid judgement for a mode, ``status`` is
+``"unknown"`` instead — never a fabricated feasible/ruled_out — and no
+verification tag is required.
 
 This is a read/query-style resolution boundary, matching
 ``twm/services/flight_search/service.py``'s framing: it never mutates trip
@@ -207,17 +211,26 @@ class ActionTarget(BaseModel):
         return url
 
 
-DurationSource = Literal["computed", "llm_estimated"]
+DurationSource = Literal["llm_estimated"]
 TransportMode = Literal["flight", "train", "bus", "drive"]
-FeasibilityStatus = Literal["feasible", "ruled_out"]
+# TWM-195: a route-mode-plausibility classifier (an internal LLM helper
+# inside Trusted Actions, see twm/services/trusted_action/route_classifier.py)
+# now judges all four modes together for every route -- there is no more
+# deterministically Backend-computed mode (the previous static-city-table/
+# haversine "computed" path for flight/drive has been removed entirely, not
+# kept as a fallback). "unknown" is a new, distinct status for when the
+# classifier could not produce a confident, valid judgement (missing/failed/
+# timed-out/invalid/uncertain) -- it must never be conflated with
+# "feasible", and the UI must never render an "unknown" mode as a normal
+# bookable option.
+FeasibilityStatus = Literal["feasible", "ruled_out", "unknown"]
 
-# flight/drive are Backend-computed deterministically; train/bus have no
-# deterministic source today and are LLM-estimated.
-_COMPUTED_MODES: frozenset[TransportMode] = frozenset({"flight", "drive"})
-_LLM_ESTIMATED_MODES: frozenset[TransportMode] = frozenset({"train", "bus"})
-
-# Sane upper bound for an LLM-estimated overland duration (3 days), to keep
-# a hallucinated figure from propagating unbounded.
+# duration_source is now always "llm_estimated": every mode's feasibility
+# judgement (feasible/ruled_out/unknown alike) originates from the route
+# classifier's LLM call, never from a deterministic computation. The type
+# keeps its own name (rather than collapsing to a plain bool) so a future,
+# genuinely deterministic source (e.g. a real routing/geocoding provider)
+# can be added later as a new literal value without another rename.
 _MAX_ESTIMATED_DURATION_MINUTES = 4320
 
 
@@ -230,41 +243,38 @@ class ModeFeasibility(BaseModel):
     estimated_duration_minutes: Optional[int] = Field(default=None, ge=1)
     estimated_distance_km: Optional[float] = Field(default=None, ge=0)
     reason: TrustedActionText
-    # Required (and bounded to GENERAL_GUIDANCE) only for llm_estimated
-    # modes; always None for computed modes, since a deterministic
-    # computation is not model output and has nothing to fact-check.
+    # Required (and bounded to GENERAL_GUIDANCE, never VERIFIED) whenever the
+    # classifier actually rendered a judgement (status feasible/ruled_out).
+    # None for status="unknown": no judgement was made, so there is nothing
+    # to attach an honesty tag to.
     verification: Optional[AtlasReference] = None
 
     @model_validator(mode="after")
-    def validate_mode_and_source(self) -> "ModeFeasibility":
-        if self.mode in _COMPUTED_MODES and self.duration_source != "computed":
-            raise ValueError(f"mode {self.mode} must use duration_source=computed")
-        if self.mode in _LLM_ESTIMATED_MODES and self.duration_source != "llm_estimated":
-            raise ValueError(f"mode {self.mode} must use duration_source=llm_estimated")
-        return self
-
-    @model_validator(mode="after")
     def validate_verification_honesty(self) -> "ModeFeasibility":
-        if self.duration_source == "computed":
-            if self.verification is not None:
-                raise ValueError("computed durations must not carry a verification tag")
-        else:  # llm_estimated
+        if self.status == "unknown":
+            if self.verification is not None and self.verification.status == "VERIFIED":
+                raise ValueError(
+                    "an unknown-status mode must never carry a VERIFIED tag"
+                )
+        else:  # feasible / ruled_out
             if self.verification is None:
-                raise ValueError("llm_estimated durations require a verification tag")
+                raise ValueError(
+                    "feasible/ruled_out modes require a verification tag"
+                )
             if self.verification.status == "VERIFIED":
                 raise ValueError(
-                    "an llm_estimated duration must never claim VERIFIED — it is not fact-checked"
+                    "a route-classifier judgement must never claim VERIFIED — "
+                    "it is not fact-checked"
                 )
         return self
 
     @model_validator(mode="after")
     def validate_bounds(self) -> "ModeFeasibility":
         if (
-            self.duration_source == "llm_estimated"
-            and self.estimated_duration_minutes is not None
+            self.estimated_duration_minutes is not None
             and self.estimated_duration_minutes > _MAX_ESTIMATED_DURATION_MINUTES
         ):
-            raise ValueError("llm_estimated duration exceeds the bounded maximum")
+            raise ValueError("estimated duration exceeds the bounded maximum")
         return self
 
 

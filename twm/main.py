@@ -26,10 +26,12 @@ from .services import (
     AgentAdapterTimeoutError,
     AgentEngineSettings,
     AgentOutputError,
+    build_agent_adapter,
     get_agent_engine,
 )
 from .services.flight_search import FlightSearchSettings, AviasalesAdapter
 from .services.trusted_action import TrustedActionSettings
+from .services.trusted_action.route_classifier import LLMRouteClassifier
 from .telemetry import (
     CORRELATION_HEADERS,
     TelemetryContextMiddleware,
@@ -50,8 +52,12 @@ async def application_lifespan(app: FastAPI):
             http_client = await stack.enter_async_context(
                 httpx.AsyncClient(timeout=float(settings.n8n_timeout_seconds))
             )
+        agent_adapter = build_agent_adapter(settings, http_client)
         app.state.agent_engine = get_agent_engine(
-            settings, app.state.telemetry, http_client
+            settings, app.state.telemetry, http_client, adapter=agent_adapter
+        )
+        app.state.route_classifier = LLMRouteClassifier(
+            adapter=agent_adapter, logger=app.state.telemetry
         )
         app.state.flight_search_settings = flight_search_settings
         if flight_search_settings.is_configured:

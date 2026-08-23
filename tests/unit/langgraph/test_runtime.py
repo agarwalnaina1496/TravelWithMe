@@ -48,6 +48,7 @@ def test_settings_validate_only_selected_engine(
         "n8n_meridian_webhook_url": "https://agents.test/meridian",
         "n8n_guide_webhook_url": "https://agents.test/guide",
         "n8n_atlas_webhook_url": "https://agents.test/atlas",
+        "n8n_route_classifier_webhook_url": "https://agents.test/route-classifier",
     }
     monkeypatch.setattr(
         settings_module.property_loader,

@@ -14,6 +14,7 @@ from .agent_engine import (
     GenerationConfig,
     LangGraphAgentAdapter,
     N8NAgentAdapter,
+    build_agent_adapter,
     get_agent_engine,
 )
 from .langgraph import LangGraphRuntime
@@ -33,5 +34,6 @@ __all__ = [
     "LangGraphAgentAdapter",
     "LangGraphRuntime",
     "N8NAgentAdapter",
+    "build_agent_adapter",
     "get_agent_engine",
 ]

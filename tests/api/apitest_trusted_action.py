@@ -373,9 +373,32 @@ def test_readiness_rejection_is_logged(api_client: TestClient):
 # --- Feasibility endpoint ---------------------------------------------------
 
 
-def test_feasibility_endpoint_returns_computed_flight_and_drive_modes(api_client: TestClient):
+class _FixedClassifier:
+    """Deterministic RouteClassifier fake for API-boundary tests — the
+    engine call itself is covered by tests/unit/trusted_action/
+    test_route_classifier.py."""
+
+    def __init__(self, plausibility):
+        self._plausibility = plausibility
+
+    async def classify(self, origin, destination):
+        return self._plausibility
+
+
+def _override_feasibility_classifier(plausibility):
+    app.dependency_overrides[get_trusted_action_service] = lambda: TrustedActionService(
+        logger=_logger(),
+        settings=TrustedActionSettings(ixigo_affiliate_id=None, travelpayouts_marker=None),
+        route_classifier=_FixedClassifier(plausibility),
+    )
+
+
+def test_feasibility_endpoint_returns_route_valid_modes_from_the_classifier(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_persistence(repository)
+    _override_feasibility_classifier(
+        {"flight": True, "train": True, "bus": True, "drive": True}
+    )
     trip_id = _create_trip(api_client)
 
     response = api_client.post(
@@ -387,38 +410,69 @@ def test_feasibility_endpoint_returns_computed_flight_and_drive_modes(api_client
     body = response.json()
     assert body is not None
     modes = {mode["mode"]: mode for mode in body["modes"]}
-    assert modes["flight"]["duration_source"] == "computed"
-    assert modes["flight"]["verification"] is None
-    assert modes["drive"]["duration_source"] == "computed"
-    assert "train" not in modes
-    assert "bus" not in modes
+    assert set(modes) == {"flight", "train", "bus", "drive"}
+    for mode in modes.values():
+        assert mode["status"] == "feasible"
+        assert mode["duration_source"] == "llm_estimated"
+        assert mode["verification"]["status"] == "GENERAL_GUIDANCE"
+    app.dependency_overrides.pop(get_trusted_action_service, None)
 
 
-def test_feasibility_endpoint_rules_out_drive_for_a_long_distance(api_client: TestClient):
+def test_feasibility_endpoint_rules_out_route_absurd_modes(api_client: TestClient):
+    # Bhubaneswar -> Puri: flight is route-absurd for this local hop.
     repository = MemoryTripRepository()
     _override_persistence(repository)
+    _override_feasibility_classifier(
+        {"flight": False, "train": True, "bus": True, "drive": True}
+    )
     trip_id = _create_trip(api_client)
 
     response = api_client.post(
         f"/trips/{trip_id}/trusted-action/feasibility",
-        json={"origin": "Delhi", "destination": "Chennai"},
+        json={"origin": "Bhubaneswar", "destination": "Puri"},
     )
 
     assert response.status_code == 200
     body = response.json()
     modes = {mode["mode"]: mode for mode in body["modes"]}
-    assert modes["drive"]["status"] == "ruled_out"
-    assert modes["flight"]["status"] == "feasible"
+    assert modes["flight"]["status"] == "ruled_out"
+    assert modes["train"]["status"] == "feasible"
+    assert modes["bus"]["status"] == "feasible"
+    assert modes["drive"]["status"] == "feasible"
+    app.dependency_overrides.pop(get_trusted_action_service, None)
 
 
-def test_feasibility_endpoint_returns_null_for_unknown_cities(api_client: TestClient):
+def test_feasibility_endpoint_returns_unknown_never_feasible_when_classifier_cannot_assess(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    _override_feasibility_classifier(None)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Some Remote Village", "destination": "Another Remote Village"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    modes = {mode["mode"]: mode for mode in body["modes"]}
+    assert set(modes) == {"flight", "train", "bus", "drive"}
+    for mode in modes.values():
+        assert mode["status"] == "unknown"
+        assert mode["verification"] is None
+    app.dependency_overrides.pop(get_trusted_action_service, None)
+
+
+def test_feasibility_endpoint_returns_null_for_a_degenerate_route(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_persistence(repository)
     trip_id = _create_trip(api_client)
 
     response = api_client.post(
         f"/trips/{trip_id}/trusted-action/feasibility",
-        json={"origin": "Atlantis", "destination": "Narnia"},
+        json={"origin": "Goa", "destination": "Goa"},
     )
 
     assert response.status_code == 200
@@ -434,3 +488,34 @@ def test_feasibility_endpoint_unknown_trip_returns_404(api_client: TestClient):
         json={"origin": "Delhi", "destination": "Agra"},
     )
     assert response.status_code == 404
+
+
+def test_feasibility_resolved_is_logged_with_status_breakdown(api_client: TestClient):
+    repository = MemoryTripRepository()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True, environment="test", payload_mode=PayloadMode.METADATA, max_field_size=256
+        ),
+        sink,
+    )
+    _override_persistence(repository)
+    app.dependency_overrides[get_logger] = lambda: logger
+    app.dependency_overrides[get_trusted_action_service] = lambda: TrustedActionService(
+        logger=logger,
+        settings=TrustedActionSettings(ixigo_affiliate_id=None, travelpayouts_marker=None),
+        route_classifier=_FixedClassifier({"flight": False, "train": True, "bus": True, "drive": True}),
+    )
+    trip_id = _create_trip(api_client)
+
+    api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Bhubaneswar", "destination": "Puri"},
+    )
+
+    events = {event["event"]: event for event in sink.events}
+    assert "be.trusted_action.feasibility.requested" in events
+    resolved = events["be.trusted_action.feasibility.resolved"]
+    assert resolved["fields"]["ruled_out_modes"] == ["flight"]
+    assert set(resolved["fields"]["feasible_modes"]) == {"train", "bus", "drive"}
+    app.dependency_overrides.pop(get_trusted_action_service, None)

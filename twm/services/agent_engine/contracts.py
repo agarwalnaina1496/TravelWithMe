@@ -49,6 +49,21 @@ class AgentAdapter(Protocol):
     ) -> AgentInvocationResult:
         ...
 
+    async def invoke_raw(self, invocation: AgentInvocation) -> AgentInvocationResult:
+        """Invoke the engine for a small, non-trip_state, non-AgentName caller.
+
+        TWM-195's Trusted Actions route-mode classifier is the first caller:
+        it needs a single structured system/user prompt turn and raw text
+        back, without being shoehorned into the scout/meridian/guide/atlas
+        AgentName dispatch (which is trip_state-shaped and versioned by
+        ``twm/prompt_registry.py``, neither of which applies to this small
+        internal helper). Both engines implement this the same shape as
+        ``invoke`` — a raw completion, no schema validation — so
+        higher-level callers (e.g. the route classifier) own their own
+        strict parsing instead of reusing ``AgentExecutionService``.
+        """
+        ...
+
 
 class AgentEngine(Protocol):
     async def scout(

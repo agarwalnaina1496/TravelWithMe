@@ -28,9 +28,21 @@ class N8NAgentAdapter:
             "guide": self._settings.n8n_guide_webhook_url,
             "atlas": self._settings.n8n_atlas_webhook_url,
         }
+        return await self._post(agent, urls[agent] or "", invocation)
+
+    async def invoke_raw(self, invocation: AgentInvocation) -> AgentInvocationResult:
+        return await self._post(
+            "route_classifier",
+            self._settings.n8n_route_classifier_webhook_url or "",
+            invocation,
+        )
+
+    async def _post(
+        self, agent: str, url: str, invocation: AgentInvocation
+    ) -> AgentInvocationResult:
         try:
             response = await self._http_client.post(
-                urls[agent] or "",
+                url,
                 json={
                     "system_prompt": invocation.system_prompt,
                     "user_prompt": invocation.user_prompt,

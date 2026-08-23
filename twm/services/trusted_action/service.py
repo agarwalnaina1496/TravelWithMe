@@ -33,8 +33,9 @@ from ...schemas.trusted_action import (
 )
 from ...telemetry import TelemetryLogger
 from .calculations import missing_required_fields, resolve_partner
-from .feasibility import DistanceEstimator, DurationEstimator, StaticCityDistanceEstimator, assess_trip_feasibility
+from .feasibility import assess_trip_feasibility
 from .resolvers import resolve_partner_target
+from .route_classifier import NullRouteClassifier, RouteClassifier
 from .settings import TrustedActionSettings
 
 _MISSING_INPUT_MESSAGE = "Tell us the missing trip details so we can build this action."
@@ -45,8 +46,7 @@ _UNSUPPORTED_PARTNER_MESSAGE = "No approved partner is available for this reques
 class TrustedActionService:
     logger: TelemetryLogger
     settings: TrustedActionSettings
-    distance_estimator: DistanceEstimator = field(default_factory=StaticCityDistanceEstimator)
-    duration_estimator: Optional[DurationEstimator] = None
+    route_classifier: RouteClassifier = field(default_factory=NullRouteClassifier)
 
     def resolve(self, trip_id: UUID, request: TrustedActionRequest) -> TrustedActionResult:
         generated_at = datetime.now(timezone.utc)
@@ -130,13 +130,41 @@ class TrustedActionService:
         self._log_resolved(trip_id, action)
         return TrustedActionResult(status="resolved", generated_at=generated_at, action=action)
 
-    def assess_feasibility(self, origin: str, destination: str) -> Optional[TripFeasibilityAssessment]:
-        return assess_trip_feasibility(
-            origin,
-            destination,
-            distance_estimator=self.distance_estimator,
-            duration_estimator=self.duration_estimator,
+    async def assess_feasibility(
+        self, trip_id: UUID, origin: str, destination: str
+    ) -> Optional[TripFeasibilityAssessment]:
+        self.logger.info(
+            "Received trip-feasibility assessment request.",
+            event="be.trusted_action.feasibility.requested",
+            source="application",
+            trip_id=str(trip_id),
+            segment_count=1,
         )
+        assessment = await assess_trip_feasibility(
+            origin, destination, classifier=self.route_classifier
+        )
+        if assessment is None:
+            self.logger.warning(
+                "Trip-feasibility assessment skipped for a degenerate route.",
+                event="be.trusted_action.feasibility.degenerate_route",
+                source="application",
+                trip_id=str(trip_id),
+            )
+            return None
+
+        by_status: dict[str, list[str]] = {"feasible": [], "ruled_out": [], "unknown": []}
+        for entry in assessment.modes:
+            by_status[entry.status].append(entry.mode)
+        self.logger.info(
+            "Resolved trip-feasibility assessment.",
+            event="be.trusted_action.feasibility.resolved",
+            source="application",
+            trip_id=str(trip_id),
+            feasible_modes=by_status["feasible"],
+            ruled_out_modes=by_status["ruled_out"],
+            unknown_modes=by_status["unknown"],
+        )
+        return assessment
 
     def _log_resolved(self, trip_id: UUID, action: TrustedAction) -> None:
         self.logger.info(
