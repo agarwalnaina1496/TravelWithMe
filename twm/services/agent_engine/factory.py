@@ -16,10 +16,12 @@ def build_agent_adapter(
     """Construct the engine-selected adapter on its own.
 
     Split out from ``get_agent_engine`` so a caller that needs the raw
-    ``AgentAdapter`` (e.g. Trusted Actions' route-mode classifier, TWM-195 —
-    a small internal helper that must not go through the trip_state/
-    AgentName-shaped ``AgentExecutionService`` dispatch) can share the same
+    ``AgentAdapter`` directly, without going through the trip_state/
+    AgentName-shaped ``AgentExecutionService`` dispatch, can share the same
     engine-selected adapter instance instead of constructing a second one.
+    (TWM-195 originally added this split for an internal route-mode
+    classifier; that classifier was rejected on re-review and removed, but
+    this split-adapter shape remains a reasonable general seam.)
     """
 
     if settings.engine == "n8n":
