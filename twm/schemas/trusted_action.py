@@ -76,19 +76,19 @@ Security posture (structural, not documentation):
   construct one from the other's data (see tests) and cannot present an
   action as verified evidence or evidence as an actionable link.
 
-Feasibility reasoning (mode/stay comparisons where TWM has no live
-provider): all four transport modes (flight/train/bus/drive) are judged
-together, per route, by an internal LLM route-mode-plausibility classifier
-(TWM-195, ``twm/services/trusted_action/route_classifier.py``) — there is no
-deterministic distance/routing computation anywhere in this path anymore.
-A rendered judgement (``status`` feasible/ruled_out) must carry the same
-VERIFIED/GENERAL_GUIDANCE tag Atlas already uses (imported directly from
-``twm/schemas/atlas.py`` to avoid duplicating its honesty-validator logic)
-and is structurally forbidden from ever claiming ``VERIFIED``, since a
-classifier judgement is never fact-checked. When the classifier could not
-produce a confident, valid judgement for a mode, ``status`` is
-``"unknown"`` instead — never a fabricated feasible/ruled_out — and no
-verification tag is required.
+Feasibility reasoning (TWM-195 root-fix contract): ``TripFeasibilityAssessment``
+is a single ``modes`` list of only genuinely route-valid, bookable
+transport modes for a leg, produced by deterministic Backend rule code
+(``twm/services/trusted_action/feasibility.py``) — there is no LLM/agent/
+classifier runtime anywhere in this path (an internal LLM route-mode
+classifier was tried and explicitly rejected in prior review rounds; see
+Linear TWM-195). A route this data cannot confidently assess returns
+``modes: []`` — never a fabricated "everything is feasible" fallback and
+never all four modes by default. Every entry that is returned must carry
+the same GENERAL_GUIDANCE honesty tag Atlas already uses (imported directly
+from ``twm/schemas/atlas.py`` to avoid duplicating its honesty-validator
+logic) and is structurally forbidden from ever claiming ``VERIFIED``, since
+a rule-based judgement is not itself a fact-checked, sourced claim.
 
 This is a read/query-style resolution boundary, matching
 ``twm/services/flight_search/service.py``'s framing: it never mutates trip
@@ -211,26 +211,27 @@ class ActionTarget(BaseModel):
         return url
 
 
-DurationSource = Literal["llm_estimated"]
+# TWM-195: distance/duration figures attached to a returned mode are now
+# always derived from this module's bounded, deterministic city-distance
+# table (twm/services/trusted_action/feasibility.py), never an LLM estimate
+# -- "llm_estimated" would be a lie about provenance now that the classifier
+# is gone, so this is renamed to "computed" to stay honest about where the
+# number came from (mirrors this file's existing honesty-tag conventions,
+# e.g. ModeFeasibility.verification never claiming VERIFIED for a rule-based
+# judgement). Kept as its own Literal (not collapsed to a bool) so a future
+# real routing/geocoding provider can be added as a new literal value later.
+DurationSource = Literal["computed"]
 TransportMode = Literal["flight", "train", "bus", "drive"]
-# TWM-195: a route-mode-plausibility classifier (an internal LLM helper
-# inside Trusted Actions, see twm/services/trusted_action/route_classifier.py)
-# now judges all four modes together for every route -- there is no more
-# deterministically Backend-computed mode (the previous static-city-table/
-# haversine "computed" path for flight/drive has been removed entirely, not
-# kept as a fallback). "unknown" is a new, distinct status for when the
-# classifier could not produce a confident, valid judgement (missing/failed/
-# timed-out/invalid/uncertain) -- it must never be conflated with
-# "feasible", and the UI must never render an "unknown" mode as a normal
-# bookable option.
-FeasibilityStatus = Literal["feasible", "ruled_out", "unknown"]
+# TWM-195 root-fix contract: modes only ever contains genuinely route-valid,
+# bookable entries -- there is no more ruled_out/unknown bucket to express,
+# because non-feasible modes are simply absent from the list (see
+# TripFeasibilityAssessment). The Literal is collapsed to its single actual
+# value per the Linear issue's explicit direction that keeping `status` at
+# all is "transitional/redundant" -- this keeps the field temporarily (to
+# avoid churn to every existing ModeFeasibility construction site) while
+# removing the now-pointless three-way branching it used to require.
+FeasibilityStatus = Literal["feasible"]
 
-# duration_source is now always "llm_estimated": every mode's feasibility
-# judgement (feasible/ruled_out/unknown alike) originates from the route
-# classifier's LLM call, never from a deterministic computation. The type
-# keeps its own name (rather than collapsing to a plain bool) so a future,
-# genuinely deterministic source (e.g. a real routing/geocoding provider)
-# can be added later as a new literal value without another rename.
 _MAX_ESTIMATED_DURATION_MINUTES = 4320
 
 
@@ -243,29 +244,20 @@ class ModeFeasibility(BaseModel):
     estimated_duration_minutes: Optional[int] = Field(default=None, ge=1)
     estimated_distance_km: Optional[float] = Field(default=None, ge=0)
     reason: TrustedActionText
-    # Required (and bounded to GENERAL_GUIDANCE, never VERIFIED) whenever the
-    # classifier actually rendered a judgement (status feasible/ruled_out).
-    # None for status="unknown": no judgement was made, so there is nothing
-    # to attach an honesty tag to.
+    # Required on every entry now (modes only ever holds feasible entries).
+    # Bounded to GENERAL_GUIDANCE, never VERIFIED -- a deterministic rule
+    # judgement is not itself a fact-checked, sourced claim.
     verification: Optional[AtlasReference] = None
 
     @model_validator(mode="after")
     def validate_verification_honesty(self) -> "ModeFeasibility":
-        if self.status == "unknown":
-            if self.verification is not None and self.verification.status == "VERIFIED":
-                raise ValueError(
-                    "an unknown-status mode must never carry a VERIFIED tag"
-                )
-        else:  # feasible / ruled_out
-            if self.verification is None:
-                raise ValueError(
-                    "feasible/ruled_out modes require a verification tag"
-                )
-            if self.verification.status == "VERIFIED":
-                raise ValueError(
-                    "a route-classifier judgement must never claim VERIFIED — "
-                    "it is not fact-checked"
-                )
+        if self.verification is None:
+            raise ValueError("a feasible mode requires a verification tag")
+        if self.verification.status == "VERIFIED":
+            raise ValueError(
+                "a deterministic route-rule judgement must never claim "
+                "VERIFIED — it is not fact-checked"
+            )
         return self
 
     @model_validator(mode="after")
@@ -279,15 +271,18 @@ class ModeFeasibility(BaseModel):
 
 
 class TripFeasibilityAssessment(BaseModel):
-    """Per-mode feasibility reasoning for a route (flight/train/bus/drive),
-    split into two non-overlapping buckets (TWM-195 PR-review fix: backend
-    must never return a route-absurd mode as a normal/bookable option).
+    """TWM-195 root-fix contract: the single, route-valid/bookable mode list
+    for a leg (flight/train/bus/drive), produced by deterministic Backend
+    rule code, never an LLM/agent/classifier runtime.
 
-    ``modes`` holds only genuinely bookable options (``status="feasible"``).
-    ``excluded_modes`` holds non-bookable metadata/explanations for a mode
-    the classifier ruled out or could not judge (``status="ruled_out"`` or
-    ``"unknown"``). A caller must never render anything from
-    ``excluded_modes`` as a selectable option.
+    ``modes`` holds only genuinely feasible entries -- there is no
+    ``excluded_modes`` field and no per-mode ``ruled_out``/``unknown``
+    status exposed to callers; a mode that is not route-valid is simply
+    absent from the list. A route this data cannot confidently assess (or a
+    leg with zero genuine modes) returns ``modes: []`` -- Backend must never
+    fail open to "assume everything is feasible". A route can genuinely
+    have anywhere from 0 to 4 feasible modes; nothing here assumes all four
+    must be judged or present.
 
     Distinct from any action: this never carries a price, only a
     feasibility judgement and a duration/distance estimate with an honest
@@ -297,29 +292,12 @@ class TripFeasibilityAssessment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     modes: list[ModeFeasibility] = Field(default_factory=list)
-    excluded_modes: list[ModeFeasibility] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_unique_modes(self) -> "TripFeasibilityAssessment":
-        # Every ModeFeasibility.status must match the bucket it's in, and
-        # each of the four TransportMode values must appear exactly once
-        # across modes + excluded_modes combined (never in both, never
-        # twice, never omitted) -- the classifier always judges all four.
-        for entry in self.modes:
-            if entry.status != "feasible":
-                raise ValueError(
-                    "modes may only contain status='feasible' entries; "
-                    "ruled_out/unknown entries belong in excluded_modes"
-                )
-        for entry in self.excluded_modes:
-            if entry.status not in ("ruled_out", "unknown"):
-                raise ValueError(
-                    "excluded_modes may only contain status='ruled_out' or "
-                    "status='unknown' entries; feasible entries belong in modes"
-                )
-        combined = [entry.mode for entry in (*self.modes, *self.excluded_modes)]
-        if len(combined) != len(set(combined)):
-            raise ValueError("each transport mode may appear at most once")
+        modes = [entry.mode for entry in self.modes]
+        if len(modes) != len(set(modes)):
+            raise ValueError("each transport mode may appear at most once in modes")
         return self
 
 

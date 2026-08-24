@@ -42,18 +42,7 @@ class AgentExecution:
 
 
 class AgentAdapter(Protocol):
-    """Invoke one engine and return generated output for common validation.
-
-    ``invoke_raw`` (a small, non-trip_state, non-AgentName escape hatch
-    originally used by TWM-195's Trusted Actions route-mode classifier) is
-    deliberately NOT part of this general protocol (PR-review fix,
-    TWM-195): only ``LangGraphAgentAdapter`` implements it now, since the
-    route-mode classifier always uses the LangGraph/LLM path directly
-    regardless of the primary ``agent_engine`` setting (there is no
-    deployed n8n classifier workflow). Callers that need it depend on
-    ``LangGraphAgentAdapter`` concretely instead of this Protocol -- see
-    ``twm/services/trusted_action/route_classifier.py``.
-    """
+    """Invoke one engine and return generated output for common validation."""
 
     async def invoke(
         self, agent: AgentName, invocation: AgentInvocation

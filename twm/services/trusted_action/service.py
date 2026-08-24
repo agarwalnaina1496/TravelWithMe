@@ -18,9 +18,8 @@ a specific partner/capability). ``assess_feasibility`` is exposed as its
 own service method / router endpoint rather than folded in.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from ...schemas.trusted_action import (
@@ -35,7 +34,6 @@ from ...telemetry import TelemetryLogger
 from .calculations import missing_required_fields, resolve_partner
 from .feasibility import assess_trip_feasibility
 from .resolvers import resolve_partner_target
-from .route_classifier import NullRouteClassifier, RouteClassifier
 from .settings import TrustedActionSettings
 
 _MISSING_INPUT_MESSAGE = "Tell us the missing trip details so we can build this action."
@@ -46,7 +44,6 @@ _UNSUPPORTED_PARTNER_MESSAGE = "No approved partner is available for this reques
 class TrustedActionService:
     logger: TelemetryLogger
     settings: TrustedActionSettings
-    route_classifier: RouteClassifier = field(default_factory=NullRouteClassifier)
 
     def resolve(self, trip_id: UUID, request: TrustedActionRequest) -> TrustedActionResult:
         generated_at = datetime.now(timezone.utc)
@@ -130,9 +127,14 @@ class TrustedActionService:
         self._log_resolved(trip_id, action)
         return TrustedActionResult(status="resolved", generated_at=generated_at, action=action)
 
-    async def assess_feasibility(
+    def assess_feasibility(
         self, trip_id: UUID, origin: str, destination: str
-    ) -> Optional[TripFeasibilityAssessment]:
+    ) -> TripFeasibilityAssessment:
+        """Deterministic, synchronous route-mode feasibility assessment
+        (TWM-195 root fix -- no classifier/LLM/agent call of any kind).
+        Always returns a real ``TripFeasibilityAssessment``; ``modes`` is
+        empty when the route could not be confidently assessed."""
+
         self.logger.info(
             "Received trip-feasibility assessment request.",
             event="be.trusted_action.feasibility.requested",
@@ -140,30 +142,25 @@ class TrustedActionService:
             trip_id=str(trip_id),
             segment_count=1,
         )
-        assessment = await assess_trip_feasibility(
-            origin, destination, classifier=self.route_classifier
-        )
-        if assessment is None:
+        assessment = assess_trip_feasibility(origin, destination)
+        returned_modes = [entry.mode for entry in assessment.modes]
+        if returned_modes:
+            self.logger.info(
+                "Resolved trip-feasibility assessment.",
+                event="be.trusted_action.feasibility.resolved",
+                source="application",
+                trip_id=str(trip_id),
+                returned_mode_count=len(returned_modes),
+                returned_modes=returned_modes,
+            )
+        else:
             self.logger.warning(
-                "Trip-feasibility assessment skipped for a degenerate route.",
-                event="be.trusted_action.feasibility.degenerate_route",
+                "Trip-feasibility assessment resolved with no route-valid "
+                "modes (cannot-assess or genuinely no bookable modes).",
+                event="be.trusted_action.feasibility.empty",
                 source="application",
                 trip_id=str(trip_id),
             )
-            return None
-
-        by_status: dict[str, list[str]] = {"feasible": [], "ruled_out": [], "unknown": []}
-        for entry in (*assessment.modes, *assessment.excluded_modes):
-            by_status[entry.status].append(entry.mode)
-        self.logger.info(
-            "Resolved trip-feasibility assessment.",
-            event="be.trusted_action.feasibility.resolved",
-            source="application",
-            trip_id=str(trip_id),
-            feasible_modes=by_status["feasible"],
-            ruled_out_modes=by_status["ruled_out"],
-            unknown_modes=by_status["unknown"],
-        )
         return assessment
 
     def _log_resolved(self, trip_id: UUID, action: TrustedAction) -> None:

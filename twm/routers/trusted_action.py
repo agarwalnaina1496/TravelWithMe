@@ -58,7 +58,7 @@ async def resolve_trusted_action(
     return trusted_action.resolve(trip_id, payload)
 
 
-@router.post("/{trip_id}/trusted-action/feasibility", response_model=TripFeasibilityAssessment | None)
+@router.post("/{trip_id}/trusted-action/feasibility", response_model=TripFeasibilityAssessment)
 async def assess_trip_feasibility(
     trip_id: UUID,
     payload: TripFeasibilityRequest,
@@ -70,7 +70,7 @@ async def assess_trip_feasibility(
     trusted_action: TrustedAction,
 ):
     await _get_owned_trip(trip_id, request, response, persistence, current_user, logger, "trusted_action_feasibility")
-    return await trusted_action.assess_feasibility(trip_id, payload.origin, payload.destination)
+    return trusted_action.assess_feasibility(trip_id, payload.origin, payload.destination)
 
 
 async def _get_owned_trip(trip_id, request, response, persistence, current_user, logger, log_prefix):

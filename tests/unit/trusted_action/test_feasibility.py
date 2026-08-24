@@ -1,191 +1,92 @@
-"""Pure-function coverage for the trip-feasibility calculator (TWM-195).
-
-Takes no TrustedActionRequest input anywhere — origin/destination are plain
-strings and the classifier is a plain injected ``RouteClassifier`` protocol
-implementation, not a schema model.
+"""Pure-function coverage for the deterministic trip-feasibility calculator
+(TWM-195 root-fix rewrite). No classifier, no LLM, no agent-engine call --
+``assess_trip_feasibility`` is a plain synchronous function over two plain
+strings.
 """
-
-import asyncio
-
-import pytest
 
 from twm.services.trusted_action.feasibility import assess_trip_feasibility
 
 
-class _FixedClassifier:
-    """Returns a fixed plausibility mapping (or None) regardless of route."""
+def test_degenerate_route_returns_empty_modes_never_none():
+    same_city = assess_trip_feasibility("Paris", "paris")
+    assert same_city.modes == []
 
-    def __init__(self, plausibility):
-        self._plausibility = plausibility
-
-    async def classify(self, origin, destination):
-        return self._plausibility
+    blank_destination = assess_trip_feasibility("Somewhere", "")
+    assert blank_destination.modes == []
 
 
-class _RecordingClassifier:
-    """Records how many times / with what args it was called, so a test
-    can prove all four modes are judged together in one call."""
-
-    def __init__(self, plausibility):
-        self._plausibility = plausibility
-        self.calls = []
-
-    async def classify(self, origin, destination):
-        self.calls.append((origin, destination))
-        return self._plausibility
-
-
-def _run(coro):
-    return asyncio.run(coro)
-
-
-def test_removed_static_city_table_and_haversine_symbols_do_not_exist():
-    """Regression guard (TWM-195): the old ~20-city haversine path must be
-    gone entirely, not kept as a fallback."""
-    import twm.services.trusted_action.feasibility as feasibility_module
-
-    for removed_symbol in (
-        "_KNOWN_CITY_COORDINATES",
-        "StaticCityDistanceEstimator",
-        "DistanceEstimator",
-        "DurationEstimator",
-        "_DRIVE_INFEASIBLE_ABOVE_KM",
-        "_haversine_km",
-    ):
-        assert not hasattr(feasibility_module, removed_symbol), removed_symbol
-
-
-def test_degenerate_route_returns_none():
-    assert _run(
-        assess_trip_feasibility("Paris", "Paris", classifier=_FixedClassifier(None))
-    ) is None
-    assert _run(
-        assess_trip_feasibility("", "Somewhere", classifier=_FixedClassifier(None))
-    ) is None
-
-
-def test_classifier_is_called_once_for_all_four_modes_together():
-    classifier = _RecordingClassifier(
-        {"flight": True, "train": False, "bus": False, "drive": True}
-    )
-    result = _run(
-        assess_trip_feasibility("Bhubaneswar", "Puri", classifier=classifier)
-    )
-    assert result is not None
-    assert len(classifier.calls) == 1
-    assert classifier.calls[0] == ("Bhubaneswar", "Puri")
-    combined = {mode.mode for mode in (*result.modes, *result.excluded_modes)}
-    assert combined == {"flight", "train", "bus", "drive"}
-
-
-def test_local_route_rules_out_route_absurd_modes_like_flight():
-    # Bhubaneswar -> Puri: a local/short-hop route where flight is
-    # route-absurd (Linear TWM-195 acceptance criterion).
-    result = _run(
-        assess_trip_feasibility(
-            "Bhubaneswar",
-            "Puri",
-            classifier=_FixedClassifier(
-                {"flight": False, "train": True, "bus": True, "drive": True}
-            ),
-        )
-    )
-    # PR-review fix (TWM-195): a route-absurd mode must never come back as
-    # a normal/bookable option in `modes` -- it belongs only in
-    # `excluded_modes`, as non-bookable metadata.
-    bookable_modes = {mode.mode for mode in result.modes}
-    assert "flight" not in bookable_modes
-    by_excluded = {mode.mode: mode for mode in result.excluded_modes}
-    assert by_excluded["flight"].status == "ruled_out"
-    by_mode = {mode.mode: mode for mode in result.modes}
-    assert by_mode["train"].status == "feasible"
-    assert by_mode["bus"].status == "feasible"
-    assert by_mode["drive"].status == "feasible"
-
-
-def test_multi_valid_mode_route_keeps_all_route_valid_modes():
-    # Bangalore -> Mangalore: multiple modes can legitimately all be valid;
-    # Backend must not prune to one "best" mode (that is a UI concern).
-    result = _run(
-        assess_trip_feasibility(
-            "Bangalore",
-            "Mangalore",
-            classifier=_FixedClassifier(
-                {"flight": True, "train": True, "bus": True, "drive": False}
-            ),
-        )
-    )
-    by_mode = {mode.mode: mode for mode in result.modes}
-    assert by_mode["flight"].status == "feasible"
-    assert by_mode["train"].status == "feasible"
-    assert by_mode["bus"].status == "feasible"
-    assert "drive" not in by_mode
-    by_excluded = {mode.mode: mode for mode in result.excluded_modes}
-    assert by_excluded["drive"].status == "ruled_out"
-
-
-def test_unknown_classification_produces_unknown_for_every_mode_never_feasible():
-    result = _run(
-        assess_trip_feasibility(
-            "Some Remote Village", "Another Remote Village", classifier=_FixedClassifier(None)
-        )
-    )
-    assert result is not None
+def test_unknown_city_pair_returns_completely_empty_modes_fail_closed():
+    # Regression guard: an unknown pair must return modes: [] -- never
+    # partially feasible, and never conflated with "everything feasible"
+    # (the original TWM-195 bug).
+    result = assess_trip_feasibility("Nowhere Mapped", "Somewhere Else Unmapped")
     assert result.modes == []
-    for mode in result.excluded_modes:
-        assert mode.status == "unknown"
-        assert mode.verification is None
 
 
-def test_unknown_route_previously_in_and_out_of_the_static_table_are_treated_consistently():
-    # Delhi (previously in the removed static table) and a village that was
-    # never in it must behave identically now — both routed purely through
-    # the classifier, with no special-cased table lookup for either.
-    known_city_result = _run(
-        assess_trip_feasibility("Delhi", "Somewhere Unmapped", classifier=_FixedClassifier(None))
-    )
-    unknown_city_result = _run(
-        assess_trip_feasibility(
-            "Nowhere Mapped", "Somewhere Unmapped", classifier=_FixedClassifier(None)
-        )
-    )
-    assert known_city_result.modes == []
-    assert unknown_city_result.modes == []
-    assert {mode.status for mode in known_city_result.excluded_modes} == {"unknown"}
-    assert {mode.status for mode in unknown_city_result.excluded_modes} == {"unknown"}
+def test_one_known_one_unknown_city_still_returns_empty_modes():
+    # Only one side missing from the bounded table is still "unknown" for
+    # the pair -- Backend must not partially assess using only one side.
+    result = assess_trip_feasibility("Delhi", "Somewhere Totally Unmapped")
+    assert result.modes == []
 
 
-def test_feasible_and_ruled_out_modes_carry_general_guidance_verification():
-    result = _run(
-        assess_trip_feasibility(
-            "Delhi",
-            "Agra",
-            classifier=_FixedClassifier(
-                {"flight": True, "train": True, "bus": True, "drive": True}
-            ),
-        )
-    )
-    for mode in result.modes:
-        assert mode.status == "feasible"
-        assert mode.verification is not None
-        assert mode.verification.status == "GENERAL_GUIDANCE"
-    assert result.excluded_modes == []
+def test_short_hop_route_excludes_flight_but_includes_train_bus_drive():
+    # Bhubaneswar -> Puri (~60km): a local/short-hop route where flight is
+    # route-absurd (Linear TWM-195 acceptance criterion).
+    result = assess_trip_feasibility("Bhubaneswar", "Puri")
+    modes = {entry.mode for entry in result.modes}
+    assert "flight" not in modes
+    assert modes == {"train", "bus", "drive"}
 
 
-def test_route_absurd_mode_never_appears_in_bookable_modes():
-    # Regression guard for the PR-review fix: no matter the mix of
-    # feasible/ruled_out/unknown, a non-feasible mode must never leak into
-    # `modes` (the bookable/normal-options list).
-    result = _run(
-        assess_trip_feasibility(
-            "Bhubaneswar",
-            "Puri",
-            classifier=_FixedClassifier(
-                {"flight": False, "train": True, "bus": False, "drive": True}
-            ),
-        )
-    )
-    assert {mode.status for mode in result.modes} == {"feasible"}
-    assert {mode.status for mode in result.excluded_modes} <= {"ruled_out", "unknown"}
-    assert {mode.mode for mode in result.modes} == {"train", "drive"}
-    assert {mode.mode for mode in result.excluded_modes} == {"flight", "bus"}
+def test_very_short_hop_route_excludes_flight_puri_to_konark():
+    # Puri -> Konark (~35km): the other short-hop example from the Linear
+    # issue's calibration set.
+    result = assess_trip_feasibility("Puri", "Konark")
+    modes = {entry.mode for entry in result.modes}
+    assert "flight" not in modes
+    assert modes == {"train", "bus", "drive"}
+
+
+def test_medium_distance_route_includes_flight_train_and_bus():
+    # Bangalore -> Mangalore (~352km): the story's own multi-mode
+    # acceptance example -- flight, train, and bus must all be returned.
+    result = assess_trip_feasibility("Bangalore", "Mangalore")
+    modes = {entry.mode for entry in result.modes}
+    assert {"flight", "train", "bus"} <= modes
+    # Comfortably under the drive threshold too.
+    assert "drive" in modes
+
+
+def test_long_distance_route_excludes_drive_but_includes_flight():
+    # Delhi -> Chennai is well beyond the drive threshold but a normal
+    # domestic flight distance.
+    result = assess_trip_feasibility("Delhi", "Chennai")
+    modes = {entry.mode for entry in result.modes}
+    assert "drive" not in modes
+    assert "flight" in modes
+    assert {"train", "bus"} <= modes
+
+
+def test_returned_modes_carry_general_guidance_verification_and_computed_source():
+    result = assess_trip_feasibility("Bangalore", "Mangalore")
+    assert result.modes
+    for entry in result.modes:
+        assert entry.status == "feasible"
+        assert entry.duration_source == "computed"
+        assert entry.verification is not None
+        assert entry.verification.status == "GENERAL_GUIDANCE"
+        assert entry.estimated_distance_km is not None
+
+
+def test_no_duplicate_modes_returned():
+    result = assess_trip_feasibility("Bangalore", "Mangalore")
+    modes = [entry.mode for entry in result.modes]
+    assert len(modes) == len(set(modes))
+
+
+def test_assess_trip_feasibility_always_returns_a_real_assessment_never_none():
+    # Callers must never need to handle a None return anymore.
+    for origin, destination in [("Paris", "paris"), ("Nowhere", "Also Nowhere"), ("Delhi", "Agra")]:
+        result = assess_trip_feasibility(origin, destination)
+        assert result is not None

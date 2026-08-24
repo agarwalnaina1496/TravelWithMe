@@ -8,7 +8,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ..langgraph import (
     LangGraphRuntime,
     build_meridian_graph,
-    build_raw_invocation_graph,
     build_scout_graph,
 )
 from .contracts import (
@@ -32,7 +31,6 @@ class LangGraphAgentAdapter:
         runtime = runtime or LangGraphRuntime(settings=settings)
         self._scout_graph = build_scout_graph(runtime)
         self._meridian_graph = build_meridian_graph(runtime)
-        self._raw_graph = build_raw_invocation_graph(runtime)
 
     async def invoke(
         self, agent: AgentName, invocation: AgentInvocation
@@ -51,9 +49,6 @@ class LangGraphAgentAdapter:
             "meridian": self._meridian_graph,
         }
         return await self._run(agent, graphs[agent], invocation)
-
-    async def invoke_raw(self, invocation: AgentInvocation) -> AgentInvocationResult:
-        return await self._run("route_classifier", self._raw_graph, invocation)
 
     async def _run(
         self, agent: str, graph: Any, invocation: AgentInvocation
