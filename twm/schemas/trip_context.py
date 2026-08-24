@@ -23,9 +23,23 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, model_serializer
 
+# Individual key constants so callers that need one specific key (instead
+# of the full FIXED_KEYS tuple) never re-hardcode the literal.
+ORIGIN_CITY_KEY = "origin_city"
+NUM_TRAVELERS_KEY = "num_travelers"
+TRIP_DURATION_KEY = "trip_duration"
+TRAVEL_DATES_KEY = "travel_dates"
+BUDGET_KEY = "budget"
+
 # Public so other schemas (e.g. Guide's awaiting enum) can derive their own
 # fixed-key references from this single source instead of re-hardcoding it.
-FIXED_KEYS = ("origin_city", "num_travelers", "trip_duration", "travel_dates", "budget")
+FIXED_KEYS = (
+    ORIGIN_CITY_KEY,
+    NUM_TRAVELERS_KEY,
+    TRIP_DURATION_KEY,
+    TRAVEL_DATES_KEY,
+    BUDGET_KEY,
+)
 
 DESTINATIONS_KEY = "destinations"
 

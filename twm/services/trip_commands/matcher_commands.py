@@ -4,6 +4,7 @@ from typing import Any
 
 from ...persistence.contracts import RecommendationRecord
 from ...schemas.meridian import MeridianRequest
+from ...schemas.trip_context import DESTINATIONS_KEY
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_meridian_response
@@ -149,7 +150,7 @@ def select_destination(
     # Guide writes it for the known-destination path, so every downstream
     # reader (Guide's own gate, plan-freeze, the trip summary/recap) has
     # exactly one field to check.
-    state["trip_context"]["destinations"] = [option["name"]]
+    state["trip_context"][DESTINATIONS_KEY] = [option["name"]]
     set_stage(state, "matched")
     state["active_agent"] = None
     logger.info(

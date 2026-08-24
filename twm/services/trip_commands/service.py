@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from ...persistence.contracts import RecommendationRecord, TripCommandRecord, TripOwner, TripRecord, TripRepository
+from ...schemas.trip_context import DESTINATIONS_KEY
 from ...schemas.trips import TripCommandRequest, TripCommandResponse, TripFirstMessageRequest, TripResponse
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
@@ -329,7 +330,7 @@ class TripCommandService:
         instead, since there's no genuine ambiguity left to classify at
         this exact point in the flow."""
         state["selected_option"] = None
-        state["trip_context"].pop("destinations", None)
+        state["trip_context"].pop(DESTINATIONS_KEY, None)
         set_stage(state, "matching", self.logger, context=context)
 
     @staticmethod
@@ -338,7 +339,7 @@ class TripCommandService:
         # "what's the destination" signal for both entry paths — written
         # directly by select_destination for Discover, extracted by Guide
         # itself for known-destination. No other key means this any more.
-        destinations = trip_context.get("destinations")
+        destinations = trip_context.get(DESTINATIONS_KEY)
         return bool(destinations) and any(
             isinstance(item, str) and item.strip() for item in destinations
         )

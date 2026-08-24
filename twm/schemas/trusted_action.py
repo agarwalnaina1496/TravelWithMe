@@ -398,6 +398,21 @@ TrustedActionMissingField = Literal[
     "action_type", "domain", "origin", "destination", "departure_date", "return_date", "traveler_count"
 ]
 
+
+class TrustedActionKeys:
+    """Trusted Action request payload field names — the source of truth
+    for code that builds or checks these fields by name (e.g.
+    ``missing_required_fields``) instead of re-hardcoding the literals
+    already enumerated in ``TrustedActionMissingField`` above."""
+
+    ACTION_TYPE = "action_type"
+    DOMAIN = "domain"
+    ORIGIN = "origin"
+    DESTINATION = "destination"
+    DEPARTURE_DATE = "departure_date"
+    RETURN_DATE = "return_date"
+    TRAVELER_COUNT = "traveler_count"
+
 TrustedActionOutcomeStatus = Literal["resolved", "missing_input", "unsupported_partner", "disabled"]
 
 

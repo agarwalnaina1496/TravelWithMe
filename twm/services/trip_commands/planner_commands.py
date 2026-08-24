@@ -4,6 +4,7 @@ from typing import Any
 
 from ...persistence.contracts import RecommendationRecord
 from ...schemas.guide import GuideRequest
+from ...schemas.trip_context import BUDGET_KEY, DESTINATIONS_KEY, TRIP_DURATION_KEY
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_guide_response
@@ -149,7 +150,7 @@ async def apply_guide(
             guide_revision=planner["revision"],
             places_count=places_count,
             day_plan_length=day_plan_length,
-            budget_present=bool(trip_context.get("budget")),
+            budget_present=bool(trip_context.get(BUDGET_KEY)),
         )
 
     # TWM-188 item 8: plan_ready mirrors recommended's role on the Discover
@@ -185,8 +186,8 @@ def _apply_plan_freeze(
     planner = state["planner_state"]
     trip_context = state["trip_context"]
     guide_state = {
-        "destinations": trip_context.get("destinations") or [],
-        "trip_duration": trip_context.get("trip_duration"),
+        "destinations": trip_context.get(DESTINATIONS_KEY) or [],
+        "trip_duration": trip_context.get(TRIP_DURATION_KEY),
         "places": planner.get("places") or [],
         "day_plan": planner.get("day_plan") or [],
     }
@@ -223,13 +224,13 @@ def _supersede_planner_state(state: dict[str, Any]) -> None:
     superseded.append(
         {
             "planner_state": _guide_planner_snapshot(state),
-            "destination_context": state["trip_context"].get("destinations"),
+            "destination_context": state["trip_context"].get(DESTINATIONS_KEY),
         }
     )
     planner["conversation_context"] = {}
     planner["places"] = []
     planner["day_plan"] = []
-    state["trip_context"].pop("destinations", None)
+    state["trip_context"].pop(DESTINATIONS_KEY, None)
     state["selected_option"] = None
 
 
@@ -351,7 +352,7 @@ def _validate_day_plan(state: dict[str, Any]) -> None:
     planner = state["planner_state"]
     day_plan = planner.get("day_plan") or []
     places = planner.get("places") or []
-    trip_duration = state["trip_context"].get("trip_duration")
+    trip_duration = state["trip_context"].get(TRIP_DURATION_KEY)
     if trip_duration is None:
         raise InvalidTripCommandError("Guide returned a day plan without a known duration.")
     if len(day_plan) != trip_duration:

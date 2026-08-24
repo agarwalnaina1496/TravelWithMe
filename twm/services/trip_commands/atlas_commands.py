@@ -3,6 +3,7 @@
 from typing import Any
 
 from ...schemas.atlas import AtlasRequest, AtlasWorkingPlan
+from ...schemas.trip_context import DESTINATIONS_KEY, TRIP_DURATION_KEY
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_atlas_response
@@ -77,8 +78,8 @@ async def apply_atlas(
 def build_working_plan(guide_state: dict[str, Any]) -> AtlasWorkingPlan:
     return AtlasWorkingPlan.model_validate(
         {
-            "destinations": guide_state["destinations"],
-            "trip_duration": guide_state["trip_duration"],
+            "destinations": guide_state[DESTINATIONS_KEY],
+            "trip_duration": guide_state[TRIP_DURATION_KEY],
             "approved_places": guide_state["places"],
             "days": [
                 {

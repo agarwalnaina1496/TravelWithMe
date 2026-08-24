@@ -8,6 +8,7 @@ from typing import Optional
 from ...schemas.trusted_action import (
     PartnerName,
     TrustedActionDomain,
+    TrustedActionKeys,
     TrustedActionMissingField,
     TrustedActionRequest,
 )
@@ -36,15 +37,15 @@ def missing_required_fields(request: TrustedActionRequest) -> list[TrustedAction
 
     missing: list[TrustedActionMissingField] = []
     if request.origin is None:
-        missing.append("origin")
+        missing.append(TrustedActionKeys.ORIGIN)
     if request.destination is None:
-        missing.append("destination")
+        missing.append(TrustedActionKeys.DESTINATION)
     if request.departure_date is None:
-        missing.append("departure_date")
+        missing.append(TrustedActionKeys.DEPARTURE_DATE)
     if request.trip_shape == "round_trip" and request.return_date is None:
-        missing.append("return_date")
+        missing.append(TrustedActionKeys.RETURN_DATE)
     if request.traveler_count is None:
-        missing.append("traveler_count")
+        missing.append(TrustedActionKeys.TRAVELER_COUNT)
     return missing
 
 

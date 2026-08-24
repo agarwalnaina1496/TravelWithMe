@@ -8,6 +8,7 @@ performs this arithmetic or decides readiness.
 from ...schemas.flight_search import (
     FlightExplanationCandidate,
     FlightSearchMissingField,
+    FlightSearchMissingFieldKeys,
     FlightSearchRequest,
     NormalizedFlightOffer,
 )
@@ -24,15 +25,15 @@ def missing_required_fields(payload: FlightSearchRequest) -> list[FlightSearchMi
 
     missing: list[FlightSearchMissingField] = []
     if payload.origin_iata is None:
-        missing.append("origin")
+        missing.append(FlightSearchMissingFieldKeys.ORIGIN)
     if payload.destination_iata is None:
-        missing.append("destination")
+        missing.append(FlightSearchMissingFieldKeys.DESTINATION)
     if payload.departure_date is None:
-        missing.append("departure_date")
+        missing.append(FlightSearchMissingFieldKeys.DEPARTURE_DATE)
     if payload.trip_type == "round_trip" and payload.return_date is None:
-        missing.append("return_date")
+        missing.append(FlightSearchMissingFieldKeys.RETURN_DATE)
     if payload.travelers is None:
-        missing.append("travelers")
+        missing.append(FlightSearchMissingFieldKeys.TRAVELERS)
     return missing
 
 
