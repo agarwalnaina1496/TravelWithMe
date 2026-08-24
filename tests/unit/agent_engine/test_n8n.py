@@ -75,35 +75,12 @@ def test_n8n_adapter_forwards_prepared_invocation_and_returns_raw_output() -> No
     assert "X-TWM-Webhook-Token" not in captured[0].headers
 
 
-def test_n8n_adapter_invoke_raw_posts_to_the_route_classifier_webhook() -> None:
-    captured: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(request)
-        return httpx.Response(
-            200,
-            json={"raw_output": '{"flight":"plausible","train":"plausible","bus":"plausible","drive":"plausible","confidence":"high"}'},
-        )
-
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    engine_settings = AgentEngineSettings(
-        engine="n8n",
-        environment="test",
-        n8n_scout_webhook_url="http://agents.example/webhook/scout",
-        n8n_meridian_webhook_url="http://agents.example/webhook/meridian",
-        n8n_guide_webhook_url="http://agents.example/webhook/guide",
-        n8n_atlas_webhook_url="http://agents.example/webhook/atlas",
-        n8n_route_classifier_webhook_url="http://agents.example/webhook/route-classifier",
-    )
-    adapter = N8NAgentAdapter(engine_settings, client)
-
-    try:
-        result = asyncio.run(adapter.invoke_raw(invocation()))
-    finally:
-        asyncio.run(client.aclose())
-
-    assert captured[0].url == "http://agents.example/webhook/route-classifier"
-    assert "plausible" in result.raw_output
+def test_n8n_adapter_has_no_invoke_raw_route_classifier_always_uses_langgraph() -> None:
+    # PR-review fix (TWM-195): there is no deployed n8n classifier
+    # workflow, so N8NAgentAdapter no longer implements invoke_raw at all
+    # -- the route-mode classifier always uses LangGraphAgentAdapter
+    # directly instead (see twm/main.py's application_lifespan).
+    assert not hasattr(N8NAgentAdapter, "invoke_raw")
 
 
 def test_n8n_adapter_maps_timeout() -> None:

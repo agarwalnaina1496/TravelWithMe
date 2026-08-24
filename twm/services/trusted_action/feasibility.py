@@ -17,6 +17,14 @@ or not. There is no fallback to the old static-table/haversine path -- it
 has been removed entirely, not kept as a secondary check. A classifier
 failure, timeout, invalid output, or low-confidence result never falls back
 to "feasible": every mode gets an honest ``status="unknown"`` instead.
+
+PR-review fix for TWM-195: a route-absurd mode (``status="ruled_out"`` or
+``status="unknown"``) must never come back from the backend as a normal,
+bookable option. ``TripFeasibilityAssessment`` therefore splits the four
+judged modes into ``modes`` (feasible/bookable only) and ``excluded_modes``
+(ruled_out/unknown, non-bookable explanatory metadata) -- see
+``twm.schemas.trusted_action.TripFeasibilityAssessment`` for the exact
+contract.
 """
 
 from typing import Optional
@@ -48,13 +56,14 @@ async def assess_trip_feasibility(
     classifier: RouteClassifier,
 ) -> Optional[TripFeasibilityAssessment]:
     """Assemble a ``TripFeasibilityAssessment`` covering all four transport
-    modes for a route.
+    modes for a route, split into ``modes`` (feasible/bookable only) and
+    ``excluded_modes`` (ruled_out/unknown, non-bookable metadata).
 
     Returns ``None`` only for a structurally degenerate route (blank/
     identical origin and destination) — never as a stand-in for "the
     classifier could not judge this route" (that is ``status="unknown"``
-    on every mode instead, so a caller can never mistake "nothing to show"
-    for "everything is feasible").
+    on every mode, all landing in ``excluded_modes``, so a caller can never
+    mistake "nothing to show" for "everything is feasible").
     """
 
     origin = origin.strip()
@@ -63,8 +72,10 @@ async def assess_trip_feasibility(
         return None
 
     plausibility = await classifier.classify(origin, destination)
-    modes = [_build_mode(mode, plausibility) for mode in _ALL_MODES]
-    return TripFeasibilityAssessment(modes=modes)
+    all_modes = [_build_mode(mode, plausibility) for mode in _ALL_MODES]
+    modes = [entry for entry in all_modes if entry.status == "feasible"]
+    excluded_modes = [entry for entry in all_modes if entry.status != "feasible"]
+    return TripFeasibilityAssessment(modes=modes, excluded_modes=excluded_modes)
 
 
 def _build_mode(

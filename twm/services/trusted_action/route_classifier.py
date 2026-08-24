@@ -11,9 +11,16 @@ in ``twm.services.agent_engine``'s ``AgentEngine``/``AgentName``: it is a
 small, structured, single-turn classification call, not a trip_state-shaped
 traveler-facing agent, so it does not belong in
 ``AgentExecutionService``/``twm.prompt_registry``'s versioned four-agent
-dispatch. Instead it uses the narrow ``AgentAdapter.invoke_raw`` escape
-hatch (see ``twm/services/agent_engine/contracts.py``) directly, and owns
-its own prompt text, parsing, and strict validation here.
+dispatch. Instead it uses the narrow ``invoke_raw`` escape hatch directly,
+and owns its own prompt text, parsing, and strict validation here.
+
+PR-review fix (TWM-195): this classifier always uses
+``LangGraphAgentAdapter`` concretely, never the general ``AgentAdapter``
+Protocol -- there is no deployed n8n classifier workflow (see
+``n8n/route_classifier.json``'s removal), so ``invoke_raw`` is no longer
+part of ``AgentAdapter`` at all. ``twm/main.py``'s ``application_lifespan``
+always constructs (or reuses) a ``LangGraphAgentAdapter`` for this
+classifier, independent of the primary ``agent_engine`` setting.
 
 Failure posture: this module NEVER fails open. Any of the following yields
 ``None`` (an honest "could not classify this route" outcome), never a
@@ -42,11 +49,11 @@ from ...schemas.trusted_action import TransportMode
 from ...telemetry import TelemetryLogger
 from ...trust_boundary import UNTRUSTED_DATA_PREAMBLE
 from ..agent_engine.contracts import (
-    AgentAdapter,
     AgentAdapterError,
     AgentInvocation,
     GenerationConfig,
 )
+from ..agent_engine.langgraph import LangGraphAgentAdapter
 
 _ALL_MODES: tuple[TransportMode, ...] = ("flight", "train", "bus", "drive")
 
@@ -103,10 +110,12 @@ class NullRouteClassifier:
 
 @dataclass
 class LLMRouteClassifier:
-    """Route-mode-plausibility classifier backed by the configured agent
-    engine's adapter, via the narrow ``invoke_raw`` escape hatch."""
+    """Route-mode-plausibility classifier backed by a ``LangGraphAgentAdapter``
+    (concretely, not via the general ``AgentAdapter`` Protocol) through its
+    ``invoke_raw`` escape hatch -- see module docstring for why this is
+    always LangGraph-backed regardless of the primary ``agent_engine``."""
 
-    adapter: AgentAdapter
+    adapter: LangGraphAgentAdapter
     logger: TelemetryLogger
 
     async def classify(

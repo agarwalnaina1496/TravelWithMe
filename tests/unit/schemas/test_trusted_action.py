@@ -376,7 +376,9 @@ def test_invalid_duration_source_literal_is_rejected():
         )
 
 
-def test_feasibility_assessment_rejects_duplicate_modes():
+def test_feasibility_assessment_rejects_duplicate_modes_across_both_lists():
+    # A given TransportMode must appear in exactly one of modes/
+    # excluded_modes, never in both.
     with pytest.raises(ValidationError):
         TripFeasibilityAssessment(
             modes=[
@@ -387,11 +389,45 @@ def test_feasibility_assessment_rejects_duplicate_modes():
                     reason="Direct route.",
                     verification=AtlasReference(status="GENERAL_GUIDANCE"),
                 ),
+            ],
+            excluded_modes=[
                 ModeFeasibility(
                     mode="flight",
                     status="ruled_out",
                     duration_source="llm_estimated",
                     reason="Duplicate.",
+                    verification=AtlasReference(status="GENERAL_GUIDANCE"),
+                ),
+            ],
+        )
+
+
+def test_feasibility_assessment_rejects_ruled_out_entry_inside_modes():
+    # PR-review fix (TWM-195): a non-feasible entry may never land in the
+    # bookable `modes` list.
+    with pytest.raises(ValidationError):
+        TripFeasibilityAssessment(
+            modes=[
+                ModeFeasibility(
+                    mode="flight",
+                    status="ruled_out",
+                    duration_source="llm_estimated",
+                    reason="Too far to drive.",
+                    verification=AtlasReference(status="GENERAL_GUIDANCE"),
+                ),
+            ]
+        )
+
+
+def test_feasibility_assessment_rejects_feasible_entry_inside_excluded_modes():
+    with pytest.raises(ValidationError):
+        TripFeasibilityAssessment(
+            excluded_modes=[
+                ModeFeasibility(
+                    mode="flight",
+                    status="feasible",
+                    duration_source="llm_estimated",
+                    reason="Direct route.",
                     verification=AtlasReference(status="GENERAL_GUIDANCE"),
                 ),
             ]
@@ -409,13 +445,6 @@ def test_feasibility_assessment_with_mixed_modes_succeeds():
                 verification=AtlasReference(status="GENERAL_GUIDANCE"),
             ),
             ModeFeasibility(
-                mode="drive",
-                status="ruled_out",
-                duration_source="llm_estimated",
-                reason="Too far to drive.",
-                verification=AtlasReference(status="GENERAL_GUIDANCE"),
-            ),
-            ModeFeasibility(
                 mode="train",
                 status="feasible",
                 duration_source="llm_estimated",
@@ -423,6 +452,16 @@ def test_feasibility_assessment_with_mixed_modes_succeeds():
                 reason="Overnight train service exists.",
                 verification=AtlasReference(status="GENERAL_GUIDANCE"),
             ),
-        ]
+        ],
+        excluded_modes=[
+            ModeFeasibility(
+                mode="drive",
+                status="ruled_out",
+                duration_source="llm_estimated",
+                reason="Too far to drive.",
+                verification=AtlasReference(status="GENERAL_GUIDANCE"),
+            ),
+        ],
     )
-    assert len(assessment.modes) == 3
+    assert len(assessment.modes) == 2
+    assert len(assessment.excluded_modes) == 1

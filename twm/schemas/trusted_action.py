@@ -279,7 +279,15 @@ class ModeFeasibility(BaseModel):
 
 
 class TripFeasibilityAssessment(BaseModel):
-    """Per-mode feasibility reasoning for a route (flight/train/bus/drive).
+    """Per-mode feasibility reasoning for a route (flight/train/bus/drive),
+    split into two non-overlapping buckets (TWM-195 PR-review fix: backend
+    must never return a route-absurd mode as a normal/bookable option).
+
+    ``modes`` holds only genuinely bookable options (``status="feasible"``).
+    ``excluded_modes`` holds non-bookable metadata/explanations for a mode
+    the classifier ruled out or could not judge (``status="ruled_out"`` or
+    ``"unknown"``). A caller must never render anything from
+    ``excluded_modes`` as a selectable option.
 
     Distinct from any action: this never carries a price, only a
     feasibility judgement and a duration/distance estimate with an honest
@@ -288,12 +296,29 @@ class TripFeasibilityAssessment(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    modes: list[ModeFeasibility] = Field(min_length=1)
+    modes: list[ModeFeasibility] = Field(default_factory=list)
+    excluded_modes: list[ModeFeasibility] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_unique_modes(self) -> "TripFeasibilityAssessment":
-        seen = [entry.mode for entry in self.modes]
-        if len(seen) != len(set(seen)):
+        # Every ModeFeasibility.status must match the bucket it's in, and
+        # each of the four TransportMode values must appear exactly once
+        # across modes + excluded_modes combined (never in both, never
+        # twice, never omitted) -- the classifier always judges all four.
+        for entry in self.modes:
+            if entry.status != "feasible":
+                raise ValueError(
+                    "modes may only contain status='feasible' entries; "
+                    "ruled_out/unknown entries belong in excluded_modes"
+                )
+        for entry in self.excluded_modes:
+            if entry.status not in ("ruled_out", "unknown"):
+                raise ValueError(
+                    "excluded_modes may only contain status='ruled_out' or "
+                    "status='unknown' entries; feasible entries belong in modes"
+                )
+        combined = [entry.mode for entry in (*self.modes, *self.excluded_modes)]
+        if len(combined) != len(set(combined)):
             raise ValueError("each transport mode may appear at most once")
         return self
 

@@ -15,7 +15,6 @@ class AgentEngineSettings:
     n8n_meridian_webhook_url: str | None = None
     n8n_guide_webhook_url: str | None = None
     n8n_atlas_webhook_url: str | None = None
-    n8n_route_classifier_webhook_url: str | None = None
     n8n_timeout_seconds: int = 185
     langgraph_model_provider: str | None = None
     langgraph_api_key: str | None = None
@@ -48,6 +47,19 @@ class AgentEngineSettings:
             "generation_timeout_seconds", 180
         )
 
+        # PR-review fix (TWM-195): the internal Trusted Actions route-mode
+        # classifier always uses the LangGraph/LLM path directly (there is
+        # no deployed n8n classifier workflow), regardless of which engine
+        # is primary. So langgraph_* settings are always loaded, unconditional
+        # of `engine`, and included on both branches below.
+        langgraph_model_provider = _required_with_default(
+            "langgraph_model_provider", "groq"
+        )
+        langgraph_api_key = _required("langgraph_api_key")
+        langgraph_model = _required_with_default(
+            "langgraph_model", "openai/gpt-oss-120b"
+        )
+
         if engine == "n8n":
             n8n_timeout_seconds = _positive_int("n8n_timeout_seconds", 185)
             if generation_timeout_seconds != N8N_WORKFLOW_TIMEOUT_SECONDS:
@@ -67,8 +79,10 @@ class AgentEngineSettings:
                 n8n_meridian_webhook_url=_required("n8n_meridian_webhook_url"),
                 n8n_guide_webhook_url=_required("n8n_guide_webhook_url"),
                 n8n_atlas_webhook_url=_required("n8n_atlas_webhook_url"),
-                n8n_route_classifier_webhook_url=_required("n8n_route_classifier_webhook_url"),
                 n8n_timeout_seconds=n8n_timeout_seconds,
+                langgraph_model_provider=langgraph_model_provider,
+                langgraph_api_key=langgraph_api_key,
+                langgraph_model=langgraph_model,
                 generation_max_output_tokens=generation_max_output_tokens,
                 generation_temperature=generation_temperature,
                 generation_timeout_seconds=generation_timeout_seconds,
@@ -78,13 +92,9 @@ class AgentEngineSettings:
             return cls(
                 engine=engine,
                 environment=environment,
-                langgraph_model_provider=_required_with_default(
-                    "langgraph_model_provider", "groq"
-                ),
-                langgraph_api_key=_required("langgraph_api_key"),
-                langgraph_model=_required_with_default(
-                    "langgraph_model", "openai/gpt-oss-120b"
-                ),
+                langgraph_model_provider=langgraph_model_provider,
+                langgraph_api_key=langgraph_api_key,
+                langgraph_model=langgraph_model,
                 generation_max_output_tokens=generation_max_output_tokens,
                 generation_temperature=generation_temperature,
                 generation_timeout_seconds=generation_timeout_seconds,

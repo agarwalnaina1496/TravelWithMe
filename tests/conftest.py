@@ -13,7 +13,11 @@ os.environ["N8N_SCOUT_WEBHOOK_URL"] = "https://agents.test/webhook/scout"
 os.environ["N8N_MERIDIAN_WEBHOOK_URL"] = "https://agents.test/webhook/meridian"
 os.environ["N8N_GUIDE_WEBHOOK_URL"] = "https://agents.test/webhook/guide"
 os.environ["N8N_ATLAS_WEBHOOK_URL"] = "https://agents.test/webhook/atlas"
-os.environ["N8N_ROUTE_CLASSIFIER_WEBHOOK_URL"] = "https://agents.test/webhook/route-classifier"
+# PR-review fix (TWM-195): langgraph_api_key is always required now, even
+# on the n8n engine, because the internal route-mode classifier always
+# uses the LangGraph/LLM path directly (no deployed n8n classifier
+# workflow).
+os.environ["LANGGRAPH_API_KEY"] = "test-langgraph-key"
 os.environ["TRUSTED_HOSTS"] = '["testserver"]'
 os.environ["CORS_ALLOWED_ORIGINS"] = '["https://ui.test"]'
 

@@ -48,7 +48,10 @@ def test_settings_validate_only_selected_engine(
         "n8n_meridian_webhook_url": "https://agents.test/meridian",
         "n8n_guide_webhook_url": "https://agents.test/guide",
         "n8n_atlas_webhook_url": "https://agents.test/atlas",
-        "n8n_route_classifier_webhook_url": "https://agents.test/route-classifier",
+        # PR-review fix (TWM-195): langgraph_api_key is now always required,
+        # even on the n8n engine, because the internal route-mode
+        # classifier always uses the LangGraph/LLM path directly.
+        "langgraph_api_key": "secret",
     }
     monkeypatch.setattr(
         settings_module.property_loader,
@@ -74,8 +77,10 @@ def test_settings_validate_only_selected_engine(
     settings = AgentEngineSettings.load()
 
     assert settings.engine == "n8n"
-    assert settings.langgraph_api_key is None
-    assert settings.langgraph_model_provider is None
+    # langgraph_* settings are always loaded regardless of the primary
+    # engine (PR-review fix, TWM-195).
+    assert settings.langgraph_api_key == "secret"
+    assert settings.langgraph_model_provider == "groq"
     assert settings.n8n_timeout_seconds == 185
     assert settings.generation_config.max_output_tokens == 16_384
     assert settings.generation_config.temperature == 0.2
@@ -124,6 +129,9 @@ def test_n8n_settings_reject_timeout_that_differs_from_workflow(
     values = {
         "n8n_scout_webhook_url": "https://agents.test/scout",
         "n8n_meridian_webhook_url": "https://agents.test/meridian",
+        # langgraph_api_key is always required now, loaded before the n8n
+        # timeout check (PR-review fix, TWM-195).
+        "langgraph_api_key": "secret",
     }
     monkeypatch.setattr(
         settings_module.property_loader,

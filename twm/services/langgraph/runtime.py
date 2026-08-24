@@ -31,11 +31,12 @@ class LangGraphRuntime:
     @staticmethod
     def _create_model(settings: AgentEngineSettings | None) -> BaseChatModel:
         settings = settings or AgentEngineSettings.load()
-        if (
-            settings.engine != "langgraph"
-            or not settings.langgraph_model_provider
-            or not settings.langgraph_api_key
-        ):
+        # PR-review fix (TWM-195): langgraph_model_provider/langgraph_api_key
+        # are now always loaded regardless of the primary `engine` setting
+        # (the internal route-mode classifier always needs a LangGraph
+        # runtime even when engine="n8n"), so this only checks that the
+        # credentials themselves are present -- not which engine is primary.
+        if not settings.langgraph_model_provider or not settings.langgraph_api_key:
             raise ValueError("LangGraph settings are required to construct its runtime")
 
         logger.info(

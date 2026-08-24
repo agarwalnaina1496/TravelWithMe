@@ -29,6 +29,7 @@ from .services import (
     build_agent_adapter,
     get_agent_engine,
 )
+from .services.agent_engine.langgraph import LangGraphAgentAdapter
 from .services.flight_search import FlightSearchSettings, AviasalesAdapter
 from .services.trusted_action import TrustedActionSettings
 from .services.trusted_action.route_classifier import LLMRouteClassifier
@@ -56,8 +57,21 @@ async def application_lifespan(app: FastAPI):
         app.state.agent_engine = get_agent_engine(
             settings, app.state.telemetry, http_client, adapter=agent_adapter
         )
+        # PR-review fix (TWM-195): the route-mode classifier always uses a
+        # LangGraphAgentAdapter, never the primary n8n adapter -- there is
+        # no deployed n8n classifier workflow. Reuse the primary adapter
+        # instance when it is already LangGraph-backed (settings.engine ==
+        # "langgraph", the only case build_agent_adapter returns one);
+        # otherwise construct a dedicated one just for the classifier.
+        # Branching on settings.engine rather than isinstance() keeps this
+        # deterministic and avoids coupling to the concrete adapter type.
+        classifier_adapter = (
+            agent_adapter
+            if settings.engine == "langgraph"
+            else LangGraphAgentAdapter(settings=settings)
+        )
         app.state.route_classifier = LLMRouteClassifier(
-            adapter=agent_adapter, logger=app.state.telemetry
+            adapter=classifier_adapter, logger=app.state.telemetry
         )
         app.state.flight_search_settings = flight_search_settings
         if flight_search_settings.is_configured:

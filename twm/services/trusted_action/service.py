@@ -153,7 +153,7 @@ class TrustedActionService:
             return None
 
         by_status: dict[str, list[str]] = {"feasible": [], "ruled_out": [], "unknown": []}
-        for entry in assessment.modes:
+        for entry in (*assessment.modes, *assessment.excluded_modes):
             by_status[entry.status].append(entry.mode)
         self.logger.info(
             "Resolved trip-feasibility assessment.",

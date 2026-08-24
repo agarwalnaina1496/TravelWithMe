@@ -74,7 +74,8 @@ def test_classifier_is_called_once_for_all_four_modes_together():
     assert result is not None
     assert len(classifier.calls) == 1
     assert classifier.calls[0] == ("Bhubaneswar", "Puri")
-    assert {mode.mode for mode in result.modes} == {"flight", "train", "bus", "drive"}
+    combined = {mode.mode for mode in (*result.modes, *result.excluded_modes)}
+    assert combined == {"flight", "train", "bus", "drive"}
 
 
 def test_local_route_rules_out_route_absurd_modes_like_flight():
@@ -89,8 +90,14 @@ def test_local_route_rules_out_route_absurd_modes_like_flight():
             ),
         )
     )
+    # PR-review fix (TWM-195): a route-absurd mode must never come back as
+    # a normal/bookable option in `modes` -- it belongs only in
+    # `excluded_modes`, as non-bookable metadata.
+    bookable_modes = {mode.mode for mode in result.modes}
+    assert "flight" not in bookable_modes
+    by_excluded = {mode.mode: mode for mode in result.excluded_modes}
+    assert by_excluded["flight"].status == "ruled_out"
     by_mode = {mode.mode: mode for mode in result.modes}
-    assert by_mode["flight"].status == "ruled_out"
     assert by_mode["train"].status == "feasible"
     assert by_mode["bus"].status == "feasible"
     assert by_mode["drive"].status == "feasible"
@@ -112,7 +119,9 @@ def test_multi_valid_mode_route_keeps_all_route_valid_modes():
     assert by_mode["flight"].status == "feasible"
     assert by_mode["train"].status == "feasible"
     assert by_mode["bus"].status == "feasible"
-    assert by_mode["drive"].status == "ruled_out"
+    assert "drive" not in by_mode
+    by_excluded = {mode.mode: mode for mode in result.excluded_modes}
+    assert by_excluded["drive"].status == "ruled_out"
 
 
 def test_unknown_classification_produces_unknown_for_every_mode_never_feasible():
@@ -122,7 +131,8 @@ def test_unknown_classification_produces_unknown_for_every_mode_never_feasible()
         )
     )
     assert result is not None
-    for mode in result.modes:
+    assert result.modes == []
+    for mode in result.excluded_modes:
         assert mode.status == "unknown"
         assert mode.verification is None
 
@@ -139,8 +149,10 @@ def test_unknown_route_previously_in_and_out_of_the_static_table_are_treated_con
             "Nowhere Mapped", "Somewhere Unmapped", classifier=_FixedClassifier(None)
         )
     )
-    assert {mode.status for mode in known_city_result.modes} == {"unknown"}
-    assert {mode.status for mode in unknown_city_result.modes} == {"unknown"}
+    assert known_city_result.modes == []
+    assert unknown_city_result.modes == []
+    assert {mode.status for mode in known_city_result.excluded_modes} == {"unknown"}
+    assert {mode.status for mode in unknown_city_result.excluded_modes} == {"unknown"}
 
 
 def test_feasible_and_ruled_out_modes_carry_general_guidance_verification():
@@ -157,3 +169,23 @@ def test_feasible_and_ruled_out_modes_carry_general_guidance_verification():
         assert mode.status == "feasible"
         assert mode.verification is not None
         assert mode.verification.status == "GENERAL_GUIDANCE"
+    assert result.excluded_modes == []
+
+
+def test_route_absurd_mode_never_appears_in_bookable_modes():
+    # Regression guard for the PR-review fix: no matter the mix of
+    # feasible/ruled_out/unknown, a non-feasible mode must never leak into
+    # `modes` (the bookable/normal-options list).
+    result = _run(
+        assess_trip_feasibility(
+            "Bhubaneswar",
+            "Puri",
+            classifier=_FixedClassifier(
+                {"flight": False, "train": True, "bus": False, "drive": True}
+            ),
+        )
+    )
+    assert {mode.status for mode in result.modes} == {"feasible"}
+    assert {mode.status for mode in result.excluded_modes} <= {"ruled_out", "unknown"}
+    assert {mode.mode for mode in result.modes} == {"train", "drive"}
+    assert {mode.mode for mode in result.excluded_modes} == {"flight", "bus"}

@@ -411,6 +411,7 @@ def test_feasibility_endpoint_returns_route_valid_modes_from_the_classifier(api_
     assert body is not None
     modes = {mode["mode"]: mode for mode in body["modes"]}
     assert set(modes) == {"flight", "train", "bus", "drive"}
+    assert body["excluded_modes"] == []
     for mode in modes.values():
         assert mode["status"] == "feasible"
         assert mode["duration_source"] == "llm_estimated"
@@ -434,11 +435,15 @@ def test_feasibility_endpoint_rules_out_route_absurd_modes(api_client: TestClien
 
     assert response.status_code == 200
     body = response.json()
+    # PR-review fix (TWM-195): a route-absurd mode must never come back in
+    # the bookable `modes` list -- only in `excluded_modes` as metadata.
     modes = {mode["mode"]: mode for mode in body["modes"]}
-    assert modes["flight"]["status"] == "ruled_out"
+    assert "flight" not in modes
     assert modes["train"]["status"] == "feasible"
     assert modes["bus"]["status"] == "feasible"
     assert modes["drive"]["status"] == "feasible"
+    excluded_modes = {mode["mode"]: mode for mode in body["excluded_modes"]}
+    assert excluded_modes["flight"]["status"] == "ruled_out"
     app.dependency_overrides.pop(get_trusted_action_service, None)
 
 
@@ -457,9 +462,10 @@ def test_feasibility_endpoint_returns_unknown_never_feasible_when_classifier_can
 
     assert response.status_code == 200
     body = response.json()
-    modes = {mode["mode"]: mode for mode in body["modes"]}
-    assert set(modes) == {"flight", "train", "bus", "drive"}
-    for mode in modes.values():
+    assert body["modes"] == []
+    excluded_modes = {mode["mode"]: mode for mode in body["excluded_modes"]}
+    assert set(excluded_modes) == {"flight", "train", "bus", "drive"}
+    for mode in excluded_modes.values():
         assert mode["status"] == "unknown"
         assert mode["verification"] is None
     app.dependency_overrides.pop(get_trusted_action_service, None)
