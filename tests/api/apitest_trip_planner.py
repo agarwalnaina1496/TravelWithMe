@@ -427,6 +427,174 @@ def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
     assert adapter.invoke.await_count == 1
 
 
+def test_atlas_api_returns_odisha_route_with_canonical_movement_endpoints(
+    api_client: TestClient,
+) -> None:
+    """Regression for TWM-200: Atlas must be able to represent atomic
+    movements with canonical city endpoints separate from scenic-route
+    display copy, even across a multi-day, multi-leg route."""
+    general_reference = {
+        "status": "GENERAL_GUIDANCE",
+        "source_title": None,
+        "source_url": None,
+    }
+    legs = [
+        ("Bangalore", "Bhubaneswar", None),
+        ("Bhubaneswar", "Puri", "Bhubaneswar to Puri Highway"),
+        ("Puri", "Konark", "Drive along Marine Drive from Puri to Konark"),
+        ("Konark", "Bhubaneswar", "Konark to Bhubaneswar (via Pipili)"),
+        ("Bhubaneswar", "Bangalore", None),
+    ]
+    output = atlas_output()
+    output["final_itinerary"]["days"] = [
+        {
+            "day_number": index + 1,
+            "date": None,
+            "title": f"{from_city} to {to_city}",
+            "primary_location": to_city,
+            "summary": "Travel day.",
+            "timeline": [
+                {
+                    "start_time": "Morning",
+                    "end_time": None,
+                    "kind": "TRAVEL",
+                    "title": f"{from_city} to {to_city}",
+                    "location": display_label or f"{from_city} to {to_city}",
+                    "detail": "Travel between cities.",
+                    "movement_guidance": None,
+                    "from_city": from_city,
+                    "to_city": to_city,
+                    "display_label": display_label,
+                    "estimated_cost_low": 0,
+                    "estimated_cost_high": 0,
+                    "reference": general_reference,
+                    "requires_advance_booking": False,
+                    "booking_readiness": None,
+                }
+            ],
+            "seasonal_guidance": "Carry weather-appropriate layers.",
+            "permit_or_ticket_guidance": "Check current local guidance.",
+            "backup_plan": None,
+        }
+        for index, (from_city, to_city, display_label) in enumerate(legs)
+    ]
+    output["final_itinerary"]["trip_summary"]["destinations"] = [
+        "Bangalore",
+        "Bhubaneswar",
+        "Puri",
+        "Konark",
+    ]
+    output["final_itinerary"]["trip_summary"]["trip_duration"] = len(legs)
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(output))
+    )
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Bangalore", "num_travelers": 2},
+            "working_plan": {
+                "destinations": ["Bhubaneswar", "Puri", "Konark"],
+                "trip_duration": len(legs),
+                "approved_places": [],
+                "days": [
+                    {"day_number": index + 1, "places": []}
+                    for index in range(len(legs))
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    returned_legs = [
+        (day["timeline"][0]["from_city"], day["timeline"][0]["to_city"])
+        for day in body["final_itinerary"]["days"]
+    ]
+    assert returned_legs == [
+        ("Bangalore", "Bhubaneswar"),
+        ("Bhubaneswar", "Puri"),
+        ("Puri", "Konark"),
+        ("Konark", "Bhubaneswar"),
+        ("Bhubaneswar", "Bangalore"),
+    ]
+    # display_label carries the scenic/via narration; it must never leak
+    # into the canonical from_city/to_city endpoints UI sends to feasibility.
+    assert body["final_itinerary"]["days"][2]["timeline"][0]["display_label"] == (
+        "Drive along Marine Drive from Puri to Konark"
+    )
+    assert body["final_itinerary"]["days"][2]["timeline"][0]["from_city"] == "Puri"
+    assert body["final_itinerary"]["days"][2]["timeline"][0]["to_city"] == "Konark"
+
+
+def test_atlas_rejects_travel_item_with_only_one_movement_endpoint(
+    api_client: TestClient,
+) -> None:
+    """Fail-closed regression for TWM-200: a TRAVEL item must never emit a
+    fabricated or partial endpoint pair."""
+    invalid_output = atlas_output()
+    invalid_output["final_itinerary"]["days"][0]["timeline"][0]["kind"] = "TRAVEL"
+    invalid_output["final_itinerary"]["days"][0]["timeline"][0]["from_city"] = "Delhi"
+    invalid_output["final_itinerary"]["days"][0]["timeline"][0]["to_city"] = None
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(invalid_output))
+    )
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert adapter.invoke.await_count == 1
+
+
+def test_atlas_rejects_movement_endpoints_on_a_non_travel_timeline_item(
+    api_client: TestClient,
+) -> None:
+    """Fail-closed regression for TWM-200: only TRAVEL items may carry
+    canonical movement endpoints — an ACTIVITY item must not smuggle them in."""
+    invalid_output = atlas_output()
+    invalid_output["final_itinerary"]["days"][0]["timeline"][0]["from_city"] = "Delhi"
+    invalid_output["final_itinerary"]["days"][0]["timeline"][0]["to_city"] = "Agra"
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(invalid_output))
+    )
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert adapter.invoke.await_count == 1
+
+
 def test_atlas_rejects_plan_that_does_not_allocate_approved_places(
     api_client: TestClient,
 ) -> None:

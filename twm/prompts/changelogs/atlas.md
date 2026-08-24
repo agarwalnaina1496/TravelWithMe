@@ -1,5 +1,16 @@
 # Atlas prompt changelog
 
+## Atlas 1.6.0 — 2026-08-24
+
+- Adds `from_city`/`to_city` canonical movement-endpoint guidance for
+  `TRAVEL` timeline items, separate from narrative `location`/`detail`
+  copy. Atlas must set both fields to canonical city/town names when
+  confident, leave both absent when it isn't, and never place a road,
+  landmark, or "via" description in them. Every non-`TRAVEL` item must
+  leave the new endpoint fields absent. This unblocks Backend/UI building
+  booking legs and Trusted Actions feasibility requests from structured
+  endpoints instead of parsed display text (TWM-200).
+
 ## Atlas 1.5.0 — 2026-08-21
 
 - Removes every line describing what Backend does — the prompt states
