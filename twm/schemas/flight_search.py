@@ -74,6 +74,19 @@ FlightSearchMissingField = Literal[
     "origin", "destination", "departure_date", "return_date", "travelers"
 ]
 
+
+class FlightSearchKeys:
+    """Flight Search request payload field names — the source of truth
+    for code that builds or checks these fields by name (e.g.
+    ``missing_required_fields``) instead of re-hardcoding the literals
+    already enumerated in ``FlightSearchMissingField`` above."""
+
+    ORIGIN = "origin"
+    DESTINATION = "destination"
+    DEPARTURE_DATE = "departure_date"
+    RETURN_DATE = "return_date"
+    TRAVELERS = "travelers"
+
 FlightSearchUnavailableCode = Literal[
     "provider_not_configured",
     "provider_unauthorized",
