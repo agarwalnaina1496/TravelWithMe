@@ -7,6 +7,7 @@ performs this arithmetic or decides readiness.
 
 from ...schemas.flight_search import (
     FlightExplanationCandidate,
+    FlightSearchDatePrecision,
     FlightSearchMissingField,
     FlightSearchMissingFieldKeys,
     FlightSearchRequest,
@@ -21,6 +22,13 @@ def missing_required_fields(payload: FlightSearchRequest) -> list[FlightSearchMi
     have already collapsed a vague value ("sometime in September") down to
     "not yet known" (a None field) before calling this contract — this
     function only judges presence, never interprets fuzzy text.
+
+    departure_date is deliberately NOT required here (TWM-196): the
+    Aviasales Data API's /v1/prices/cheap endpoint serves genuine
+    month-level (departure_month) and dateless "latest cached price"
+    (flexible) results, so an unknown exact day is a precision limitation
+    for the response to label honestly (see resolve_date_precision), not a
+    reason to block the search.
     """
 
     missing: list[FlightSearchMissingField] = []
@@ -28,13 +36,27 @@ def missing_required_fields(payload: FlightSearchRequest) -> list[FlightSearchMi
         missing.append(FlightSearchMissingFieldKeys.ORIGIN)
     if payload.destination_iata is None:
         missing.append(FlightSearchMissingFieldKeys.DESTINATION)
-    if payload.departure_date is None:
-        missing.append(FlightSearchMissingFieldKeys.DEPARTURE_DATE)
     if payload.trip_type == "round_trip" and payload.return_date is None:
         missing.append(FlightSearchMissingFieldKeys.RETURN_DATE)
     if payload.travelers is None:
         missing.append(FlightSearchMissingFieldKeys.TRAVELERS)
     return missing
+
+
+def resolve_date_precision(
+    payload: FlightSearchRequest,
+) -> tuple[FlightSearchDatePrecision, str | None]:
+    """The date precision this search will actually run at, plus the
+    provider-ready ``depart_date`` string to send (TWM-196). Selecting the
+    right precision — rather than always demanding an exact day — is what
+    lets the Aviasales adapter honestly serve exact/month/flexible results
+    from the same endpoint."""
+
+    if payload.departure_date is not None:
+        return "exact", payload.departure_date.isoformat()
+    if payload.departure_month is not None:
+        return "month", payload.departure_month
+    return "flexible", None
 
 
 def traveler_total(payload: FlightSearchRequest) -> int:

@@ -62,6 +62,20 @@ CurrencyCode = Annotated[
 
 FlightTripType = Literal["one_way", "round_trip"]
 
+# TWM-196: date precision should match provider capability, not an
+# over-strict TWM assumption. "exact" is a specific calendar day
+# (departure_date). "month" is a YYYY-MM window (departure_month) — the
+# Aviasales Data API's /v1/prices/cheap accepts a month-level depart_date
+# and returns cached prices across that month. "flexible" is neither —
+# the same endpoint called with no depart_date at all returns its latest
+# cached prices for the route, with no date commitment. All three are
+# genuine, honestly-labeled search outcomes; none of them is a failure.
+FlightSearchDatePrecision = Literal["exact", "month", "flexible"]
+
+DepartureMonth = Annotated[
+    str, StringConstraints(strip_whitespace=True, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+]
+
 # The result-level discriminator. "offer"/"partial" are only reachable once
 # TWM-145 wires a provider; "expired" requires a cache TWM-144 does not wire
 # (see FlightSearchCacheEntry). All six are defined now so the contract is
@@ -98,9 +112,34 @@ class FlightSearchRequestKeys:
 
     ORIGIN_IATA = "origin_iata"
     DESTINATION_IATA = "destination_iata"
+    ORIGIN_PLACE = "origin_place"
+    DESTINATION_PLACE = "destination_place"
     DEPARTURE_DATE = "departure_date"
+    DEPARTURE_MONTH = "departure_month"
     RETURN_DATE = "return_date"
     TRAVELERS = "travelers"
+
+
+AirportResolutionSource = Literal["ourairports", "curated_fallback"]
+AirportResolutionConfidence = Literal["high", "low"]
+
+
+class ResolvedAirport(BaseModel):
+    """Backend-resolved airport metadata for one leg endpoint (TWM-196).
+
+    Returned so a caller can render honest context (e.g. "Flights from BLR
+    to BBI") without ever performing its own city->IATA guessing. Never
+    caller-settable — this only ever appears on ``FlightSearchResponse``,
+    built by ``twm.services.airport_resolution.resolve_airport``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input_label: FlightText
+    iata: IataCode
+    airport_name: FlightText
+    source: AirportResolutionSource
+    confidence: AirportResolutionConfidence
+
 
 FlightSearchUnavailableCode = Literal[
     "provider_not_configured",
@@ -164,8 +203,25 @@ class FlightSearchRequest(BaseModel):
 
     origin_iata: Optional[IataCode] = None
     destination_iata: Optional[IataCode] = None
-    trip_type: FlightTripType = "round_trip"
+    # Structured leg endpoints (TWM-196): the visible city/place label for
+    # this leg, as shown to the traveler. A caller should send these
+    # instead of resolving origin_iata/destination_iata itself — Backend
+    # resolves them via twm.services.airport_resolution before this
+    # request's readiness is judged. Supplying origin_iata/destination_iata
+    # directly (e.g. an already-resolved flow) still takes precedence over
+    # the corresponding place field when both are present.
+    origin_place: Optional[FlightText] = None
+    destination_place: Optional[FlightText] = None
+    # Visible gateway legs are directional rows, not automatically a
+    # round-trip request (TWM-196) — a caller must opt into round_trip
+    # explicitly rather than relying on a default that silently requires a
+    # return_date.
+    trip_type: FlightTripType = "one_way"
     departure_date: Optional[date] = None
+    # A YYYY-MM window, used only when the exact day is not yet known
+    # (TWM-196). Mutually exclusive with departure_date — a caller that
+    # knows the exact day should send departure_date, not both.
+    departure_month: Optional[DepartureMonth] = None
     return_date: Optional[date] = None
     travelers: Optional[FlightSearchTravelerCount] = None
     max_stops: Optional[int] = Field(default=None, ge=0, le=3)
@@ -180,6 +236,13 @@ class FlightSearchRequest(BaseModel):
         ):
             raise ValueError("origin and destination must differ")
         if (
+            self.origin_place
+            and self.destination_place
+            and self.origin_place.strip().casefold()
+            == self.destination_place.strip().casefold()
+        ):
+            raise ValueError("origin and destination must differ")
+        if (
             self.departure_date is not None
             and self.return_date is not None
             and self.return_date < self.departure_date
@@ -187,6 +250,8 @@ class FlightSearchRequest(BaseModel):
             raise ValueError("return_date cannot be before departure_date")
         if self.trip_type == "one_way" and self.return_date is not None:
             raise ValueError("a one_way search must not include a return_date")
+        if self.departure_date is not None and self.departure_month is not None:
+            raise ValueError("departure_date and departure_month are mutually exclusive")
         return self
 
 
@@ -374,6 +439,20 @@ class FlightSearchResponse(BaseModel):
     offers: list[NormalizedFlightOffer] = Field(default_factory=list)
     unavailable: Optional[FlightSearchUnavailableReason] = None
     failure: Optional[FlightSearchFailure] = None
+    # Populated whenever this request's origin_place/destination_place was
+    # resolved to an IATA code by twm.services.airport_resolution (TWM-196)
+    # — present alongside any status so a caller can render honest airport
+    # context ("Flights from BLR to BBI") even on a clarification_needed or
+    # unavailable outcome. None when the request supplied origin_iata/
+    # destination_iata directly and no resolution ran.
+    origin_resolved: Optional[ResolvedAirport] = None
+    destination_resolved: Optional[ResolvedAirport] = None
+    # The precision actually used for this search (TWM-196) — lets a caller
+    # honestly distinguish exact-date live offers from month/flexible
+    # cached ones instead of presenting every offer as a selected-day fare.
+    # Populated once readiness is satisfied (offer/partial/unavailable);
+    # None for clarification_needed, since no provider call was attempted.
+    date_precision: Optional[FlightSearchDatePrecision] = None
 
     @model_validator(mode="after")
     def validate_status_shape(self) -> "FlightSearchResponse":

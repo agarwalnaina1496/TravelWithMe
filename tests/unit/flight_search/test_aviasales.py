@@ -70,6 +70,62 @@ def test_adapter_sends_token_via_header_never_query_or_url() -> None:
     assert received_at is not None
 
 
+def test_adapter_sends_a_month_precision_depart_date_verbatim() -> None:
+    """TWM-196: depart_date is a pre-formatted string, not a date object,
+    so a month-level ("YYYY-MM") value passes straight through unchanged —
+    the adapter has no date-precision policy of its own."""
+
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"success": True, "data": {}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = AviasalesAdapter(_settings(), client)
+
+    try:
+        asyncio.run(
+            adapter.fetch_cheapest_prices(
+                origin_iata="DEL",
+                destination_iata="BOM",
+                depart_date="2027-01",
+                return_date=None,
+                currency="USD",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert captured[0].url.params["depart_date"] == "2027-01"
+
+
+def test_adapter_omits_depart_date_entirely_for_flexible_precision() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"success": True, "data": {}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = AviasalesAdapter(_settings(), client)
+
+    try:
+        asyncio.run(
+            adapter.fetch_cheapest_prices(
+                origin_iata="DEL",
+                destination_iata="BOM",
+                depart_date=None,
+                return_date=None,
+                currency="USD",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert "depart_date" not in captured[0].url.params
+
+
 def test_adapter_includes_optional_partner_id_as_marker() -> None:
     captured: list[httpx.Request] = []
 
