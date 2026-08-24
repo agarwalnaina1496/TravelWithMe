@@ -73,8 +73,9 @@ def test_settings_validate_only_selected_engine(
     settings = AgentEngineSettings.load()
 
     assert settings.engine == "n8n"
+    # langgraph_* settings are not loaded/required when the primary engine
+    # is n8n (reverted -- no more always-on classifier requirement).
     assert settings.langgraph_api_key is None
-    assert settings.langgraph_model_provider is None
     assert settings.n8n_timeout_seconds == 185
     assert settings.generation_config.max_output_tokens == 16_384
     assert settings.generation_config.temperature == 0.2

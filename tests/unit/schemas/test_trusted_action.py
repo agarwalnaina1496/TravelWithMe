@@ -288,38 +288,28 @@ def test_trusted_action_cannot_be_built_from_an_atlas_reference_payload():
         TrustedAction(**reference.model_dump())
 
 
-# --- Feasibility: honesty tag for LLM-estimated modes ------------------------
+# --- Feasibility: honesty tag for a deterministic rule judgement (TWM-195
+# root-fix contract -- modes only ever holds feasible entries; there is no
+# excluded_modes field and no ruled_out/unknown status to construct) -------
 
 
-def test_computed_mode_must_not_carry_a_verification_tag():
-    with pytest.raises(ValidationError):
-        ModeFeasibility(
-            mode="flight",
-            status="feasible",
-            duration_source="computed",
-            estimated_duration_minutes=120,
-            reason="Direct flight available.",
-            verification=AtlasReference(status="GENERAL_GUIDANCE"),
-        )
-
-
-def test_llm_estimated_mode_requires_a_verification_tag():
+def test_feasible_mode_requires_a_verification_tag():
     with pytest.raises(ValidationError):
         ModeFeasibility(
             mode="train",
             status="feasible",
-            duration_source="llm_estimated",
+            duration_source="computed",
             estimated_duration_minutes=600,
             reason="Overnight train service exists on this route.",
         )
 
 
-def test_llm_estimated_mode_can_never_claim_verified_never_fact_checked():
+def test_feasible_mode_can_never_claim_verified_never_fact_checked():
     with pytest.raises(ValidationError):
         ModeFeasibility(
             mode="bus",
             status="feasible",
-            duration_source="llm_estimated",
+            duration_source="computed",
             estimated_duration_minutes=480,
             reason="Bus operators run this route daily.",
             verification=AtlasReference(
@@ -328,11 +318,11 @@ def test_llm_estimated_mode_can_never_claim_verified_never_fact_checked():
         )
 
 
-def test_llm_estimated_mode_with_general_guidance_succeeds():
+def test_feasible_mode_with_general_guidance_succeeds():
     feasibility = ModeFeasibility(
         mode="bus",
         status="feasible",
-        duration_source="llm_estimated",
+        duration_source="computed",
         estimated_duration_minutes=480,
         reason="Bus operators run this route daily.",
         verification=AtlasReference(status="GENERAL_GUIDANCE"),
@@ -340,19 +330,34 @@ def test_llm_estimated_mode_with_general_guidance_succeeds():
     assert feasibility.verification.status == "GENERAL_GUIDANCE"
 
 
-def test_llm_estimated_duration_over_bound_is_rejected():
+def test_computed_duration_over_bound_is_rejected():
     with pytest.raises(ValidationError):
         ModeFeasibility(
             mode="train",
             status="feasible",
-            duration_source="llm_estimated",
+            duration_source="computed",
             estimated_duration_minutes=100000,
             reason="Extremely long overland route.",
             verification=AtlasReference(status="GENERAL_GUIDANCE"),
         )
 
 
-def test_mode_source_mismatch_is_rejected():
+def test_invalid_status_literal_is_rejected():
+    # status is now always "feasible" (TWM-195 root-fix contract) --
+    # ruled_out/unknown no longer exist on the contract.
+    with pytest.raises(ValidationError):
+        ModeFeasibility(
+            mode="drive",
+            status="ruled_out",
+            duration_source="computed",
+            reason="x",
+            verification=AtlasReference(status="GENERAL_GUIDANCE"),
+        )
+
+
+def test_invalid_duration_source_literal_is_rejected():
+    # duration_source is now always "computed" (TWM-195) -- the old
+    # "llm_estimated" source no longer exists on the contract.
     with pytest.raises(ValidationError):
         ModeFeasibility(
             mode="drive",
@@ -363,33 +368,59 @@ def test_mode_source_mismatch_is_rejected():
         )
 
 
-def test_feasibility_assessment_rejects_duplicate_modes():
+def test_feasibility_assessment_rejects_duplicate_modes_within_the_list():
     with pytest.raises(ValidationError):
         TripFeasibilityAssessment(
             modes=[
                 ModeFeasibility(
-                    mode="flight", status="feasible", duration_source="computed", reason="Direct route."
+                    mode="flight",
+                    status="feasible",
+                    duration_source="computed",
+                    reason="Direct route.",
+                    verification=AtlasReference(status="GENERAL_GUIDANCE"),
                 ),
                 ModeFeasibility(
-                    mode="flight", status="ruled_out", duration_source="computed", reason="Duplicate."
+                    mode="flight",
+                    status="feasible",
+                    duration_source="computed",
+                    reason="Duplicate.",
+                    verification=AtlasReference(status="GENERAL_GUIDANCE"),
                 ),
-            ]
+            ],
         )
 
 
-def test_feasibility_assessment_with_mixed_modes_succeeds():
+def test_trip_feasibility_assessment_has_no_excluded_modes_field():
+    # Regression (TWM-195 root-fix contract): excluded_modes was removed
+    # entirely, not merely emptied by default.
+    assert "excluded_modes" not in TripFeasibilityAssessment.model_fields
+
+
+def test_feasibility_assessment_allows_an_empty_modes_list():
+    # A route can genuinely have zero feasible modes (fail-closed cannot-
+    # assess outcome) -- this must not be a validation error.
+    assessment = TripFeasibilityAssessment(modes=[])
+    assert assessment.modes == []
+
+
+def test_feasibility_assessment_with_multiple_feasible_modes_succeeds():
     assessment = TripFeasibilityAssessment(
         modes=[
-            ModeFeasibility(mode="flight", status="feasible", duration_source="computed", reason="Direct route."),
-            ModeFeasibility(mode="drive", status="ruled_out", duration_source="computed", reason="Too far to drive."),
+            ModeFeasibility(
+                mode="flight",
+                status="feasible",
+                duration_source="computed",
+                reason="Direct route.",
+                verification=AtlasReference(status="GENERAL_GUIDANCE"),
+            ),
             ModeFeasibility(
                 mode="train",
                 status="feasible",
-                duration_source="llm_estimated",
+                duration_source="computed",
                 estimated_duration_minutes=600,
                 reason="Overnight train service exists.",
                 verification=AtlasReference(status="GENERAL_GUIDANCE"),
             ),
-        ]
+        ],
     )
-    assert len(assessment.modes) == 3
+    assert len(assessment.modes) == 2

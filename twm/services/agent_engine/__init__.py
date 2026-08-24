@@ -11,7 +11,7 @@ from .contracts import (
     AgentOutputError,
     GenerationConfig,
 )
-from .factory import get_agent_engine
+from .factory import build_agent_adapter, get_agent_engine
 from .langgraph import LangGraphAgentAdapter
 from .n8n import N8NAgentAdapter
 from .service import AgentExecutionService
@@ -31,5 +31,6 @@ __all__ = [
     "GenerationConfig",
     "LangGraphAgentAdapter",
     "N8NAgentAdapter",
+    "build_agent_adapter",
     "get_agent_engine",
 ]

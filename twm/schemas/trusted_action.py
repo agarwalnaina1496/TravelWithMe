@@ -76,15 +76,19 @@ Security posture (structural, not documentation):
   construct one from the other's data (see tests) and cannot present an
   action as verified evidence or evidence as an actionable link.
 
-Feasibility reasoning (mode/stay comparisons where TWM has no live
-provider): flight and drive duration/distance estimates are Backend-computed
-deterministically and carry no honesty tag (they are not model output).
-Train and bus durations are not derivable deterministically today, so they
-are LLM-estimated, bounded, and must carry the same VERIFIED/GENERAL_GUIDANCE
-tag Atlas already uses (imported directly from ``twm/schemas/atlas.py`` to
-avoid duplicating its honesty-validator logic) — and are structurally
-forbidden from ever claiming ``VERIFIED``, since an LLM duration estimate is
-never fact-checked.
+Feasibility reasoning (TWM-195 root-fix contract): ``TripFeasibilityAssessment``
+is a single ``modes`` list of only genuinely route-valid, bookable
+transport modes for a leg, produced by deterministic Backend rule code
+(``twm/services/trusted_action/feasibility.py``) — there is no LLM/agent/
+classifier runtime anywhere in this path (an internal LLM route-mode
+classifier was tried and explicitly rejected in prior review rounds; see
+Linear TWM-195). A route this data cannot confidently assess returns
+``modes: []`` — never a fabricated "everything is feasible" fallback and
+never all four modes by default. Every entry that is returned must carry
+the same GENERAL_GUIDANCE honesty tag Atlas already uses (imported directly
+from ``twm/schemas/atlas.py`` to avoid duplicating its honesty-validator
+logic) and is structurally forbidden from ever claiming ``VERIFIED``, since
+a rule-based judgement is not itself a fact-checked, sourced claim.
 
 This is a read/query-style resolution boundary, matching
 ``twm/services/flight_search/service.py``'s framing: it never mutates trip
@@ -207,17 +211,27 @@ class ActionTarget(BaseModel):
         return url
 
 
-DurationSource = Literal["computed", "llm_estimated"]
+# TWM-195: distance/duration figures attached to a returned mode are now
+# always derived from this module's bounded, deterministic city-distance
+# table (twm/services/trusted_action/feasibility.py), never an LLM estimate
+# -- "llm_estimated" would be a lie about provenance now that the classifier
+# is gone, so this is renamed to "computed" to stay honest about where the
+# number came from (mirrors this file's existing honesty-tag conventions,
+# e.g. ModeFeasibility.verification never claiming VERIFIED for a rule-based
+# judgement). Kept as its own Literal (not collapsed to a bool) so a future
+# real routing/geocoding provider can be added as a new literal value later.
+DurationSource = Literal["computed"]
 TransportMode = Literal["flight", "train", "bus", "drive"]
-FeasibilityStatus = Literal["feasible", "ruled_out"]
+# TWM-195 root-fix contract: modes only ever contains genuinely route-valid,
+# bookable entries -- there is no more ruled_out/unknown bucket to express,
+# because non-feasible modes are simply absent from the list (see
+# TripFeasibilityAssessment). The Literal is collapsed to its single actual
+# value per the Linear issue's explicit direction that keeping `status` at
+# all is "transitional/redundant" -- this keeps the field temporarily (to
+# avoid churn to every existing ModeFeasibility construction site) while
+# removing the now-pointless three-way branching it used to require.
+FeasibilityStatus = Literal["feasible"]
 
-# flight/drive are Backend-computed deterministically; train/bus have no
-# deterministic source today and are LLM-estimated.
-_COMPUTED_MODES: frozenset[TransportMode] = frozenset({"flight", "drive"})
-_LLM_ESTIMATED_MODES: frozenset[TransportMode] = frozenset({"train", "bus"})
-
-# Sane upper bound for an LLM-estimated overland duration (3 days), to keep
-# a hallucinated figure from propagating unbounded.
 _MAX_ESTIMATED_DURATION_MINUTES = 4320
 
 
@@ -230,46 +244,45 @@ class ModeFeasibility(BaseModel):
     estimated_duration_minutes: Optional[int] = Field(default=None, ge=1)
     estimated_distance_km: Optional[float] = Field(default=None, ge=0)
     reason: TrustedActionText
-    # Required (and bounded to GENERAL_GUIDANCE) only for llm_estimated
-    # modes; always None for computed modes, since a deterministic
-    # computation is not model output and has nothing to fact-check.
+    # Required on every entry now (modes only ever holds feasible entries).
+    # Bounded to GENERAL_GUIDANCE, never VERIFIED -- a deterministic rule
+    # judgement is not itself a fact-checked, sourced claim.
     verification: Optional[AtlasReference] = None
 
     @model_validator(mode="after")
-    def validate_mode_and_source(self) -> "ModeFeasibility":
-        if self.mode in _COMPUTED_MODES and self.duration_source != "computed":
-            raise ValueError(f"mode {self.mode} must use duration_source=computed")
-        if self.mode in _LLM_ESTIMATED_MODES and self.duration_source != "llm_estimated":
-            raise ValueError(f"mode {self.mode} must use duration_source=llm_estimated")
-        return self
-
-    @model_validator(mode="after")
     def validate_verification_honesty(self) -> "ModeFeasibility":
-        if self.duration_source == "computed":
-            if self.verification is not None:
-                raise ValueError("computed durations must not carry a verification tag")
-        else:  # llm_estimated
-            if self.verification is None:
-                raise ValueError("llm_estimated durations require a verification tag")
-            if self.verification.status == "VERIFIED":
-                raise ValueError(
-                    "an llm_estimated duration must never claim VERIFIED — it is not fact-checked"
-                )
+        if self.verification is None:
+            raise ValueError("a feasible mode requires a verification tag")
+        if self.verification.status == "VERIFIED":
+            raise ValueError(
+                "a deterministic route-rule judgement must never claim "
+                "VERIFIED — it is not fact-checked"
+            )
         return self
 
     @model_validator(mode="after")
     def validate_bounds(self) -> "ModeFeasibility":
         if (
-            self.duration_source == "llm_estimated"
-            and self.estimated_duration_minutes is not None
+            self.estimated_duration_minutes is not None
             and self.estimated_duration_minutes > _MAX_ESTIMATED_DURATION_MINUTES
         ):
-            raise ValueError("llm_estimated duration exceeds the bounded maximum")
+            raise ValueError("estimated duration exceeds the bounded maximum")
         return self
 
 
 class TripFeasibilityAssessment(BaseModel):
-    """Per-mode feasibility reasoning for a route (flight/train/bus/drive).
+    """TWM-195 root-fix contract: the single, route-valid/bookable mode list
+    for a leg (flight/train/bus/drive), produced by deterministic Backend
+    rule code, never an LLM/agent/classifier runtime.
+
+    ``modes`` holds only genuinely feasible entries -- there is no
+    ``excluded_modes`` field and no per-mode ``ruled_out``/``unknown``
+    status exposed to callers; a mode that is not route-valid is simply
+    absent from the list. A route this data cannot confidently assess (or a
+    leg with zero genuine modes) returns ``modes: []`` -- Backend must never
+    fail open to "assume everything is feasible". A route can genuinely
+    have anywhere from 0 to 4 feasible modes; nothing here assumes all four
+    must be judged or present.
 
     Distinct from any action: this never carries a price, only a
     feasibility judgement and a duration/distance estimate with an honest
@@ -278,13 +291,13 @@ class TripFeasibilityAssessment(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    modes: list[ModeFeasibility] = Field(min_length=1)
+    modes: list[ModeFeasibility] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_unique_modes(self) -> "TripFeasibilityAssessment":
-        seen = [entry.mode for entry in self.modes]
-        if len(seen) != len(set(seen)):
-            raise ValueError("each transport mode may appear at most once")
+        modes = [entry.mode for entry in self.modes]
+        if len(modes) != len(set(modes)):
+            raise ValueError("each transport mode may appear at most once in modes")
         return self
 
 

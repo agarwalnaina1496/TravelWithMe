@@ -370,59 +370,84 @@ def test_readiness_rejection_is_logged(api_client: TestClient):
     assert "be.trusted_action.readiness_rejected" in events
 
 
-# --- Feasibility endpoint ---------------------------------------------------
+# --- Feasibility endpoint (TWM-195 root-fix: deterministic rules, no
+# classifier of any kind) ----------------------------------------------------
 
 
-def test_feasibility_endpoint_returns_computed_flight_and_drive_modes(api_client: TestClient):
+def test_feasibility_endpoint_returns_route_valid_modes_for_a_medium_distance_route(
+    api_client: TestClient,
+):
     repository = MemoryTripRepository()
     _override_persistence(repository)
     trip_id = _create_trip(api_client)
 
     response = api_client.post(
         f"/trips/{trip_id}/trusted-action/feasibility",
-        json={"origin": "Delhi", "destination": "Agra"},
+        json={"origin": "Bangalore", "destination": "Mangalore"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "excluded_modes" not in body
+    modes = {mode["mode"]: mode for mode in body["modes"]}
+    assert {"flight", "train", "bus"} <= set(modes)
+    for mode in modes.values():
+        assert mode["status"] == "feasible"
+        assert mode["duration_source"] == "computed"
+        assert mode["verification"]["status"] == "GENERAL_GUIDANCE"
+
+
+def test_feasibility_endpoint_excludes_route_absurd_flight_for_a_short_hop(api_client: TestClient):
+    # Bhubaneswar -> Puri: flight is route-absurd for this local hop.
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Bhubaneswar", "destination": "Puri"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    modes = {mode["mode"]: mode for mode in body["modes"]}
+    assert "flight" not in modes
+    assert modes["train"]["status"] == "feasible"
+    assert modes["bus"]["status"] == "feasible"
+    assert modes["drive"]["status"] == "feasible"
+
+
+def test_feasibility_endpoint_returns_empty_modes_never_all_modes_for_unknown_cities(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Some Remote Village", "destination": "Another Remote Village"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["modes"] == []
+
+
+def test_feasibility_endpoint_returns_empty_modes_for_a_degenerate_route(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Goa", "destination": "Goa"},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body is not None
-    modes = {mode["mode"]: mode for mode in body["modes"]}
-    assert modes["flight"]["duration_source"] == "computed"
-    assert modes["flight"]["verification"] is None
-    assert modes["drive"]["duration_source"] == "computed"
-    assert "train" not in modes
-    assert "bus" not in modes
-
-
-def test_feasibility_endpoint_rules_out_drive_for_a_long_distance(api_client: TestClient):
-    repository = MemoryTripRepository()
-    _override_persistence(repository)
-    trip_id = _create_trip(api_client)
-
-    response = api_client.post(
-        f"/trips/{trip_id}/trusted-action/feasibility",
-        json={"origin": "Delhi", "destination": "Chennai"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    modes = {mode["mode"]: mode for mode in body["modes"]}
-    assert modes["drive"]["status"] == "ruled_out"
-    assert modes["flight"]["status"] == "feasible"
-
-
-def test_feasibility_endpoint_returns_null_for_unknown_cities(api_client: TestClient):
-    repository = MemoryTripRepository()
-    _override_persistence(repository)
-    trip_id = _create_trip(api_client)
-
-    response = api_client.post(
-        f"/trips/{trip_id}/trusted-action/feasibility",
-        json={"origin": "Atlantis", "destination": "Narnia"},
-    )
-
-    assert response.status_code == 200
-    assert response.json() is None
+    assert body["modes"] == []
 
 
 def test_feasibility_endpoint_unknown_trip_returns_404(api_client: TestClient):
@@ -434,3 +459,53 @@ def test_feasibility_endpoint_unknown_trip_returns_404(api_client: TestClient):
         json={"origin": "Delhi", "destination": "Agra"},
     )
     assert response.status_code == 404
+
+
+def test_feasibility_resolved_is_logged_with_returned_mode_names(api_client: TestClient):
+    repository = MemoryTripRepository()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True, environment="test", payload_mode=PayloadMode.METADATA, max_field_size=256
+        ),
+        sink,
+    )
+    _override_persistence(repository)
+    app.dependency_overrides[get_logger] = lambda: logger
+    trip_id = _create_trip(api_client)
+
+    api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Bhubaneswar", "destination": "Puri"},
+    )
+
+    events = {event["event"]: event for event in sink.events}
+    assert "be.trusted_action.feasibility.requested" in events
+    resolved = events["be.trusted_action.feasibility.resolved"]
+    assert set(resolved["fields"]["returned_modes"]) == {"train", "bus", "drive"}
+    assert resolved["fields"]["returned_mode_count"] == 3
+    app.dependency_overrides.pop(get_logger, None)
+
+
+def test_feasibility_empty_outcome_is_logged_separately_from_resolved(api_client: TestClient):
+    repository = MemoryTripRepository()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True, environment="test", payload_mode=PayloadMode.METADATA, max_field_size=256
+        ),
+        sink,
+    )
+    _override_persistence(repository)
+    app.dependency_overrides[get_logger] = lambda: logger
+    trip_id = _create_trip(api_client)
+
+    api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Some Remote Village", "destination": "Another Remote Village"},
+    )
+
+    events = [event["event"] for event in sink.events]
+    assert "be.trusted_action.feasibility.empty" in events
+    assert "be.trusted_action.feasibility.resolved" not in events
+    app.dependency_overrides.pop(get_logger, None)

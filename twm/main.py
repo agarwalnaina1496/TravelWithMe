@@ -26,6 +26,7 @@ from .services import (
     AgentAdapterTimeoutError,
     AgentEngineSettings,
     AgentOutputError,
+    build_agent_adapter,
     get_agent_engine,
 )
 from .services.flight_search import FlightSearchSettings, AviasalesAdapter
@@ -50,8 +51,9 @@ async def application_lifespan(app: FastAPI):
             http_client = await stack.enter_async_context(
                 httpx.AsyncClient(timeout=float(settings.n8n_timeout_seconds))
             )
+        agent_adapter = build_agent_adapter(settings, http_client)
         app.state.agent_engine = get_agent_engine(
-            settings, app.state.telemetry, http_client
+            settings, app.state.telemetry, http_client, adapter=agent_adapter
         )
         app.state.flight_search_settings = flight_search_settings
         if flight_search_settings.is_configured:

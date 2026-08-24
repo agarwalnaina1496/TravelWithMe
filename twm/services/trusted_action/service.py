@@ -18,9 +18,8 @@ a specific partner/capability). ``assess_feasibility`` is exposed as its
 own service method / router endpoint rather than folded in.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from ...schemas.trusted_action import (
@@ -33,7 +32,7 @@ from ...schemas.trusted_action import (
 )
 from ...telemetry import TelemetryLogger
 from .calculations import missing_required_fields, resolve_partner
-from .feasibility import DistanceEstimator, DurationEstimator, StaticCityDistanceEstimator, assess_trip_feasibility
+from .feasibility import assess_trip_feasibility
 from .resolvers import resolve_partner_target
 from .settings import TrustedActionSettings
 
@@ -45,8 +44,6 @@ _UNSUPPORTED_PARTNER_MESSAGE = "No approved partner is available for this reques
 class TrustedActionService:
     logger: TelemetryLogger
     settings: TrustedActionSettings
-    distance_estimator: DistanceEstimator = field(default_factory=StaticCityDistanceEstimator)
-    duration_estimator: Optional[DurationEstimator] = None
 
     def resolve(self, trip_id: UUID, request: TrustedActionRequest) -> TrustedActionResult:
         generated_at = datetime.now(timezone.utc)
@@ -130,13 +127,41 @@ class TrustedActionService:
         self._log_resolved(trip_id, action)
         return TrustedActionResult(status="resolved", generated_at=generated_at, action=action)
 
-    def assess_feasibility(self, origin: str, destination: str) -> Optional[TripFeasibilityAssessment]:
-        return assess_trip_feasibility(
-            origin,
-            destination,
-            distance_estimator=self.distance_estimator,
-            duration_estimator=self.duration_estimator,
+    def assess_feasibility(
+        self, trip_id: UUID, origin: str, destination: str
+    ) -> TripFeasibilityAssessment:
+        """Deterministic, synchronous route-mode feasibility assessment
+        (TWM-195 root fix -- no classifier/LLM/agent call of any kind).
+        Always returns a real ``TripFeasibilityAssessment``; ``modes`` is
+        empty when the route could not be confidently assessed."""
+
+        self.logger.info(
+            "Received trip-feasibility assessment request.",
+            event="be.trusted_action.feasibility.requested",
+            source="application",
+            trip_id=str(trip_id),
+            segment_count=1,
         )
+        assessment = assess_trip_feasibility(origin, destination)
+        returned_modes = [entry.mode for entry in assessment.modes]
+        if returned_modes:
+            self.logger.info(
+                "Resolved trip-feasibility assessment.",
+                event="be.trusted_action.feasibility.resolved",
+                source="application",
+                trip_id=str(trip_id),
+                returned_mode_count=len(returned_modes),
+                returned_modes=returned_modes,
+            )
+        else:
+            self.logger.warning(
+                "Trip-feasibility assessment resolved with no route-valid "
+                "modes (cannot-assess or genuinely no bookable modes).",
+                event="be.trusted_action.feasibility.empty",
+                source="application",
+                trip_id=str(trip_id),
+            )
+        return assessment
 
     def _log_resolved(self, trip_id: UUID, action: TrustedAction) -> None:
         self.logger.info(

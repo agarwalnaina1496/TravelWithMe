@@ -73,16 +73,19 @@ class AgentEngineSettings:
             )
 
         if engine == "langgraph":
+            langgraph_model_provider = _required_with_default(
+                "langgraph_model_provider", "groq"
+            )
+            langgraph_api_key = _required("langgraph_api_key")
+            langgraph_model = _required_with_default(
+                "langgraph_model", "openai/gpt-oss-120b"
+            )
             return cls(
                 engine=engine,
                 environment=environment,
-                langgraph_model_provider=_required_with_default(
-                    "langgraph_model_provider", "groq"
-                ),
-                langgraph_api_key=_required("langgraph_api_key"),
-                langgraph_model=_required_with_default(
-                    "langgraph_model", "openai/gpt-oss-120b"
-                ),
+                langgraph_model_provider=langgraph_model_provider,
+                langgraph_api_key=langgraph_api_key,
+                langgraph_model=langgraph_model,
                 generation_max_output_tokens=generation_max_output_tokens,
                 generation_temperature=generation_temperature,
                 generation_timeout_seconds=generation_timeout_seconds,
