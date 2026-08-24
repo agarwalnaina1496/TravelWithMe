@@ -132,6 +132,11 @@ class AtlasTimelineItem(BaseModel):
     location: AtlasText
     detail: AtlasText
     movement_guidance: Optional[AtlasText] = None
+    from_city: Optional[AtlasText] = None
+    to_city: Optional[AtlasText] = None
+    from_place: Optional[AtlasText] = None
+    to_place: Optional[AtlasText] = None
+    display_label: Optional[AtlasText] = None
     estimated_cost_low: Optional[int] = Field(default=None, ge=0)
     estimated_cost_high: Optional[int] = Field(default=None, ge=0)
     reference: AtlasReference
@@ -152,6 +157,23 @@ class AtlasTimelineItem(BaseModel):
         if not self.requires_advance_booking and self.booking_readiness is not None:
             raise ValueError(
                 "booking_readiness is allowed only when requires_advance_booking is true"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_movement_endpoints(self) -> "AtlasTimelineItem":
+        if self.kind != "TRAVEL":
+            if self.from_city is not None or self.to_city is not None:
+                raise ValueError(
+                    "from_city/to_city are allowed only when kind is TRAVEL"
+                )
+            if self.from_place is not None or self.to_place is not None:
+                raise ValueError(
+                    "from_place/to_place are allowed only when kind is TRAVEL"
+                )
+        if (self.from_city is None) != (self.to_city is None):
+            raise ValueError(
+                "from_city and to_city must both be present or both be absent"
             )
         return self
 
