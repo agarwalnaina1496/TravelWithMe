@@ -75,14 +75,29 @@ FlightSearchMissingField = Literal[
 ]
 
 
-class FlightSearchKeys:
-    """Flight Search request payload field names — the source of truth
-    for code that builds or checks these fields by name (e.g.
-    ``missing_required_fields``) instead of re-hardcoding the literals
-    already enumerated in ``FlightSearchMissingField`` above."""
+class FlightSearchMissingFieldKeys:
+    """``FlightSearchMissingField`` values — the source of truth for code
+    that reports a missing field by this name (``missing_required_fields``
+    below). These are the *report* labels, not ``FlightSearchRequest``'s
+    own payload field names (see ``FlightSearchRequestKeys`` for those):
+    ``origin``/``destination`` here name the same real-world route, but
+    ``FlightSearchRequest`` carries it as ``origin_iata``/
+    ``destination_iata`` — the two are related, not identical, contracts."""
 
     ORIGIN = "origin"
     DESTINATION = "destination"
+    DEPARTURE_DATE = "departure_date"
+    RETURN_DATE = "return_date"
+    TRAVELERS = "travelers"
+
+
+class FlightSearchRequestKeys:
+    """``FlightSearchRequest``'s own request payload field names — the
+    source of truth for code that builds this request by field name
+    instead of re-hardcoding the literals."""
+
+    ORIGIN_IATA = "origin_iata"
+    DESTINATION_IATA = "destination_iata"
     DEPARTURE_DATE = "departure_date"
     RETURN_DATE = "return_date"
     TRAVELERS = "travelers"
