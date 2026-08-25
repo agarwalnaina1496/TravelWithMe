@@ -43,12 +43,21 @@ FIXED_KEYS = (
 
 DESTINATIONS_KEY = "destinations"
 
+# BOOKING_DATE_KEY (TWM-201): the canonical post-freeze booking-date
+# precision context — Backend-owned, written only by the update_booking_dates
+# trip command, never by Scout/Meridian/Guide extraction. Separate from
+# travel_dates (a Scout-extracted, untyped, free-form fact used for planning
+# context) because this field is structured (exact date XOR month) and
+# exists specifically so booking legs can carry departure_date/
+# departure_month at the precision the traveler actually confirmed.
+BOOKING_DATE_KEY = "booking_dates"
+
 # Every addressable (non-extra) TripContext field — used only to decide
 # which fields must not round-trip as an explicit null when unset (see the
 # serializer below). Not the same thing as "shared across every phase";
 # see DESTINATIONS_KEY's own docstring note above for why it's separate
 # from FIXED_KEYS.
-_ADDRESSABLE_KEYS = (*FIXED_KEYS, DESTINATIONS_KEY)
+_ADDRESSABLE_KEYS = (*FIXED_KEYS, DESTINATIONS_KEY, BOOKING_DATE_KEY)
 
 
 class TripContext(BaseModel):
@@ -60,6 +69,7 @@ class TripContext(BaseModel):
     travel_dates: Optional[Any] = None
     budget: Optional[Any] = None
     destinations: Optional[list[str]] = None
+    booking_dates: Optional[dict[str, Any]] = None
 
     @model_serializer(mode="wrap")
     def _omit_unset_fixed_keys(self, handler: Any) -> dict[str, Any]:
