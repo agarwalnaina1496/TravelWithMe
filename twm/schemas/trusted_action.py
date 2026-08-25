@@ -134,7 +134,10 @@ PartnerName = Literal[
 # Every base domain here is a fixed constant, never derived from caller
 # input. This is the only place a real hostname is allowed to appear.
 _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
-    "aviasales": "www.aviasales.com",
+    # Aviasales' actual search-form deep link lives on the search.*
+    # subdomain (confirmed via Travelpayouts' own "Aviasales search form"
+    # documentation), not the marketing site's www.* domain.
+    "aviasales": "search.aviasales.com",
     "ixigo": "www.ixigo.com",
     "redbus": "www.redbus.in",
     "hotellook": "search.hotellook.com",
@@ -366,8 +369,9 @@ class TrustedAction(BaseModel):
         # flight PROVIDER (Aviasales, TWM-144/145), so a generic PROVIDER
         # partner-target for flight would be a redundant, unresearched
         # second path to the same thing. SEARCH_REDIRECT is still allowed
-        # for flight (ixigo) as a genuine second, alternative option shown
-        # alongside that live offer — never a replacement for it.
+        # for flight (aviasales, TWM-196) as a genuine second, alternative
+        # option shown alongside that live offer — never a replacement for
+        # it.
         if self.action_type == "PROVIDER" and self.domain == "flight":
             raise ValueError("PROVIDER must not use domain=flight — use CHECK_PRICES instead")
         if self.action_type in ("PROVIDER", "SEARCH_REDIRECT"):
