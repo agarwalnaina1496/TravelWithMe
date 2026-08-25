@@ -24,10 +24,14 @@ Tracking parameters:
   (EarnKaro/Cuelinks-style attribution, a separate account from
   Travelpayouts). Omitted entirely when unset — never fails, never a fake
   placeholder.
-- hotellook / booking_com / agoda (Travelpayouts-brand partners): ``marker``,
-  sourced from ``TrustedActionSettings.travelpayouts_marker`` — the *same*
-  Travelpayouts partner/marker ID the Aviasales adapter already uses (same
-  account), injected at call-site wiring time rather than duplicated here.
+- aviasales / hotellook / booking_com / agoda (Travelpayouts-brand
+  partners): ``marker``, sourced from
+  ``TrustedActionSettings.travelpayouts_marker`` — the *same* Travelpayouts
+  partner/marker ID the Aviasales adapter already uses for its live-price
+  calls (twm/services/flight_search/aviasales.py, same account), injected
+  at call-site wiring time rather than duplicated here. flight's
+  SEARCH_REDIRECT fallback (TWM-196) therefore shares tracking identity
+  with its own live-data path, not with ixigo's separate program.
 - redbus: no tracking parameter is wired. redBus has a confirmed
   EarnKaro-based affiliate program, but no deep-link parameter format was
   researched/confirmed this session, so the resolver produces a safe,
@@ -49,6 +53,7 @@ from .settings import TrustedActionSettings
 # individual partner a confirmed, more specific path without touching the
 # others.
 _SEARCH_PATH: dict[PartnerName, str] = {
+    "aviasales": "search",
     "ixigo": "search",
     "redbus": "search",
     "hotellook": "search",
@@ -120,7 +125,9 @@ def build_query_params(
     return params
 
 
-_TRAVELPAYOUTS_PARTNERS: frozenset[PartnerName] = frozenset({"hotellook", "booking_com", "agoda"})
+_TRAVELPAYOUTS_PARTNERS: frozenset[PartnerName] = frozenset(
+    {"aviasales", "hotellook", "booking_com", "agoda"}
+)
 
 
 def tracking_params(partner: PartnerName, settings: TrustedActionSettings) -> dict[str, str]:

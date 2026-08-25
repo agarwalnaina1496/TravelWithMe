@@ -10,8 +10,10 @@ directly here.
 from twm.services.trusted_action.calculations import allowed_partners
 
 
-def test_flight_only_allows_ixigo():
-    assert allowed_partners("flight") == ("ixigo",)
+def test_flight_only_allows_aviasales():
+    # TWM-196: flights use Aviasales/Travelpayouts for both the live-price
+    # and affiliate-redirect paths, replacing the earlier ixigo placeholder.
+    assert allowed_partners("flight") == ("aviasales",)
 
 
 def test_train_only_allows_ixigo():

@@ -57,6 +57,18 @@ def test_ixigo_tracking_included_when_affiliate_id_configured():
     assert tracking_params("ixigo", _WITH_TRACKING) == {"affiliate_id": "ek-123"}
 
 
+def test_aviasales_tracking_uses_the_travelpayouts_marker_not_ixigo(
+) -> None:
+    # TWM-196: flight's SEARCH_REDIRECT partner (Aviasales) is a
+    # Travelpayouts brand, same tracking identity as the live-price path —
+    # never ixigo's separate affiliate id, even when both are configured.
+    assert tracking_params("aviasales", _WITH_TRACKING) == {"marker": "marker-456"}
+
+
+def test_aviasales_tracking_omitted_when_marker_unset():
+    assert tracking_params("aviasales", _NO_TRACKING) == {}
+
+
 def test_travelpayouts_partners_get_marker_when_configured():
     for partner in ("hotellook", "booking_com", "agoda"):
         assert tracking_params(partner, _WITH_TRACKING) == {"marker": "marker-456"}

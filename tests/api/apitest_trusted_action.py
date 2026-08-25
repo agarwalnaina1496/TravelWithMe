@@ -129,10 +129,13 @@ def test_search_redirect_resolves_to_an_allowlisted_partner_target(api_client: T
     assert body["status"] == "resolved"
     action = body["action"]
     assert action["action_type"] == "SEARCH_REDIRECT"
-    assert action["target"]["partner"] == "ixigo"
+    # TWM-196: flight's approved SEARCH_REDIRECT partner is Aviasales
+    # itself (Travelpayouts) — the same brand as the live-price path —
+    # replacing the earlier ixigo placeholder.
+    assert action["target"]["partner"] == "aviasales"
     assert action["affiliate_disclosure"] is True
     target_url = action["target"]["target_url"]
-    assert target_url.startswith("https://www.ixigo.com/")
+    assert target_url.startswith("https://www.aviasales.com/")
     assert "://" not in target_url[len("https://") :]
 
 
@@ -179,7 +182,7 @@ def test_affiliate_redirect_resolves_without_a_departure_date(api_client: TestCl
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "resolved"
-    assert body["action"]["target"]["target_url"].startswith("https://www.ixigo.com/")
+    assert body["action"]["target"]["target_url"].startswith("https://www.aviasales.com/")
     assert "depart_date" not in body["action"]["target"]["target_url"]
 
 
@@ -355,6 +358,10 @@ def test_read_query_boundary_never_mutates_trip_version(api_client: TestClient):
 
 
 def test_ixigo_affiliate_id_is_appended_when_configured(api_client: TestClient):
+    # TWM-196: flight's SEARCH_REDIRECT partner moved to Aviasales
+    # (Travelpayouts-tracked, see test_travelpayouts_marker_is_appended_
+    # when_configured below) — ixigo's own affiliate id is exercised here
+    # via train, its remaining approved domain.
     repository = MemoryTripRepository()
     _override_persistence(repository)
     app.dependency_overrides[get_trusted_action_service] = lambda: TrustedActionService(
@@ -363,7 +370,18 @@ def test_ixigo_affiliate_id_is_appended_when_configured(api_client: TestClient):
     )
     trip_id = _create_trip(api_client)
 
-    response = api_client.post(f"/trips/{trip_id}/trusted-action", json=VALID_FLIGHT_SEARCH_REDIRECT)
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "train",
+            "origin": "Delhi",
+            "destination": "Mumbai",
+            "trip_shape": "one_way",
+            "departure_date": "2026-09-10",
+            "traveler_count": 2,
+        },
+    )
 
     assert response.status_code == 200
     body = response.json()

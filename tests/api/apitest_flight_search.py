@@ -195,6 +195,33 @@ def test_place_endpoints_resolve_to_iata_via_backend(api_client: TestClient):
     assert body["destination_resolved"]["iata"] == "BBI"
 
 
+def test_bangalore_to_delhi_resolves_both_airports_not_a_clarification(
+    api_client: TestClient,
+):
+    # Regression for a manual TWM-196 verification finding: bare "Delhi"
+    # returned clarification_needed on the destination side because
+    # OurAirports only carries "New Delhi" as a municipality/keyword match.
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_place": "Bangalore",
+            "destination_place": "Delhi",
+            "departure_date": "2027-01-10",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] != "clarification_needed"
+    assert body["origin_resolved"]["iata"] == "BLR"
+    assert body["destination_resolved"]["iata"] == "DEL"
+
+
 def test_unresolvable_place_endpoint_is_a_typed_clarification_not_a_guess(
     api_client: TestClient,
 ):

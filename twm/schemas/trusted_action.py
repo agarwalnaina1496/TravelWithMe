@@ -36,7 +36,8 @@ Fixed, closed partner allowlist (a Literal, not free text — adding a
 partner later is a contract change), all verified this session:
 
 - flight (SEARCH_REDIRECT alternative only, alongside the Aviasales
-  CHECK_PRICES offer): ixigo
+  CHECK_PRICES offer): aviasales (TWM-196 — same Travelpayouts-brand
+  partner as the live-data path, replacing the earlier ixigo placeholder)
 - train: ixigo
 - bus: ixigo, redbus
 - stay: hotellook, booking_com, agoda, hostelworld, ixigo
@@ -121,6 +122,7 @@ TrustedActionTripType = Literal["one_way", "round_trip"]
 # Closed partner allowlist. Adding a partner is a contract change, not a
 # runtime config value.
 PartnerName = Literal[
+    "aviasales",
     "ixigo",
     "redbus",
     "hotellook",
@@ -132,6 +134,7 @@ PartnerName = Literal[
 # Every base domain here is a fixed constant, never derived from caller
 # input. This is the only place a real hostname is allowed to appear.
 _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
+    "aviasales": "www.aviasales.com",
     "ixigo": "www.ixigo.com",
     "redbus": "www.redbus.in",
     "hotellook": "search.hotellook.com",
@@ -141,13 +144,18 @@ _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
 }
 
 # Which partners are approved for which domain, for PROVIDER/SEARCH_REDIRECT
-# action types. flight's only approved partner is ixigo, and only for
-# SEARCH_REDIRECT (see TrustedAction.validate_domain_partner) — shown as a
-# second, alternative option alongside the live Aviasales PROVIDER offer
-# (reached via CHECK_PRICES's internal_capability, not this generic
-# partner-target mechanism), never as a PROVIDER itself.
+# action types. flight's only approved partner is Aviasales/Travelpayouts
+# (TWM-196: confirmed product direction — flights use Aviasales for both
+# the live/cached price path, CHECK_PRICES/twm/services/flight_search, and
+# the affiliate search-redirect fallback, replacing the earlier ixigo
+# placeholder), and only for SEARCH_REDIRECT (see
+# TrustedAction.validate_domain_partner) — shown as a second, alternative
+# option alongside the live Aviasales PROVIDER offer (reached via
+# CHECK_PRICES's internal_capability, not this generic partner-target
+# mechanism), never as a PROVIDER itself. ixigo remains the approved
+# partner for train (unchanged by this story).
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] = {
-    "flight": frozenset({"ixigo"}),
+    "flight": frozenset({"aviasales"}),
     "train": frozenset({"ixigo"}),
     "bus": frozenset({"ixigo", "redbus"}),
     "stay": frozenset({"hotellook", "booking_com", "agoda", "hostelworld", "ixigo"}),
