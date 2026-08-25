@@ -1,5 +1,7 @@
 """Atlas input and rich final-itinerary contracts."""
 
+import re
+from datetime import date
 from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -23,6 +25,8 @@ AtlasAssumptionCategory = Literal[
 # Atlas never sees a real reservation, so "confirmed" is deliberately absent:
 # confirmed logistics are an application-owned anchor added by a later capability.
 AtlasBookingReadiness = Literal["suggested", "needs_advance_booking", "unresolved"]
+
+_MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 class AtlasAssumption(BaseModel):
@@ -137,6 +141,8 @@ class AtlasTimelineItem(BaseModel):
     from_place: Optional[AtlasText] = None
     to_place: Optional[AtlasText] = None
     display_label: Optional[AtlasText] = None
+    departure_date: Optional[date] = None
+    departure_month: Optional[AtlasText] = None
     estimated_cost_low: Optional[int] = Field(default=None, ge=0)
     estimated_cost_high: Optional[int] = Field(default=None, ge=0)
     reference: AtlasReference
@@ -175,6 +181,24 @@ class AtlasTimelineItem(BaseModel):
             raise ValueError(
                 "from_city and to_city must both be present or both be absent"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_departure_precision(self) -> "AtlasTimelineItem":
+        if self.kind != "TRAVEL":
+            if self.departure_date is not None or self.departure_month is not None:
+                raise ValueError(
+                    "departure_date/departure_month are allowed only when kind is TRAVEL"
+                )
+            return self
+        if self.departure_date is not None and self.departure_month is not None:
+            raise ValueError(
+                "departure_date and departure_month are mutually exclusive"
+            )
+        if self.departure_month is not None and not _MONTH_PATTERN.match(
+            self.departure_month
+        ):
+            raise ValueError("departure_month must be a validated YYYY-MM value")
         return self
 
 
