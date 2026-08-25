@@ -40,11 +40,20 @@ class TripBookingDateInput(BaseModel):
     departure_month so booking legs can pass this straight through to a
     flight search once persisted. Never accepts free text — the UI must
     not guess a year from a month label; only a validated exact date or a
-    validated YYYY-MM window is accepted here."""
+    validated YYYY-MM window is accepted here.
+
+    return_date (PR review, TWM-201): a Dashboard Bookings gateway trip has
+    an independent outbound and return leg (bookingCatalog.js's
+    gatewayLegs), so a single exact date is not route-safe — applying it as
+    a fallback to both legs would confidently misdate the return search.
+    Only meaningful alongside departure_date (exact precision); month
+    precision stays a single coarse window with no separate return value,
+    since that scope was never in question on review."""
 
     model_config = ConfigDict(extra="forbid")
 
     departure_date: date | None = None
+    return_date: date | None = None
     departure_month: DepartureMonth | None = None
 
     @model_validator(mode="after")
@@ -53,6 +62,14 @@ class TripBookingDateInput(BaseModel):
             raise ValueError("departure_date and departure_month are mutually exclusive")
         if self.departure_date is None and self.departure_month is None:
             raise ValueError("one of departure_date or departure_month is required")
+        if self.return_date is not None and self.departure_date is None:
+            raise ValueError("return_date requires departure_date")
+        if (
+            self.return_date is not None
+            and self.departure_date is not None
+            and self.return_date < self.departure_date
+        ):
+            raise ValueError("return_date cannot be before departure_date")
         return self
 
 

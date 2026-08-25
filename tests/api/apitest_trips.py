@@ -1916,6 +1916,104 @@ def test_update_booking_dates_rejects_unknown_trip(api_client: TestClient):
     assert response.status_code == 404
 
 
+def test_update_booking_dates_requires_frozen_plan(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "planning", "active_agent": "guide",
+        "trip_context": {"destination": "Rishikesh"},
+        "planner_state": {"guide_session": {"revision": 1, "state": {
+            "phase": "PLACES_DRAFT", "destinations": ["Rishikesh"],
+            "trip_duration": None, "start_date": None, "places": [],
+            "day_plan": [], "preferences": [], "exclusions": [],
+            "applied_changes": [], "pending_clarification": None,
+        }}},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "update_booking_dates",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+            "booking_date_update": {"departure_date": "2026-05-01"},
+        },
+    )
+
+    assert response.status_code == 422
+    persisted_context = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["trip_context"]
+    assert "booking_dates" not in persisted_context
+
+
+def test_update_booking_dates_persists_exact_date_with_return_date(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "update_booking_dates",
+            "expected_version": trip["version"],
+            "idempotency_key": str(uuid4()),
+            "booking_date_update": {"departure_date": "2026-05-01", "return_date": "2026-05-10"},
+        },
+    )
+
+    assert response.status_code == 200
+    saved = response.json()["trip"]["trip_state"]
+    assert saved["trip_context"]["booking_dates"] == {
+        "precision": "exact",
+        "departure_date": "2026-05-01",
+        "return_date": "2026-05-10",
+    }
+
+
+def test_update_booking_dates_rejects_return_date_before_departure_date(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "update_booking_dates",
+            "expected_version": trip["version"],
+            "idempotency_key": str(uuid4()),
+            "booking_date_update": {"departure_date": "2026-05-10", "return_date": "2026-05-01"},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_booking_dates_rejects_return_date_with_month_precision(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "update_booking_dates",
+            "expected_version": trip["version"],
+            "idempotency_key": str(uuid4()),
+            "booking_date_update": {"departure_month": "2026-05", "return_date": "2026-05-10"},
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_approve_plan_rejects_wrong_phase_without_invoking_guide(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeGuideLifecycleEngine()
