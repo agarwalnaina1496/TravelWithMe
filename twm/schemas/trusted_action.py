@@ -434,7 +434,11 @@ class TrustedActionRequest(BaseModel):
     destination: Optional[TrustedActionText] = None
     departure_date: Optional[date] = None
     return_date: Optional[date] = None
-    trip_shape: Optional[TrustedActionTripType] = None
+    # TWM-196: visible gateway rows are directional by default — mirrors
+    # FlightSearchRequest.trip_type's default. A caller must opt into
+    # round_trip explicitly rather than relying on a default that silently
+    # requires a return_date.
+    trip_shape: TrustedActionTripType = "one_way"
     traveler_count: Optional[int] = Field(default=None, ge=1)
     # A caller preference only — final partner selection for a resolved
     # action is still validated against _ALLOWED_PARTNERS_BY_DOMAIN.

@@ -51,14 +51,22 @@ class AviasalesAdapter:
         *,
         origin_iata: str,
         destination_iata: str,
-        depart_date: Optional[date],
+        depart_date: Optional[str],
         return_date: Optional[date],
         currency: str,
     ) -> tuple[list[dict], datetime]:
         """Return the raw per-entry dicts for `destination_iata` plus the
         time Backend received the response (used as price_found_at — this
         endpoint discloses no provider-side "found at" timestamp of its
-        own, only `expires_at`, which maps to offer_expires_at)."""
+        own, only `expires_at`, which maps to offer_expires_at).
+
+        depart_date is a pre-formatted string, not a date object, because
+        this single endpoint honestly serves three precisions (TWM-196):
+        an exact "YYYY-MM-DD" day, a "YYYY-MM" month window, or omitted
+        entirely for the route's latest cached prices with no date
+        commitment. The caller (FlightSearchService, via
+        calculations.resolve_date_precision) decides which of those to
+        send; this adapter has no date-precision policy of its own."""
 
         params: dict[str, str] = {
             "origin": origin_iata,
@@ -66,7 +74,7 @@ class AviasalesAdapter:
             "currency": currency.lower(),
         }
         if depart_date is not None:
-            params["depart_date"] = depart_date.isoformat()
+            params["depart_date"] = depart_date
         if return_date is not None:
             params["return_date"] = return_date.isoformat()
         if self._settings.partner_id:

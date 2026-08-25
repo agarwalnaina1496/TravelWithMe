@@ -149,13 +149,85 @@ def test_missing_required_fields_returns_typed_missing_input(api_client: TestCli
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "missing_input"
+    # departure_date is deliberately not required (TWM-196): a safe
+    # affiliate/search-redirect URL can still be built without an exact
+    # date — see missing_required_fields' docstring.
     assert set(body["missing_input"]["missing_fields"]) == {
         "origin",
         "destination",
-        "departure_date",
         "traveler_count",
     }
     assert body["action"] is None
+
+
+def test_affiliate_redirect_resolves_without_a_departure_date(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+
+    trip_id = _create_trip(api_client)
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "flight",
+            "origin": "Bangalore",
+            "destination": "Bhubaneswar",
+            "traveler_count": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "resolved"
+    assert body["action"]["target"]["target_url"].startswith("https://www.ixigo.com/")
+    assert "depart_date" not in body["action"]["target"]["target_url"]
+
+
+def test_round_trip_still_requires_return_date(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+
+    trip_id = _create_trip(api_client)
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "flight",
+            "origin": "Bangalore",
+            "destination": "Bhubaneswar",
+            "trip_shape": "round_trip",
+            "traveler_count": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "missing_input"
+    assert body["missing_input"]["missing_fields"] == ["return_date"]
+
+
+def test_one_way_is_the_default_trip_shape_and_never_requires_return_date(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+
+    trip_id = _create_trip(api_client)
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "flight",
+            "origin": "Bangalore",
+            "destination": "Bhubaneswar",
+            "traveler_count": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "resolved"
+    assert body["action"]["trip_shape"] == "one_way"
 
 
 def test_unsupported_preferred_partner_returns_typed_unsupported_partner(api_client: TestClient):

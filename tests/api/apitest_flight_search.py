@@ -111,14 +111,113 @@ def test_missing_route_and_date_returns_typed_clarification_not_a_crash(api_clie
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "clarification_needed"
+    # trip_type defaults to one_way (TWM-196: visible gateway legs are
+    # directional rows, not an implicit round trip), so return_date is not
+    # in this list unless the caller explicitly asks for round_trip.
+    # departure_date is also not required (TWM-196): a route-and-traveler
+    # search with no date at all still resolves to a flexible/latest
+    # search once route/traveler inputs are supplied, not a hard block.
     assert set(body["clarification"]["missing_fields"]) == {
         "origin",
         "destination",
-        "departure_date",
-        "return_date",
     }
     assert body["offers"] == []
     assert body["unavailable"] is None
+
+
+def test_missing_return_date_is_reported_only_for_round_trip(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_iata": "BLR",
+            "destination_iata": "BBI",
+            "trip_type": "round_trip",
+            "departure_date": "2027-01-10",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "clarification_needed"
+    assert body["clarification"]["missing_fields"] == ["return_date"]
+
+
+def test_one_way_request_never_requires_return_date(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_iata": "BLR",
+            "destination_iata": "BBI",
+            "departure_date": "2027-01-10",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # No provider configured in this fixture, so this resolves to a typed
+    # "unavailable" outcome rather than a clarification -- proving
+    # return_date was never treated as missing for the default one_way
+    # trip_type.
+    assert body["status"] == "unavailable"
+    assert body["unavailable"]["code"] == "provider_not_configured"
+
+
+def test_place_endpoints_resolve_to_iata_via_backend(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_place": "Bangalore",
+            "destination_place": "Bhubaneswar",
+            "departure_date": "2027-01-10",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "unavailable"
+    assert body["unavailable"]["code"] == "provider_not_configured"
+    assert body["origin_resolved"]["iata"] == "BLR"
+    assert body["destination_resolved"]["iata"] == "BBI"
+
+
+def test_unresolvable_place_endpoint_is_a_typed_clarification_not_a_guess(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_place": "Nowhereville",
+            "destination_place": "Bhubaneswar",
+            "departure_date": "2027-01-10",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "clarification_needed"
+    assert body["clarification"]["missing_fields"] == ["origin"]
+    assert body["origin_resolved"] is None
+    assert body["destination_resolved"]["iata"] == "BBI"
 
 
 def test_missing_travelers_is_a_typed_clarification_field(api_client: TestClient):
@@ -164,6 +263,107 @@ def test_same_origin_and_destination_is_rejected_with_422(api_client: TestClient
     response = api_client.post(
         f"/trips/{trip_id}/flight-search",
         json={**VALID_REQUEST, "destination_iata": "DEL"},
+    )
+    assert response.status_code == 422
+
+
+def test_departure_date_and_departure_month_together_is_rejected_with_422(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={**VALID_REQUEST, "departure_month": "2026-09"},
+    )
+    assert response.status_code == 422
+
+
+def test_exact_departure_date_yields_exact_date_precision(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_iata": "DEL",
+            "destination_iata": "BOM",
+            "departure_date": "2027-01-10",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "unavailable"
+    assert body["date_precision"] == "exact"
+
+
+def test_departure_month_yields_month_date_precision_not_a_hard_block(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_iata": "DEL",
+            "destination_iata": "BOM",
+            "departure_month": "2027-01",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # Never a clarification_needed: month-only is a genuine, non-blocking
+    # search precision (TWM-196), not a missing_input.
+    assert body["status"] == "unavailable"
+    assert body["date_precision"] == "month"
+
+
+def test_no_date_at_all_yields_flexible_date_precision_not_a_hard_block(
+    api_client: TestClient,
+):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_iata": "DEL",
+            "destination_iata": "BOM",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "unavailable"
+    assert body["date_precision"] == "flexible"
+
+
+def test_malformed_departure_month_is_rejected_with_422(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={
+            "origin_iata": "DEL",
+            "destination_iata": "BOM",
+            "departure_month": "2027-13",
+            "travelers": {"adults": 1, "children": 0, "infants": 0},
+        },
     )
     assert response.status_code == 422
 

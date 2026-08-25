@@ -33,15 +33,25 @@ def missing_required_fields(request: TrustedActionRequest) -> list[TrustedAction
     """The deterministic set of missing inputs for resolving a trusted
     action, if any. A partially specified request is not a validation
     failure — it is a typed ``missing_input`` outcome (see
-    TrustedActionResult)."""
+    TrustedActionResult).
+
+    departure_date is deliberately NOT required here (TWM-196, mirrors the
+    equivalent fix in twm/services/flight_search/calculations.py's
+    missing_required_fields): resolve_partner_target/build_query_params
+    (resolvers.py) already treat depart_date as an optional query
+    parameter, so a genuinely safe affiliate/search-redirect URL can still
+    be built without an exact day — a partner search page degrading to
+    "no date filter" is not the same failure as having no route at all.
+    Blocking the affiliate fallback on an exact date it does not actually
+    need broke the hybrid model's promise (API + affiliate when live data
+    exists, affiliate-only fallback when it doesn't) for every one-way/
+    month/flexible flight leg."""
 
     missing: list[TrustedActionMissingField] = []
     if request.origin is None:
         missing.append(TrustedActionKeys.ORIGIN)
     if request.destination is None:
         missing.append(TrustedActionKeys.DESTINATION)
-    if request.departure_date is None:
-        missing.append(TrustedActionKeys.DEPARTURE_DATE)
     if request.trip_shape == "round_trip" and request.return_date is None:
         missing.append(TrustedActionKeys.RETURN_DATE)
     if request.traveler_count is None:
