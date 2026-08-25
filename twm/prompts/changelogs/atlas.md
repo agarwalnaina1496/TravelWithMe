@@ -1,5 +1,19 @@
 # Atlas prompt changelog
 
+## Atlas 1.7.0 — 2026-08-25
+
+- Adds `departure_date`/`departure_month` structured travel-date fields
+  for `TRAVEL` timeline items, separate from free-text trip-level timing.
+  Atlas may set `departure_date` (`YYYY-MM-DD`) only from a confirmed
+  exact working-plan day date, and `departure_month` (`YYYY-MM`) only
+  when a confirmed year and month are both known — never by guessing a
+  year from a bare month name like "October". The two fields are
+  mutually exclusive, and both must stay absent when precision isn't
+  confidently known, in which case Atlas records a `dates` assumption
+  instead. Every non-`TRAVEL` item must leave both absent. This unblocks
+  Backend/UI sending exact or month-precision dates to flight search
+  without fabricating date data (TWM-200).
+
 ## Atlas 1.6.0 — 2026-08-24
 
 - Adds `from_city`/`to_city` canonical movement-endpoint guidance for
