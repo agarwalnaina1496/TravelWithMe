@@ -1,12 +1,13 @@
 """Canonical HTTP contracts for database-backed trips."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import AgentMeta
+from .flight_search import DepartureMonth
 from .logistics import LogisticsConfirmationInput
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
 from .scout import BoundedMessage, TripStage
@@ -30,6 +31,29 @@ class MeridianRefinement(BaseModel):
     type: Literal["MORE_LIKE_THIS"]
     reference: MeridianRefinementReference
     instructions: BoundedMessage | None = None
+
+
+class TripBookingDateInput(BaseModel):
+    """update_booking_dates command payload (TWM-201): post-freeze booking-
+    date precision for the traveler's own flight legs. Exact XOR month,
+    same shape/constraint as FlightSearchRequest's departure_date/
+    departure_month so booking legs can pass this straight through to a
+    flight search once persisted. Never accepts free text — the UI must
+    not guess a year from a month label; only a validated exact date or a
+    validated YYYY-MM window is accepted here."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    departure_date: date | None = None
+    departure_month: DepartureMonth | None = None
+
+    @model_validator(mode="after")
+    def validate_precision(self) -> "TripBookingDateInput":
+        if self.departure_date is not None and self.departure_month is not None:
+            raise ValueError("departure_date and departure_month are mutually exclusive")
+        if self.departure_date is None and self.departure_month is None:
+            raise ValueError("one of departure_date or departure_month is required")
+        return self
 
 
 class TripCreateRequest(BaseModel):
@@ -208,6 +232,7 @@ TripCommandName = Literal[
     "confirm_logistics",
     "accept_itinerary_revision",
     "keep_current_itinerary",
+    "update_booking_dates",
 ]
 
 _MESSAGE_COMMANDS = {"traveler_message"}
@@ -233,6 +258,7 @@ class TripCommandRequest(BaseModel):
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
     refinement: MeridianRefinement | None = None
     logistics_confirmation: LogisticsConfirmationInput | None = None
+    booking_date_update: TripBookingDateInput | None = None
 
     @model_validator(mode="after")
     def validate_command_fields(self) -> "TripCommandRequest":
@@ -249,6 +275,12 @@ class TripCommandRequest(BaseModel):
         if self.command != "confirm_logistics" and self.logistics_confirmation is not None:
             raise ValueError(
                 "logistics_confirmation is allowed only for confirm_logistics"
+            )
+        if self.command == "update_booking_dates" and self.booking_date_update is None:
+            raise ValueError("update_booking_dates requires booking_date_update")
+        if self.command != "update_booking_dates" and self.booking_date_update is not None:
+            raise ValueError(
+                "booking_date_update is allowed only for update_booking_dates"
             )
         if self.command not in _MESSAGE_COMMANDS and self.message is not None:
             raise ValueError("message is allowed only for traveler_message")
