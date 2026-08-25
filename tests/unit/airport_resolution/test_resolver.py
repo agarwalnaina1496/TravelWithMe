@@ -42,6 +42,45 @@ def test_curated_fallback_used_for_a_known_mvp_gap():
     assert result.confidence == "low"
 
 
+def test_bare_delhi_resolves_via_curated_fallback():
+    # OurAirports' municipality for Indira Gandhi International is "New
+    # Delhi" only -- bare "Delhi" (the name travelers actually use) has no
+    # municipality or keyword match at all. Confirmed blocking via manual
+    # TWM-196 verification: Bangalore -> Delhi returned clarification_needed
+    # on the destination side before this fallback entry was added.
+    result = resolve_airport("Delhi")
+    assert result is not None
+    assert result.iata == "DEL"
+    assert result.source == "curated_fallback"
+
+
+def test_new_delhi_resolves_via_ourairports_municipality_match():
+    result = resolve_airport("New Delhi")
+    assert result is not None
+    assert result.iata == "DEL"
+    assert result.source == "ourairports"
+    assert result.confidence == "high"
+
+
+def test_bare_goa_resolves_via_curated_fallback():
+    # OurAirports' Goa Dabolim keyword is the full phrase "Goa Airport", not
+    # the bare "Goa" travelers use.
+    result = resolve_airport("Goa")
+    assert result is not None
+    assert result.iata == "GOI"
+    assert result.source == "curated_fallback"
+
+
+def test_bare_jaisalmer_resolves_via_curated_fallback():
+    # Jaisalmer Airport's OurAirports municipality is blank and its keyword
+    # is "Jaisalmer Air Force Station" (a full phrase), not bare
+    # "Jaisalmer".
+    result = resolve_airport("Jaisalmer")
+    assert result is not None
+    assert result.iata == "JSA"
+    assert result.source == "curated_fallback"
+
+
 def test_curated_fallback_is_case_insensitive():
     result = resolve_airport("TRIVANDRUM")
     assert result is not None

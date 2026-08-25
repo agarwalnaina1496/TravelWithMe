@@ -19,7 +19,10 @@ from typing import Optional
 from ...shared.properties import property_loader
 
 _DEFAULT_TIMEOUT_SECONDS = 10
-_DEFAULT_CURRENCY = "USD"
+# TWM-196: India-first MVP — default to INR so a missing AVIASALES_CURRENCY
+# override never silently shows USD to Indian travelers. Still overridable
+# via the aviasales_currency property/env for a future non-India market.
+_DEFAULT_CURRENCY = "INR"
 
 
 @dataclass(frozen=True)

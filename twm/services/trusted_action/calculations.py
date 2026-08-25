@@ -22,7 +22,7 @@ from ...schemas.trusted_action import (
 # service could only become *more* restrictive than the schema, never
 # silently permit something the schema would reject.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, tuple[PartnerName, ...]] = {
-    "flight": ("ixigo",),
+    "flight": ("aviasales",),
     "train": ("ixigo",),
     "bus": ("ixigo", "redbus"),
     "stay": ("hotellook", "booking_com", "agoda", "hostelworld", "ixigo"),

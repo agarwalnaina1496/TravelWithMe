@@ -20,6 +20,18 @@ from __future__ import annotations
 # resolves (resolver.py's scheduled-service-first ranking already handles
 # ambiguous cases like "Madras" without needing an entry here).
 CURATED_FALLBACK: dict[str, str] = {
+    # OurAirports' municipality for Indira Gandhi International is "New
+    # Delhi" only — bare "Delhi" (the common gateway-city name travelers
+    # actually use) has no municipality or keyword match at all. Confirmed
+    # blocking via manual TWM-196 verification: Bangalore -> Delhi returned
+    # clarification_needed on the destination side.
+    "delhi": "DEL",
+    # Same class of gap: OurAirports' Goa Dabolim keyword is the full phrase
+    # "Goa Airport", not the bare "Goa" travelers use, and Jaisalmer
+    # Airport's municipality is blank with keyword "Jaisalmer Air Force
+    # Station" rather than a bare "Jaisalmer" alias.
+    "goa": "GOI",
+    "jaisalmer": "JSA",
     "pondicherry": "PNY",
     "trivandrum": "TRV",
 }
