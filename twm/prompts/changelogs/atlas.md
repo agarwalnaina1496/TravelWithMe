@@ -1,5 +1,18 @@
 # Atlas prompt changelog
 
+## Atlas 1.8.0 — 2026-08-26
+
+- Adds an explicit mode-neutral transit-language constraint: Atlas must
+  never name or imply a specific transit mode (flight/train/bus/cab/
+  drive/ferry) anywhere it describes a movement — not in a `TRAVEL`
+  item's title, location, or detail, not in `movement_guidance`, and not
+  in a day or budget note. Mode validity is decided downstream by
+  Trusted Actions (TWM-195); Atlas naming a mode in prose could
+  contradict that later decision with no correct way to reconcile the
+  two. This is a prompt-contract fix only — no schema field changes, and
+  the adapter/UI must not filter or infer mode words from Atlas text now
+  that there is nothing to filter (TWM-203).
+
 ## Atlas 1.7.0 — 2026-08-25
 
 - Adds `departure_date`/`departure_month` structured travel-date fields

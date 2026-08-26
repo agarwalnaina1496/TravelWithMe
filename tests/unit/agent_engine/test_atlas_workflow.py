@@ -21,12 +21,33 @@ def test_atlas_evaluation_corpus_covers_research_and_authority_boundaries() -> N
         "international-current-rules",
         "specific-hotel-not-found",
         "budget-total-consistency",
+        "mode-neutral-transit-language",
     }
     assert cases_by_id["international-current-rules"]["invariants"] == {
         "no_live_search_available": True,
         "do_not_claim_verified": True,
         "use_general_or_unresolved": True,
         "no_booking_claim": True,
+    }
+
+
+def test_atlas_evaluation_corpus_covers_mode_neutral_transit_language() -> None:
+    # TWM-203: mode validity is decided downstream by Trusted Actions, so
+    # Atlas must never name a transit mode anywhere it describes a
+    # movement — this case documents every surface that constraint covers.
+    cases = json.loads(
+        (ROOT / "tests" / "resources" / "atlas_agent_cases.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    cases_by_id = {case["id"]: case for case in cases}
+
+    assert cases_by_id["mode-neutral-transit-language"]["invariants"] == {
+        "no_mode_naming_in_title": True,
+        "no_mode_naming_in_detail": True,
+        "no_mode_naming_in_movement_guidance": True,
+        "no_mode_naming_in_budget_notes": True,
+        "mode_decided_downstream_by_trusted_actions": True,
     }
 
 
