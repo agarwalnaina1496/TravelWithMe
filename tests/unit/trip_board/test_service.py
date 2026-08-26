@@ -158,6 +158,33 @@ def test_inbound_gateway_gets_its_own_date_from_booking_dates_return_date():
     assert inbound_leg.departure_date == "2026-05-10"
 
 
+def test_inbound_leg_falls_back_to_flexible_when_return_date_not_yet_confirmed():
+    # PR review, TWM-202: "exact" precision only guarantees departure_date
+    # is confirmed -- return_date is documented optional even then. The
+    # inbound leg must never report date_precision="exact" with a null
+    # departure_date underneath; that's worse than reporting "flexible".
+    trusted_action = FakeTrustedActionService()
+    service = TripBoardService(trusted_action)
+    final_itinerary = {
+        "days": [
+            _day(1, [_travel_item("Delhi", "Chennai")]),
+            _day(2, [_travel_item("Chennai", "Delhi")]),
+        ],
+    }
+
+    board = service.build(
+        TRIP_ID, 1, final_itinerary,
+        {"origin_city": "Delhi", "booking_dates": {"precision": "exact", "departure_date": "2026-05-01"}},
+    )
+
+    outbound_leg = board.days[0].items[0]
+    inbound_leg = board.days[1].items[0]
+    assert outbound_leg.date_precision == "exact"
+    assert outbound_leg.departure_date == "2026-05-01"
+    assert inbound_leg.date_precision == "flexible"
+    assert inbound_leg.departure_date is None
+
+
 def test_month_precision_applies_to_any_dateless_leg_gateway_or_internal():
     trusted_action = FakeTrustedActionService()
     service = TripBoardService(trusted_action)

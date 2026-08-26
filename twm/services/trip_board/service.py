@@ -90,27 +90,39 @@ class TripBoardService:
         departure_month = item.get("departure_month")
 
         if is_travel_leg:
-            if departure_date:
-                date_precision = "exact"
-            elif departure_month:
-                date_precision = "month"
-            elif booking_dates and booking_dates.get("precision") == "exact" and (is_outbound or is_inbound):
-                date_precision = "exact"
-                # PR review, TWM-202: mirrors bookingCatalog.js's
-                # transportLegs — an exact override only ever applies to the
-                # gateway leg matching its own direction (outbound leg gets
-                # departure_date, inbound leg gets return_date treated as
-                # *its own* departure date), never both legs from one value.
-                if is_outbound:
-                    departure_date = booking_dates.get("departure_date")
-                else:
-                    departure_date = booking_dates.get("return_date")
+            # PR review, TWM-202: guard each override branch on the actual
+            # date field being present, not just on precision matching —
+            # booking_dates' return_date is documented optional even under
+            # "exact" precision (only departure_date confirmed yet), so
+            # precision alone can't be trusted to mean "this leg has a
+            # date". Reporting "exact"/"month" with a null date underneath
+            # would misrepresent the leg worse than "flexible" would.
+            override_date = None
+            override_month = None
+            if booking_dates and booking_dates.get("precision") == "exact" and (is_outbound or is_inbound):
+                # Mirrors bookingCatalog.js's transportLegs — an exact
+                # override only ever applies to the gateway leg matching its
+                # own direction (outbound leg gets departure_date, inbound
+                # leg gets return_date treated as *its own* departure date).
+                override_date = (
+                    booking_dates.get("departure_date") if is_outbound else booking_dates.get("return_date")
+                )
             elif booking_dates and booking_dates.get("precision") == "month":
                 # Month precision has no gateway restriction (TWM-201/
                 # TWM-202 parity with transportLegs) — it applies to any
                 # dateless TRAVEL leg, gateway or internal.
+                override_month = booking_dates.get("departure_month")
+
+            if departure_date:
+                date_precision = "exact"
+            elif departure_month:
                 date_precision = "month"
-                departure_month = booking_dates.get("departure_month")
+            elif override_date:
+                date_precision = "exact"
+                departure_date = override_date
+            elif override_month:
+                date_precision = "month"
+                departure_month = override_month
             else:
                 date_precision = "flexible"
 
