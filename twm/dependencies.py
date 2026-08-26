@@ -5,6 +5,7 @@ from .auth.service import AuthService
 from .persistence.contracts import User
 from .services import AgentEngine
 from .services.flight_search import FlightSearchService
+from .services.trip_board import TripBoardService
 from .services.trusted_action import TrustedActionService
 from .telemetry import TelemetryLogger
 from .persistence.service import TripPersistenceService
@@ -35,6 +36,12 @@ def get_trusted_action_service(
         logger=logger,
         settings=request.app.state.trusted_action_settings,
     )
+
+
+def get_trip_board_service(
+    trusted_action: Annotated[TrustedActionService, Depends(get_trusted_action_service)],
+) -> TripBoardService:
+    return TripBoardService(trusted_action=trusted_action)
 
 
 def get_trip_persistence(request: Request) -> TripPersistenceService:

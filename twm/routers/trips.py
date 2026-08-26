@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from ..dependencies import get_current_user, get_engine, get_logger, get_trip_persistence
+from ..dependencies import get_current_user, get_engine, get_logger, get_trip_board_service, get_trip_persistence
 from ..persistence.contracts import TripOwner, TripRecord, User, VersionConflictError
 from ..persistence.service import TripPersistenceService
 from ..schemas.trips import (
@@ -27,7 +27,9 @@ from ..schemas.trips import (
     TripSummaryState,
     TripUiStateRequest,
 )
+from ..schemas.trip_board import TripBoardResponse
 from ..services import AgentEngine
+from ..services.trip_board import TripBoardService
 from ..services.trip_commands import IdempotencyConflictError, InvalidTripCommandError, TripCommandService
 from ..telemetry import TelemetryLogger
 
@@ -36,6 +38,7 @@ Persistence = Annotated[TripPersistenceService, Depends(get_trip_persistence)]
 Logger = Annotated[TelemetryLogger, Depends(get_logger)]
 Engine = Annotated[AgentEngine, Depends(get_engine)]
 CurrentUser = Annotated[User | None, Depends(get_current_user)]
+TripBoard = Annotated[TripBoardService, Depends(get_trip_board_service)]
 
 
 async def _resolve_owner(request: Request, response: Response, persistence: TripPersistenceService, current_user: User | None) -> TripOwner:
@@ -273,6 +276,53 @@ async def get_current_itinerary(trip_id: UUID, request: Request, response: Respo
         version=current.version,
     )
     return TripItineraryResponse.model_validate(current, from_attributes=True)
+
+
+@router.get("/{trip_id}/board", response_model=TripBoardResponse)
+async def get_trip_board(
+    trip_id: UUID,
+    request: Request,
+    response: Response,
+    persistence: Persistence,
+    logger: Logger,
+    current_user: CurrentUser,
+    trip_board: TripBoard,
+):
+    """TWM-202: one composed itinerary/booking item list — Atlas content
+    merged with Trusted Actions feasibility for the itinerary's two gateway
+    legs, computed once and shared by Overview and Itinerary instead of
+    each screen deriving its own view."""
+    owner = await _resolve_owner(request, response, persistence, current_user)
+    trip = await persistence.repository.get_trip(owner, trip_id)
+    if trip is None:
+        logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
+        raise HTTPException(status_code=404, detail="Trip not found.")
+    current = await persistence.repository.get_current_itinerary(owner, trip_id)
+    if current is None:
+        logger.info(
+            "No active itinerary yet for trip board.",
+            event="be.trip.board.fetched",
+            source="http",
+            trip_id=str(trip_id),
+            found=False,
+        )
+        raise HTTPException(status_code=404, detail="No itinerary yet.")
+    board = trip_board.build(
+        trip_id=trip_id,
+        version=current.version,
+        final_itinerary=current.result["final_itinerary"],
+        trip_context=trip.trip_state.get("trip_context") or {},
+    )
+    logger.info(
+        "Composed Trip Board.",
+        event="be.trip.board.fetched",
+        source="http",
+        trip_id=str(trip_id),
+        found=True,
+        version=current.version,
+        day_count=len(board.days),
+    )
+    return board
 
 
 def _conflict(error: VersionConflictError) -> HTTPException:
