@@ -348,6 +348,31 @@ def _validate_guide_transition(
         _validate_day_plan(state)
 
 
+def _coerce_trip_duration(trip_duration: Any) -> int:
+    # trip_duration is a deliberately untyped free-text trip_context field
+    # (Scout/Guide extraction). A numeral string ("5") compares unequal to
+    # every int via `!=`, silently rejecting a correct plan; a float (5.0,
+    # plausible from an LLM-emitted JSON number) passes the length check but
+    # crashes range() with an uncaught TypeError. Coerce explicitly instead
+    # of trusting either shape as-is.
+    if isinstance(trip_duration, bool):
+        raise InvalidTripCommandError("trip_duration must be a whole number of days.")
+    if isinstance(trip_duration, int):
+        return trip_duration
+    if isinstance(trip_duration, float):
+        if not trip_duration.is_integer():
+            raise InvalidTripCommandError("trip_duration must be a whole number of days.")
+        return int(trip_duration)
+    if isinstance(trip_duration, str):
+        try:
+            return int(trip_duration.strip())
+        except ValueError:
+            raise InvalidTripCommandError(
+                "trip_duration must be a whole number of days."
+            ) from None
+    raise InvalidTripCommandError("trip_duration must be a whole number of days.")
+
+
 def _validate_day_plan(state: dict[str, Any]) -> None:
     planner = state["planner_state"]
     day_plan = planner.get("day_plan") or []
@@ -355,6 +380,7 @@ def _validate_day_plan(state: dict[str, Any]) -> None:
     trip_duration = state["trip_context"].get(TRIP_DURATION_KEY)
     if trip_duration is None:
         raise InvalidTripCommandError("Guide returned a day plan without a known duration.")
+    trip_duration = _coerce_trip_duration(trip_duration)
     if len(day_plan) != trip_duration:
         raise InvalidTripCommandError("Day plan length must equal trip_duration.")
     day_numbers = [day["day_number"] for day in day_plan]

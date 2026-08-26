@@ -23,6 +23,16 @@ def apply_update_booking_dates(
         raise InvalidTripCommandError(
             "Booking-date context can only be updated once the plan is frozen."
         )
+    # PR review, TWM-207: frozen_plan alone doesn't guarantee Atlas has run —
+    # confirm_logistics guards on itinerary_state.current_version (TWM-155)
+    # for the same reason. Without it, an early call just stores a date
+    # before any transport leg exists to apply it to; low severity (harmless,
+    # self-correcting once Atlas completes) but this closes the gap for
+    # defense-in-depth.
+    if not state.get("itinerary_state", {}).get("current_version"):
+        raise InvalidTripCommandError(
+            "Booking-date context can only be updated once Atlas has produced an itinerary."
+        )
     trip_context = state["trip_context"]
     previous = trip_context.get(BOOKING_DATE_KEY)
     previous_precision = previous.get("precision") if isinstance(previous, dict) else None
