@@ -1,5 +1,6 @@
 """Evaluate one case's invariants against a normalized AgentExecution response."""
 
+import re
 from typing import Any, Callable
 
 from .fixtures import EvaluationCase
@@ -621,12 +622,15 @@ _MODE_WORDS = (
     "ferry", "ferries",
     "airfare", "train fare", "bus fare",
 )
+_MODE_WORD_PATTERNS = {
+    word: re.compile(r"\b" + re.escape(word) + r"\b") for word in _MODE_WORDS
+}
 
 
 def _contains_mode_word(text: str) -> str | None:
-    casefolded = f" {text.casefold()} "
-    for word in _MODE_WORDS:
-        if f" {word} " in casefolded or casefolded.startswith(f"{word} ") or casefolded.endswith(f" {word}"):
+    casefolded = text.casefold()
+    for word, pattern in _MODE_WORD_PATTERNS.items():
+        if pattern.search(casefolded):
             return word
     return None
 
