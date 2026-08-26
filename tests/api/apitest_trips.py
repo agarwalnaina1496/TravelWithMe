@@ -1740,7 +1740,8 @@ def test_update_booking_dates_persists_exact_date(api_client: TestClient):
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+    engine.calls.clear()
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1766,7 +1767,7 @@ def test_update_booking_dates_persists_month(api_client: TestClient):
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
+    trip = _seed_ready_itinerary(api_client, repository, engine)
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1854,7 +1855,7 @@ def test_update_booking_dates_survives_trip_reload(api_client: TestClient):
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
+    trip = _seed_ready_itinerary(api_client, repository, engine)
 
     api_client.post(
         f"/trips/{trip['id']}/commands",
@@ -1948,12 +1949,37 @@ def test_update_booking_dates_requires_frozen_plan(api_client: TestClient):
     assert "booking_dates" not in persisted_context
 
 
-def test_update_booking_dates_persists_exact_date_with_return_date(api_client: TestClient):
+def test_update_booking_dates_requires_atlas_itinerary(api_client: TestClient):
+    # PR review, TWM-207: frozen_plan alone doesn't guarantee Atlas has run —
+    # a plan can be frozen before start_itinerary is ever called, and no
+    # transport leg exists yet for a date to apply to.
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
     trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "update_booking_dates",
+            "expected_version": trip["version"],
+            "idempotency_key": str(uuid4()),
+            "booking_date_update": {"departure_date": "2026-05-01"},
+        },
+    )
+
+    assert response.status_code == 422
+    persisted_context = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["trip_context"]
+    assert "booking_dates" not in persisted_context
+
+
+def test_update_booking_dates_persists_exact_date_with_return_date(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
