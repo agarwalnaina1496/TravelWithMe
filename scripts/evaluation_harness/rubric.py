@@ -690,6 +690,41 @@ def _atlas_no_mode_naming_in_budget_notes(
             raise RubricFailure(f"expected no mode word in budget note, found {found!r}")
 
 
+def _atlas_requires_stay_price_estimate_for_overnight_days(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    days = response.get("final_itinerary", {}).get("days", [])
+    missing = [day["day_number"] for day in days if not day.get("stay_price_estimate")]
+    if missing:
+        raise RubricFailure(f"expected stay_price_estimate on every overnight day, missing on {missing!r}")
+
+
+def _atlas_stay_price_estimate_tiers_ordered(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    days = response.get("final_itinerary", {}).get("days", [])
+    for day in days:
+        estimate = day.get("stay_price_estimate")
+        if not estimate:
+            continue
+        tiers = [entry["tier"] for entry in estimate]
+        if tiers != ["budget", "mid_range", "premium"]:
+            raise RubricFailure(
+                f"day {day['day_number']}: expected tiers in order "
+                f"[budget, mid_range, premium], got {tiers!r}"
+            )
+        lows = [entry["estimated_cost_low"] for entry in estimate]
+        if lows != sorted(lows):
+            raise RubricFailure(
+                f"day {day['day_number']}: expected non-decreasing "
+                f"estimated_cost_low across tiers, got {lows!r}"
+            )
+
+
 def _atlas_has_verified_reference(response: dict[str, Any]) -> bool:
     return any(
         reference.get("status") == "VERIFIED"
@@ -786,5 +821,7 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "no_mode_naming_in_detail": _atlas_no_mode_naming_in_detail,
         "no_mode_naming_in_movement_guidance": _atlas_no_mode_naming_in_movement_guidance,
         "no_mode_naming_in_budget_notes": _atlas_no_mode_naming_in_budget_notes,
+        "requires_stay_price_estimate_for_overnight_days": _atlas_requires_stay_price_estimate_for_overnight_days,
+        "stay_price_estimate_tiers_ordered": _atlas_stay_price_estimate_tiers_ordered,
     },
 }

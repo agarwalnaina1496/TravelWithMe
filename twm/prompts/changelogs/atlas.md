@@ -1,5 +1,16 @@
 # Atlas prompt changelog
 
+## Atlas 1.9.0 — 2026-08-26
+
+- Adds `stay_price_estimate` to `AtlasDay`: an optional, non-binding
+  three-tier (`budget`/`mid_range`/`premium`, in that order, each tier's
+  `estimated_cost_low` no lower than the previous tier's) cost estimate
+  for a day involving an overnight stay. Uses the same estimation
+  approach and honesty caveats already applied to a `TRAVEL` item's
+  `estimated_cost_low/high` — never a live/booked price, which stays
+  structurally forbidden on `TrustedAction`. Absent entirely for a
+  day-trip/transit-only/departure day with no overnight stay (TWM-204).
+
 ## Atlas 1.8.0 — 2026-08-26
 
 - Adds an explicit mode-neutral transit-language constraint: Atlas must
