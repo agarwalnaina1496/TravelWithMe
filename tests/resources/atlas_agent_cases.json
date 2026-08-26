@@ -190,7 +190,7 @@
       }
     },
     "invariants": {
-      "requires_stay_price_estimate_for_overnight_days": true,
+      "stay_price_estimate_required_on_days": [1, 2],
       "stay_price_estimate_tiers_ordered": true
     }
   }

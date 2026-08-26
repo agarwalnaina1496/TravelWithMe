@@ -63,7 +63,7 @@ def test_atlas_evaluation_corpus_covers_overnight_stay_price_band_estimate() -> 
     cases_by_id = {case["id"]: case for case in cases}
 
     assert cases_by_id["overnight-stay-price-band-estimate"]["invariants"] == {
-        "requires_stay_price_estimate_for_overnight_days": True,
+        "stay_price_estimate_required_on_days": [1, 2],
         "stay_price_estimate_tiers_ordered": True,
     }
 
