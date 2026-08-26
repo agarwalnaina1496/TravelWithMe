@@ -141,5 +141,33 @@
       "non_negative_ranges": true,
       "single_currency": true
     }
+  },
+  {
+    "id": "mode-neutral-transit-language",
+    "scenario": "Multi-leg route where transit modes are ambiguous at plan time",
+    "input": {
+      "trip_context": {
+        "origin_city": "Bengaluru"
+      },
+      "working_plan": {
+        "destinations": ["Bhubaneswar", "Puri", "Konark"],
+        "trip_duration": 4,
+        "start_date": null,
+        "approved_places": [],
+        "days": [
+          { "day_number": 1, "date": null, "places": [] },
+          { "day_number": 2, "date": null, "places": [] },
+          { "day_number": 3, "date": null, "places": [] },
+          { "day_number": 4, "date": null, "places": [] }
+        ]
+      }
+    },
+    "invariants": {
+      "no_mode_naming_in_title": true,
+      "no_mode_naming_in_detail": true,
+      "no_mode_naming_in_movement_guidance": true,
+      "no_mode_naming_in_budget_notes": true,
+      "mode_decided_downstream_by_trusted_actions": true
+    }
   }
 ]

@@ -28,6 +28,12 @@ KNOWN_UNIMPLEMENTED_INVARIANTS: frozenset[tuple[str, str]] = frozenset(
         # cost narrative in evaluation details; not automatable from shape
         # alone. Verify manually per TWM-125.
         ("meridian", "requires_complete_round_trip_accounting"),
+        # Whether mode validity is decided downstream by Trusted Actions
+        # rather than by Atlas is a prompt-contract/ownership fact, not
+        # something the response shape itself can prove or disprove; the
+        # absence-of-mode-words checks are what's mechanically verifiable.
+        # Verify manually per TWM-203.
+        ("atlas", "mode_decided_downstream_by_trusted_actions"),
     }
 )
 
@@ -606,6 +612,80 @@ def _atlas_single_currency(
         raise RubricFailure("expected a single declared currency")
 
 
+_MODE_WORDS = (
+    "flight", "flights", "flying", "fly",
+    "train", "trains",
+    "bus", "buses",
+    "cab", "cabs", "taxi", "taxis",
+    "drive", "driving", "drove",
+    "ferry", "ferries",
+    "airfare", "train fare", "bus fare",
+)
+
+
+def _contains_mode_word(text: str) -> str | None:
+    casefolded = f" {text.casefold()} "
+    for word in _MODE_WORDS:
+        if f" {word} " in casefolded or casefolded.startswith(f"{word} ") or casefolded.endswith(f" {word}"):
+            return word
+    return None
+
+
+def _atlas_travel_items(response: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        item
+        for day in response.get("final_itinerary", {}).get("days", [])
+        for item in day.get("timeline", [])
+        if item.get("kind") == "TRAVEL"
+    ]
+
+
+def _atlas_no_mode_naming_in_title(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    for item in _atlas_travel_items(response):
+        found = _contains_mode_word(item.get("title", ""))
+        if found:
+            raise RubricFailure(f"expected no mode word in TRAVEL title, found {found!r}")
+
+
+def _atlas_no_mode_naming_in_detail(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    for item in _atlas_travel_items(response):
+        found = _contains_mode_word(item.get("detail", ""))
+        if found:
+            raise RubricFailure(f"expected no mode word in TRAVEL detail, found {found!r}")
+
+
+def _atlas_no_mode_naming_in_movement_guidance(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    for item in _atlas_travel_items(response):
+        guidance = item.get("movement_guidance")
+        found = _contains_mode_word(guidance) if guidance else None
+        if found:
+            raise RubricFailure(f"expected no mode word in movement_guidance, found {found!r}")
+
+
+def _atlas_no_mode_naming_in_budget_notes(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    lines = response.get("final_itinerary", {}).get("budget_summary", {}).get("lines", [])
+    for line in lines:
+        found = _contains_mode_word(line.get("note", ""))
+        if found:
+            raise RubricFailure(f"expected no mode word in budget note, found {found!r}")
+
+
 def _atlas_has_verified_reference(response: dict[str, Any]) -> bool:
     return any(
         reference.get("status") == "VERIFIED"
@@ -698,5 +778,9 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "backend_recalculates_totals": _atlas_backend_recalculates_totals,
         "non_negative_ranges": _atlas_non_negative_ranges,
         "single_currency": _atlas_single_currency,
+        "no_mode_naming_in_title": _atlas_no_mode_naming_in_title,
+        "no_mode_naming_in_detail": _atlas_no_mode_naming_in_detail,
+        "no_mode_naming_in_movement_guidance": _atlas_no_mode_naming_in_movement_guidance,
+        "no_mode_naming_in_budget_notes": _atlas_no_mode_naming_in_budget_notes,
     },
 }
