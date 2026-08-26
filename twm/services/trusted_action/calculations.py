@@ -48,13 +48,18 @@ def missing_required_fields(request: TrustedActionRequest) -> list[TrustedAction
     month/flexible flight leg."""
 
     missing: list[TrustedActionMissingField] = []
-    if request.origin is None:
+    # TWM-208: a stay/hotel search has no "origin" or per-leg traveler-count
+    # concept the way a transport leg does, and build_query_params already
+    # treats both as fully optional for every approved stay partner
+    # (hotellook/booking_com/agoda/hostelworld/ixigo) -- requiring them here
+    # made a stay request permanently unresolvable regardless of input.
+    if request.domain != "stay" and request.origin is None:
         missing.append(TrustedActionKeys.ORIGIN)
     if request.destination is None:
         missing.append(TrustedActionKeys.DESTINATION)
     if request.trip_shape == "round_trip" and request.return_date is None:
         missing.append(TrustedActionKeys.RETURN_DATE)
-    if request.traveler_count is None:
+    if request.domain != "stay" and request.traveler_count is None:
         missing.append(TrustedActionKeys.TRAVELER_COUNT)
     return missing
 

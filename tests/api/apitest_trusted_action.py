@@ -325,6 +325,67 @@ def test_stay_domain_resolves_each_allowlisted_partner(api_client: TestClient):
         assert body["action"]["affiliate_disclosure"] is True
 
 
+def test_stay_domain_resolves_without_origin_or_traveler_count(api_client: TestClient):
+    # TWM-208: a stay/hotel search has no "origin" or per-leg traveler-count
+    # concept the way a transport leg does, and every approved stay partner
+    # already builds a valid search URL from destination alone. Before this
+    # fix, a stay request with only destination+preferred_partner always
+    # returned missing_input, permanently.
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "stay",
+            "destination": "Coorg",
+            "preferred_partner": "hotellook",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "resolved"
+    assert body["action"]["target"]["target_url"].startswith("https://search.hotellook.com/")
+
+
+def test_stay_domain_still_requires_destination(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={"action_type": "SEARCH_REDIRECT", "domain": "stay", "preferred_partner": "hotellook"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "missing_input"
+    assert body["missing_input"]["missing_fields"] == ["destination"]
+
+
+def test_transport_domains_still_require_origin_and_traveler_count(api_client: TestClient):
+    # Regression guard: TWM-208 narrows the readiness check for domain
+    # "stay" only — flight/train/bus must keep requiring origin and
+    # traveler_count exactly as before.
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={"action_type": "SEARCH_REDIRECT", "domain": "train"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "missing_input"
+    assert set(body["missing_input"]["missing_fields"]) == {"origin", "destination", "traveler_count"}
+
+
 def test_malformed_payload_with_extra_field_is_rejected_with_422(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_persistence(repository)
