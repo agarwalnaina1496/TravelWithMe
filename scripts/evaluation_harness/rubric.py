@@ -690,6 +690,53 @@ def _atlas_no_mode_naming_in_budget_notes(
             raise RubricFailure(f"expected no mode word in budget note, found {found!r}")
 
 
+def _atlas_stay_price_estimate_required_on_days(
+    case: EvaluationCase, response: dict[str, Any], expected: list[int]
+) -> None:
+    # PR review, TWM-204: the field is optional per-day by design (absent
+    # for a day-trip/transit-only/departure day with no overnight stay), so
+    # a check that requires it on every day can't distinguish "correctly
+    # absent" from "wrongly missing". The case names exactly which days are
+    # genuine overnight-stay days; every other day must NOT carry the field.
+    days = {day["day_number"]: day for day in response.get("final_itinerary", {}).get("days", [])}
+    missing = [day_number for day_number in expected if not days.get(day_number, {}).get("stay_price_estimate")]
+    if missing:
+        raise RubricFailure(f"expected stay_price_estimate on overnight day(s) {expected!r}, missing on {missing!r}")
+    unexpected = [
+        day_number for day_number, day in days.items()
+        if day_number not in expected and day.get("stay_price_estimate")
+    ]
+    if unexpected:
+        raise RubricFailure(
+            f"expected stay_price_estimate absent on non-overnight day(s), "
+            f"found it on {unexpected!r}"
+        )
+
+
+def _atlas_stay_price_estimate_tiers_ordered(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    days = response.get("final_itinerary", {}).get("days", [])
+    for day in days:
+        estimate = day.get("stay_price_estimate")
+        if not estimate:
+            continue
+        tiers = [entry["tier"] for entry in estimate]
+        if tiers != ["budget", "mid_range", "premium"]:
+            raise RubricFailure(
+                f"day {day['day_number']}: expected tiers in order "
+                f"[budget, mid_range, premium], got {tiers!r}"
+            )
+        lows = [entry["estimated_cost_low"] for entry in estimate]
+        if lows != sorted(lows):
+            raise RubricFailure(
+                f"day {day['day_number']}: expected non-decreasing "
+                f"estimated_cost_low across tiers, got {lows!r}"
+            )
+
+
 def _atlas_has_verified_reference(response: dict[str, Any]) -> bool:
     return any(
         reference.get("status") == "VERIFIED"
@@ -786,5 +833,7 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "no_mode_naming_in_detail": _atlas_no_mode_naming_in_detail,
         "no_mode_naming_in_movement_guidance": _atlas_no_mode_naming_in_movement_guidance,
         "no_mode_naming_in_budget_notes": _atlas_no_mode_naming_in_budget_notes,
+        "stay_price_estimate_required_on_days": _atlas_stay_price_estimate_required_on_days,
+        "stay_price_estimate_tiers_ordered": _atlas_stay_price_estimate_tiers_ordered,
     },
 }

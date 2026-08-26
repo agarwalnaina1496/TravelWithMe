@@ -169,5 +169,29 @@
       "no_mode_naming_in_budget_notes": true,
       "mode_decided_downstream_by_trusted_actions": true
     }
+  },
+  {
+    "id": "overnight-stay-price-band-estimate",
+    "scenario": "Multi-day single-base trip where every day involves an overnight stay",
+    "input": {
+      "trip_context": {
+        "origin_city": "Delhi"
+      },
+      "working_plan": {
+        "destinations": ["Udaipur"],
+        "trip_duration": 3,
+        "start_date": null,
+        "approved_places": [],
+        "days": [
+          { "day_number": 1, "date": null, "places": [] },
+          { "day_number": 2, "date": null, "places": [] },
+          { "day_number": 3, "date": null, "places": [] }
+        ]
+      }
+    },
+    "invariants": {
+      "stay_price_estimate_required_on_days": [1, 2],
+      "stay_price_estimate_tiers_ordered": true
+    }
   }
 ]

@@ -798,3 +798,170 @@ def test_atlas_rejects_plan_that_does_not_allocate_approved_places(
 
     assert response.status_code == 422
     engine.atlas.assert_not_awaited()
+
+
+def _stay_tier(tier: str, low: int, high: int) -> dict:
+    return {"tier": tier, "estimated_cost_low": low, "estimated_cost_high": high}
+
+
+def _post_atlas_with_day_field(day_overrides: dict) -> tuple:
+    output = atlas_output()
+    output["final_itinerary"]["days"][0].update(day_overrides)
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(output))
+    )
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    return adapter, engine
+
+
+def test_atlas_api_returns_a_valid_stay_price_estimate(api_client: TestClient) -> None:
+    """Regression for TWM-204: a well-formed three-tier estimate for a day
+    with an overnight stay passes through unfabricated."""
+    adapter, engine = _post_atlas_with_day_field(
+        {
+            "stay_price_estimate": [
+                _stay_tier("budget", 800, 1500),
+                _stay_tier("mid_range", 1500, 3000),
+                _stay_tier("premium", 3000, 6000),
+            ]
+        }
+    )
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    returned = body["final_itinerary"]["days"][0]["stay_price_estimate"]
+    assert [tier["tier"] for tier in returned] == ["budget", "mid_range", "premium"]
+
+
+def test_atlas_omits_stay_price_estimate_for_a_day_with_no_overnight_stay(
+    api_client: TestClient,
+) -> None:
+    """Regression for TWM-204: absent stay_price_estimate is valid -- a
+    day-trip/transit-only day must not be forced to fabricate a range."""
+    adapter, engine = _post_atlas_with_day_field({})
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["final_itinerary"]["days"][0]["stay_price_estimate"] is None
+
+
+def test_atlas_rejects_stay_price_estimate_with_wrong_tier_order(
+    api_client: TestClient,
+) -> None:
+    adapter, engine = _post_atlas_with_day_field(
+        {
+            "stay_price_estimate": [
+                _stay_tier("mid_range", 1500, 3000),
+                _stay_tier("budget", 800, 1500),
+                _stay_tier("premium", 3000, 6000),
+            ]
+        }
+    )
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert adapter.invoke.await_count == 1
+
+
+def test_atlas_rejects_stay_price_estimate_missing_a_tier(
+    api_client: TestClient,
+) -> None:
+    adapter, engine = _post_atlas_with_day_field(
+        {
+            "stay_price_estimate": [
+                _stay_tier("budget", 800, 1500),
+                _stay_tier("premium", 3000, 6000),
+            ]
+        }
+    )
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert adapter.invoke.await_count == 1
+
+
+def test_atlas_rejects_stay_price_estimate_with_decreasing_tier_low(
+    api_client: TestClient,
+) -> None:
+    """Regression for TWM-204: a lower tier's estimated_cost_low may never
+    exceed a higher tier's -- e.g. premium priced below budget."""
+    adapter, engine = _post_atlas_with_day_field(
+        {
+            "stay_price_estimate": [
+                _stay_tier("budget", 800, 1500),
+                _stay_tier("mid_range", 1500, 3000),
+                _stay_tier("premium", 1000, 6000),
+            ]
+        }
+    )
+    set_engine(api_client, engine)
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert adapter.invoke.await_count == 1

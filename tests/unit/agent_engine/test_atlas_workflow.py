@@ -22,6 +22,7 @@ def test_atlas_evaluation_corpus_covers_research_and_authority_boundaries() -> N
         "specific-hotel-not-found",
         "budget-total-consistency",
         "mode-neutral-transit-language",
+        "overnight-stay-price-band-estimate",
     }
     assert cases_by_id["international-current-rules"]["invariants"] == {
         "no_live_search_available": True,
@@ -48,6 +49,22 @@ def test_atlas_evaluation_corpus_covers_mode_neutral_transit_language() -> None:
         "no_mode_naming_in_movement_guidance": True,
         "no_mode_naming_in_budget_notes": True,
         "mode_decided_downstream_by_trusted_actions": True,
+    }
+
+
+def test_atlas_evaluation_corpus_covers_overnight_stay_price_band_estimate() -> None:
+    # TWM-204: a multi-day single-base trip must carry a well-formed,
+    # ordered tiered estimate for its overnight days.
+    cases = json.loads(
+        (ROOT / "tests" / "resources" / "atlas_agent_cases.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    cases_by_id = {case["id"]: case for case in cases}
+
+    assert cases_by_id["overnight-stay-price-band-estimate"]["invariants"] == {
+        "stay_price_estimate_required_on_days": [1, 2],
+        "stay_price_estimate_tiers_ordered": True,
     }
 
 

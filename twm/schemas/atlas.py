@@ -202,6 +202,28 @@ class AtlasTimelineItem(BaseModel):
         return self
 
 
+StayTier = Literal["budget", "mid_range", "premium"]
+_STAY_TIER_ORDER: tuple[StayTier, ...] = ("budget", "mid_range", "premium")
+
+
+class AtlasStayTierEstimate(BaseModel):
+    """A single tier of TWM-204's non-binding stay price-band estimate --
+    never a live/booked price (that stays structurally forbidden on
+    TrustedAction), the same estimate-then-redirect honesty framing already
+    applied to transit `estimated_cost_low/high`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tier: StayTier
+    estimated_cost_low: int = Field(ge=0)
+    estimated_cost_high: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "AtlasStayTierEstimate":
+        _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
+        return self
+
+
 class AtlasDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -214,6 +236,28 @@ class AtlasDay(BaseModel):
     seasonal_guidance: AtlasText
     permit_or_ticket_guidance: AtlasText
     backup_plan: Optional[AtlasText] = None
+    # TWM-204: present only when this day involves an overnight stay --
+    # Atlas's own judgment call, the same as backup_plan above. Absent for
+    # a day-trip/pure-transit/departure day with no overnight stay.
+    stay_price_estimate: Optional[list[AtlasStayTierEstimate]] = None
+
+    @model_validator(mode="after")
+    def validate_stay_price_estimate(self) -> "AtlasDay":
+        if self.stay_price_estimate is None:
+            return self
+        tiers = [entry.tier for entry in self.stay_price_estimate]
+        if tiers != list(_STAY_TIER_ORDER):
+            raise ValueError(
+                "stay_price_estimate must contain exactly budget, mid_range, "
+                "premium tiers in that order"
+            )
+        for previous, current in zip(self.stay_price_estimate, self.stay_price_estimate[1:]):
+            if current.estimated_cost_low < previous.estimated_cost_low:
+                raise ValueError(
+                    "stay_price_estimate tiers must have non-decreasing "
+                    "estimated_cost_low across budget -> mid_range -> premium"
+                )
+        return self
 
 
 class AtlasBudgetLine(BaseModel):
