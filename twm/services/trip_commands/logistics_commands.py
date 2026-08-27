@@ -41,6 +41,7 @@ async def apply_confirm_logistics(
         anchor_id=str(anchor.id),
         anchor_type=anchor.type,
         day_number=anchor.day_number,
+        board_item_id=anchor.board_item_id,
     )
 
     frozen_plan = state["planner_state"]["frozen_plan"]

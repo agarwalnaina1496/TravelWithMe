@@ -1524,6 +1524,64 @@ def test_confirm_logistics_persists_anchor_and_proposes_revision(api_client: Tes
     assert saved["itinerary_state"]["current_version"]["version"] == 1
 
 
+# TWM-198/TWM-209: board_item_id is optional and additive on
+# LogisticsConfirmationInput/LogisticsAnchor -- persisted so the UI's
+# bookingReadinessRollup can match a confirmed anchor to the exact
+# TripBoardItem it confirms, but never sent to Atlas (AtlasConfirmedAnchor
+# forbids extra fields -- Atlas has no use for a UI-side matching id).
+def test_confirm_logistics_persists_board_item_id_but_never_sends_it_to_atlas(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_confirm_logistics_payload(
+            expected_version=trip["version"],
+            logistics_confirmation={
+                "type": "transport", "label": "Delhi to Rishikesh arrival",
+                "detail": "Confirmed arrival at 2:00 PM via train 12050.",
+                "day_number": 1, "reference": "PNR-12345", "notes": None,
+                "board_item_id": f"{trip['id']}:1:0",
+            },
+        ),
+    )
+
+    assert response.status_code == 200
+    saved = response.json()["trip"]["trip_state"]
+    anchors = saved["logistics_state"]["anchors"]
+    assert anchors[0]["board_item_id"] == f"{trip['id']}:1:0"
+
+    # Atlas's own request shape is untouched -- board_item_id is a UI-side
+    # matching concern, not something Atlas needs for revision reasoning.
+    call_trip_state = engine.calls[1][1]
+    assert call_trip_state["confirmed_anchors"] == [
+        {"type": "transport", "label": "Delhi to Rishikesh arrival",
+         "detail": "Confirmed arrival at 2:00 PM via train 12050.", "day_number": 1}
+    ]
+
+
+def test_confirm_logistics_without_board_item_id_still_works(api_client: TestClient):
+    # Legacy/no-caller-support case -- board_item_id must stay genuinely
+    # optional so every existing confirm_logistics caller keeps working.
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_confirm_logistics_payload(expected_version=trip["version"]),
+    )
+
+    assert response.status_code == 200
+    anchors = response.json()["trip"]["trip_state"]["logistics_state"]["anchors"]
+    assert anchors[0]["board_item_id"] is None
+
+
 def test_confirm_logistics_second_call_replaces_pending_proposal(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
