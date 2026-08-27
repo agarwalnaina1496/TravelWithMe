@@ -4,6 +4,8 @@
 strings.
 """
 
+import logging
+
 from twm.services.trusted_action.feasibility import assess_trip_feasibility
 
 
@@ -15,19 +17,24 @@ def test_degenerate_route_returns_empty_modes_never_none():
     assert blank_destination.modes == []
 
 
-def test_unknown_city_pair_returns_completely_empty_modes_fail_closed():
+def test_unknown_city_pair_returns_completely_empty_modes_fail_closed(caplog):
     # Regression guard: an unknown pair must return modes: [] -- never
     # partially feasible, and never conflated with "everything feasible"
     # (the original TWM-195 bug).
+    caplog.set_level(logging.WARNING)
     result = assess_trip_feasibility("Nowhere Mapped", "Somewhere Else Unmapped")
     assert result.modes == []
+    assert "Could not resolve origin city for feasibility: Nowhere Mapped" in caplog.text
+    assert "Could not resolve destination city for feasibility: Somewhere Else Unmapped" in caplog.text
 
 
-def test_one_known_one_unknown_city_still_returns_empty_modes():
+def test_one_known_one_unknown_city_still_returns_empty_modes(caplog):
     # Only one side missing from the bounded table is still "unknown" for
     # the pair -- Backend must not partially assess using only one side.
+    caplog.set_level(logging.WARNING)
     result = assess_trip_feasibility("Delhi", "Somewhere Totally Unmapped")
     assert result.modes == []
+    assert "Could not resolve destination city for feasibility: Somewhere Totally Unmapped" in caplog.text
 
 
 def test_short_hop_route_excludes_flight_but_includes_train_bus_drive():
@@ -56,6 +63,14 @@ def test_medium_distance_route_includes_flight_train_and_bus():
     assert {"flight", "train", "bus"} <= modes
     # Comfortably under the drive threshold too.
     assert "drive" in modes
+
+
+def test_resolver_only_city_pair_outside_old_static_table_gets_modes():
+    # TWM-210: Shimla was not in feasibility.py's old hand-written
+    # coordinate table but is resolvable through the shared airport resolver.
+    result = assess_trip_feasibility("Delhi", "Shimla")
+    assert result.modes
+    assert {entry.mode for entry in result.modes} >= {"train", "bus"}
 
 
 def test_long_distance_route_excludes_drive_but_includes_flight():

@@ -16,12 +16,14 @@ runtime."""
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 _DATA_PATH = Path(__file__).parent / "data" / "ourairports_airports.json"
+logger = logging.getLogger(__name__)
 
 # OurAirports ``type`` values in descending order of how confidently a bare
 # city/place name should resolve to this airport when a municipality has more
@@ -45,6 +47,8 @@ class AirportRecord:
     country: str
     type: str
     scheduled_service: bool
+    lat: float
+    lon: float
     keywords: tuple[str, ...]
 
 
@@ -77,6 +81,16 @@ def load_dataset() -> AirportDataset:
             for keyword in (entry.get("keywords") or "").split(",")
             if keyword.strip()
         )
+        try:
+            lat = float(entry.get("lat"))
+            lon = float(entry.get("lon"))
+        except (TypeError, ValueError):
+            logger.warning(
+                "Skipping airport row with invalid coordinates: %s",
+                entry.get("iata") or entry.get("name") or "<unknown>",
+            )
+            continue
+
         record = AirportRecord(
             iata=entry["iata"],
             name=entry["name"],
@@ -84,6 +98,8 @@ def load_dataset() -> AirportDataset:
             country=entry.get("country") or "",
             type=entry.get("type") or "",
             scheduled_service=bool(entry.get("scheduled_service")),
+            lat=lat,
+            lon=lon,
             keywords=keywords,
         )
         by_iata[record.iata] = record

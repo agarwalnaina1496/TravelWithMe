@@ -1,6 +1,7 @@
 """Trip Board composition (TWM-202) — Atlas + Trusted Actions merge and
 date-precision reconciliation, in isolation from the HTTP boundary."""
 
+import logging
 from uuid import uuid4
 
 from twm.schemas.trusted_action import ModeFeasibility, TripFeasibilityAssessment
@@ -85,6 +86,27 @@ def test_full_data_happy_path_composes_gateway_leg_with_feasibility():
     assert activity.feasible_modes is None
 
 
+def test_gateway_leg_matching_uses_resolved_city_aliases():
+    modes = [
+        ModeFeasibility(
+            mode="flight", status="feasible", duration_source="computed",
+            reason="Long distance.", verification={"status": "GENERAL_GUIDANCE"},
+        )
+    ]
+    trusted_action = FakeTrustedActionService({("Bengaluru", "Chennai"): TripFeasibilityAssessment(modes=modes)})
+    service = TripBoardService(trusted_action)
+    final_itinerary = {
+        "days": [_day(1, [_travel_item("Bengaluru", "Chennai")])],
+    }
+
+    board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Bangalore"})
+
+    leg = board.days[0].items[0]
+    assert leg.is_gateway_leg is True
+    assert leg.feasible_modes == modes
+    assert trusted_action.calls == [("Bengaluru", "Chennai")]
+
+
 def test_non_gateway_leg_never_gets_feasibility_computed():
     trusted_action = FakeTrustedActionService()
     service = TripBoardService(trusted_action)
@@ -103,6 +125,23 @@ def test_non_gateway_leg_never_gets_feasibility_computed():
             assert item.is_gateway_leg is False
             assert item.feasible_modes is None
     assert trusted_action.calls == []
+
+
+def test_unresolved_gateway_city_logs_warning_and_fails_closed(caplog):
+    trusted_action = FakeTrustedActionService()
+    service = TripBoardService(trusted_action)
+    final_itinerary = {
+        "days": [_day(1, [_travel_item("Atlantis", "Chennai")])],
+    }
+
+    caplog.set_level(logging.WARNING)
+    board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
+
+    leg = board.days[0].items[0]
+    assert leg.is_gateway_leg is False
+    assert leg.feasible_modes is None
+    assert trusted_action.calls == []
+    assert "Could not resolve trip-board city: Atlantis" in caplog.text
 
 
 def test_item_own_date_takes_precedence_and_is_passed_through_exactly():
