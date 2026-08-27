@@ -1,4 +1,4 @@
-"""Trip Board composition (TWM-202).
+"""Trip Board composition (TWM-202/TWM-212).
 
 Merges an Atlas final_itinerary with Trusted Actions feasibility for the
 itinerary's two gateway TRAVEL legs (TWM-195/V1 scope: internal/circuit
@@ -7,10 +7,9 @@ reconciles trip_context.booking_dates (TWM-201, trip-wide, gateway-legs-
 only) with each item's own Atlas-supplied departure_date/departure_month
 into one date-precision signal per item.
 
-Presentation only: every field traces to Atlas or Trusted Actions as-is.
+Presentation only: the response is a lean overlay on top of Atlas content.
 This module never parses Atlas prose, never guesses a mode, and never
-invents a date neither source gave it — see twm/schemas/trip_board.py's
-module docstring for the same rule stated as a contract.
+invents a date neither source gave it.
 """
 
 import logging
@@ -80,12 +79,6 @@ class TripBoardService:
             board_days.append(
                 TripBoardDay(
                     day_number=day["day_number"],
-                    title=day["title"],
-                    primary_location=day["primary_location"],
-                    summary=day["summary"],
-                    seasonal_guidance=day["seasonal_guidance"],
-                    permit_or_ticket_guidance=day["permit_or_ticket_guidance"],
-                    backup_plan=day.get("backup_plan"),
                     items=board_items,
                 )
             )
@@ -161,14 +154,6 @@ class TripBoardService:
             # and across days.
             id=f"{trip_id}:{day_number}:{index}",
             kind=item["kind"],
-            title=item["title"],
-            location=item["location"],
-            detail=item["detail"],
-            estimated_cost_low=item.get("estimated_cost_low"),
-            estimated_cost_high=item.get("estimated_cost_high"),
-            reference=item["reference"],
-            requires_advance_booking=item.get("requires_advance_booking", False),
-            booking_readiness=item.get("booking_readiness"),
             from_city=item.get("from_city"),
             to_city=item.get("to_city"),
             is_gateway_leg=is_gateway_leg,

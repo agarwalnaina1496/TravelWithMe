@@ -102,8 +102,15 @@ def _ready_trip_state(*, origin_city="Delhi", booking_dates=None):
                         "days": [
                             {
                                 "day_number": 1, "title": "Arrival", "primary_location": "Chennai",
-                                "summary": "Summary.", "seasonal_guidance": "Guidance.",
-                                "permit_or_ticket_guidance": "Guidance.",
+                                "summary": "Summary.",
+                                "notes": [
+                                    {
+                                        "category": "Weather",
+                                        "title": "Carry layers",
+                                        "detail": "Guidance.",
+                                        "reference": _reference(),
+                                    }
+                                ],
                                 "timeline": [
                                     {
                                         "kind": "TRAVEL", "title": "Travel from Delhi to Chennai",
@@ -119,8 +126,15 @@ def _ready_trip_state(*, origin_city="Delhi", booking_dates=None):
                             },
                             {
                                 "day_number": 2, "title": "Departure", "primary_location": "Chennai",
-                                "summary": "Summary.", "seasonal_guidance": "Guidance.",
-                                "permit_or_ticket_guidance": "Guidance.",
+                                "summary": "Summary.",
+                                "notes": [
+                                    {
+                                        "category": "Weather",
+                                        "title": "Carry layers",
+                                        "detail": "Guidance.",
+                                        "reference": _reference(),
+                                    }
+                                ],
                                 "timeline": [
                                     {
                                         "kind": "TRAVEL", "title": "Travel from Chennai to Delhi",
