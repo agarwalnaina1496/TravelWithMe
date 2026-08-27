@@ -85,8 +85,20 @@ def atlas_output() -> dict:
                             "booking_readiness": None,
                         }
                     ],
-                    "seasonal_guidance": "Carry weather-appropriate layers.",
-                    "permit_or_ticket_guidance": "Check current local guidance.",
+                    "notes": [
+                        {
+                            "category": "Weather",
+                            "title": "Carry layers",
+                            "detail": "Carry weather-appropriate layers.",
+                            "reference": general_reference,
+                        },
+                        {
+                            "category": "Local guidance",
+                            "title": "Check current guidance",
+                            "detail": "Check current local guidance.",
+                            "reference": general_reference,
+                        },
+                    ],
                     "backup_plan": None,
                 }
             ],
@@ -441,8 +453,8 @@ def test_atlas_api_returns_odisha_route_with_canonical_movement_endpoints(
     legs = [
         ("Bangalore", "Bhubaneswar", None),
         ("Bhubaneswar", "Puri", "Bhubaneswar to Puri Highway"),
-        ("Puri", "Konark", "Drive along Marine Drive from Puri to Konark"),
-        ("Konark", "Bhubaneswar", "Konark to Bhubaneswar (via Pipili)"),
+        ("Puri", "Konark", "Travel along Marine Drive from Puri to Konark"),
+        ("Konark", "Bhubaneswar", "Konark to Bhubaneswar via Pipili"),
         ("Bhubaneswar", "Bangalore", None),
     ]
     output = atlas_output()
@@ -459,12 +471,11 @@ def test_atlas_api_returns_odisha_route_with_canonical_movement_endpoints(
                     "end_time": None,
                     "kind": "TRAVEL",
                     "title": f"{from_city} to {to_city}",
-                    "location": display_label or f"{from_city} to {to_city}",
+                    "location": narrative_location or f"{from_city} to {to_city}",
                     "detail": "Travel between cities.",
                     "movement_guidance": None,
                     "from_city": from_city,
                     "to_city": to_city,
-                    "display_label": display_label,
                     "estimated_cost_low": 0,
                     "estimated_cost_high": 0,
                     "reference": general_reference,
@@ -472,11 +483,23 @@ def test_atlas_api_returns_odisha_route_with_canonical_movement_endpoints(
                     "booking_readiness": None,
                 }
             ],
-            "seasonal_guidance": "Carry weather-appropriate layers.",
-            "permit_or_ticket_guidance": "Check current local guidance.",
+            "notes": [
+                {
+                    "category": "Weather",
+                    "title": "Carry layers",
+                    "detail": "Carry weather-appropriate layers.",
+                    "reference": general_reference,
+                },
+                {
+                    "category": "Local guidance",
+                    "title": "Check current guidance",
+                    "detail": "Check current local guidance.",
+                    "reference": general_reference,
+                },
+            ],
             "backup_plan": None,
         }
-        for index, (from_city, to_city, display_label) in enumerate(legs)
+        for index, (from_city, to_city, narrative_location) in enumerate(legs)
     ]
     output["final_itinerary"]["trip_summary"]["destinations"] = [
         "Bangalore",
@@ -521,10 +544,10 @@ def test_atlas_api_returns_odisha_route_with_canonical_movement_endpoints(
         ("Konark", "Bhubaneswar"),
         ("Bhubaneswar", "Bangalore"),
     ]
-    # display_label carries the scenic/via narration; it must never leak
+    # location carries the scenic/via narration; it must never leak
     # into the canonical from_city/to_city endpoints UI sends to feasibility.
-    assert body["final_itinerary"]["days"][2]["timeline"][0]["display_label"] == (
-        "Drive along Marine Drive from Puri to Konark"
+    assert body["final_itinerary"]["days"][2]["timeline"][0]["location"] == (
+        "Travel along Marine Drive from Puri to Konark"
     )
     assert body["final_itinerary"]["days"][2]["timeline"][0]["from_city"] == "Puri"
     assert body["final_itinerary"]["days"][2]["timeline"][0]["to_city"] == "Konark"

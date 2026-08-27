@@ -1,27 +1,22 @@
-"""Trip Board (TWM-202): one composed itinerary/booking item list shared by
-Overview and Itinerary, instead of each screen deriving its own view of
-Atlas + Trusted Actions data independently.
+"""Trip Board (TWM-202/TWM-212): a lean itinerary feasibility overlay.
 
-Presentation-only composition. Every field here traces to Atlas or Trusted
-Actions feasibility as-is; this module reshapes/groups/computes date
-precision from numbers and flags those sources already gave it, and never
-parses, corrects, or guesses at a fact neither source provided. See
-``twm/services/trip_board/service.py`` for the composition itself.
+Presentation-only composition. The Board carries only stable item identity,
+structured route endpoints, gateway feasibility, and reconciled date
+precision. Atlas remains the source for itinerary content.
 """
 
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from .atlas import AtlasReference, AtlasBookingReadiness, TimelineKind
+from .atlas import TimelineKind
 from .trusted_action import ModeFeasibility
 
 DatePrecision = Literal["exact", "month", "flexible"]
 
 
 class TripBoardItem(BaseModel):
-    """One enriched itinerary item — an Atlas timeline entry, plus (for a
-    gateway TRAVEL leg) Trusted Actions feasibility once computed."""
+    """One lean itinerary row plus computed feasibility/date overlay."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -35,14 +30,6 @@ class TripBoardItem(BaseModel):
     # their own reconciliation for that case.
     id: str
     kind: TimelineKind
-    title: str
-    location: str
-    detail: str
-    estimated_cost_low: Optional[int] = None
-    estimated_cost_high: Optional[int] = None
-    reference: AtlasReference
-    requires_advance_booking: bool = False
-    booking_readiness: Optional[AtlasBookingReadiness] = None
 
     # TRAVEL-only, passed through verbatim from Atlas.
     from_city: Optional[str] = None
@@ -75,12 +62,6 @@ class TripBoardDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     day_number: int
-    title: str
-    primary_location: str
-    summary: str
-    seasonal_guidance: str
-    permit_or_ticket_guidance: str
-    backup_plan: Optional[str] = None
     items: list[TripBoardItem]
 
 

@@ -138,9 +138,6 @@ class AtlasTimelineItem(BaseModel):
     movement_guidance: Optional[AtlasText] = None
     from_city: Optional[AtlasText] = None
     to_city: Optional[AtlasText] = None
-    from_place: Optional[AtlasText] = None
-    to_place: Optional[AtlasText] = None
-    display_label: Optional[AtlasText] = None
     departure_date: Optional[date] = None
     departure_month: Optional[AtlasText] = None
     estimated_cost_low: Optional[int] = Field(default=None, ge=0)
@@ -172,10 +169,6 @@ class AtlasTimelineItem(BaseModel):
             if self.from_city is not None or self.to_city is not None:
                 raise ValueError(
                     "from_city/to_city are allowed only when kind is TRAVEL"
-                )
-            if self.from_place is not None or self.to_place is not None:
-                raise ValueError(
-                    "from_place/to_place are allowed only when kind is TRAVEL"
                 )
         if (self.from_city is None) != (self.to_city is None):
             raise ValueError(
@@ -224,6 +217,15 @@ class AtlasStayTierEstimate(BaseModel):
         return self
 
 
+class AtlasDayNote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: AtlasText
+    title: AtlasText
+    detail: AtlasText
+    reference: AtlasReference
+
+
 class AtlasDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -233,8 +235,7 @@ class AtlasDay(BaseModel):
     primary_location: AtlasText
     summary: AtlasText
     timeline: list[AtlasTimelineItem] = Field(min_length=1)
-    seasonal_guidance: AtlasText
-    permit_or_ticket_guidance: AtlasText
+    notes: list[AtlasDayNote] = Field(default_factory=list)
     backup_plan: Optional[AtlasText] = None
     # TWM-204: present only when this day involves an overnight stay --
     # Atlas's own judgment call, the same as backup_plan above. Absent for

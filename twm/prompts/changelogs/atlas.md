@@ -1,5 +1,16 @@
 # Atlas prompt changelog
 
+## Atlas 1.10.0 — 2026-08-27
+
+- Moves day-specific seasonal, permit, ticket, closure, safety, packing,
+  timing, and local-logistics guidance into each day's `notes` list, and
+  constrains top-level `practical_notes` to genuinely trip-wide facts so
+  Atlas does not duplicate the same guidance in both places. Also removes
+  prompt instructions for the now-removed `from_place`/`to_place`/
+  `display_label` fields; any traveler-facing route narration belongs in
+  `location` or `detail`, while `from_city`/`to_city` remain canonical
+  structured endpoints (TWM-212).
+
 ## Atlas 1.9.0 — 2026-08-26
 
 - Adds `stay_price_estimate` to `AtlasDay`: an optional, non-binding

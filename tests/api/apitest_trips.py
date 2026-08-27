@@ -322,8 +322,14 @@ class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
                                     "reference": {"status": "GENERAL_GUIDANCE"},
                                 }
                             ],
-                            "seasonal_guidance": "Guidance.",
-                            "permit_or_ticket_guidance": "Guidance.",
+                            "notes": [
+                                {
+                                    "category": "Weather",
+                                    "title": "Carry layers",
+                                    "detail": "Guidance.",
+                                    "reference": {"status": "GENERAL_GUIDANCE"},
+                                }
+                            ],
                         }
                         for day in working_plan["days"]
                     ],

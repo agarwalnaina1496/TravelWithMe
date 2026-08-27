@@ -57,8 +57,14 @@ def _day(day_number, timeline):
         "title": f"Day {day_number}",
         "primary_location": "Delhi",
         "summary": "Summary.",
-        "seasonal_guidance": "Guidance.",
-        "permit_or_ticket_guidance": "Guidance.",
+        "notes": [
+            {
+                "category": "Weather",
+                "title": "Carry layers",
+                "detail": "Evenings may be cool.",
+                "reference": _reference(),
+            }
+        ],
         "timeline": timeline,
     }
 
@@ -270,7 +276,7 @@ def test_non_travel_item_never_gets_a_date_precision():
     assert board.days[0].items[0].date_precision is None
 
 
-def test_does_not_mutate_or_reinterpret_atlas_string_fields():
+def test_response_shape_is_limited_to_current_frontend_allowlist():
     trusted_action = FakeTrustedActionService()
     service = TripBoardService(trusted_action)
     final_itinerary = {
@@ -279,27 +285,18 @@ def test_does_not_mutate_or_reinterpret_atlas_string_fields():
 
     board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
 
-    item = board.days[0].items[0]
-    assert item.title == "Visit Ram Jhula"
-    assert item.location == "Rishikesh"
-    assert item.detail == "Walk across the bridge."
-
-
-def test_booking_readiness_and_reference_pass_through_verbatim():
-    trusted_action = FakeTrustedActionService()
-    service = TripBoardService(trusted_action)
-    item = _activity_item()
-    item["requires_advance_booking"] = True
-    item["booking_readiness"] = "needs_advance_booking"
-    item["reference"] = {"status": "GENERAL_GUIDANCE"}
-    final_itinerary = {"days": [_day(1, [item])]}
-
-    board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
-
-    result = board.days[0].items[0]
-    assert result.booking_readiness == "needs_advance_booking"
-    assert result.requires_advance_booking is True
-    assert result.reference.status == "GENERAL_GUIDANCE"
+    assert set(board.days[0].model_dump().keys()) == {"day_number", "items"}
+    assert set(board.days[0].items[0].model_dump().keys()) == {
+        "id",
+        "kind",
+        "from_city",
+        "to_city",
+        "is_gateway_leg",
+        "feasible_modes",
+        "date_precision",
+        "departure_date",
+        "departure_month",
+    }
 
 
 # TWM-209: stable, deterministic per-item id.
