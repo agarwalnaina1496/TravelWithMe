@@ -261,3 +261,33 @@ def test_booking_readiness_and_reference_pass_through_verbatim():
     assert result.booking_readiness == "needs_advance_booking"
     assert result.requires_advance_booking is True
     assert result.reference.status == "GENERAL_GUIDANCE"
+
+
+# TWM-209: stable, deterministic per-item id.
+def test_item_id_is_stable_across_two_build_calls_for_the_same_version():
+    trusted_action = FakeTrustedActionService()
+    service = TripBoardService(trusted_action)
+    final_itinerary = {
+        "days": [_day(1, [_travel_item("Delhi", "Chennai"), _activity_item()])],
+    }
+
+    first = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
+    second = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
+
+    assert [item.id for item in first.days[0].items] == [item.id for item in second.days[0].items]
+
+
+def test_item_id_differs_across_items_within_a_day_and_across_days():
+    trusted_action = FakeTrustedActionService()
+    service = TripBoardService(trusted_action)
+    final_itinerary = {
+        "days": [
+            _day(1, [_travel_item("Delhi", "Chennai"), _activity_item()]),
+            _day(2, [_activity_item(title="Different day, same shape")]),
+        ],
+    }
+
+    board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
+
+    all_ids = [item.id for day in board.days for item in day.items]
+    assert len(all_ids) == len(set(all_ids))

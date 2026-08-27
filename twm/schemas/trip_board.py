@@ -25,6 +25,15 @@ class TripBoardItem(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # TWM-209: a stable, deterministic identity for this item — derived from
+    # trip_id + day number + timeline index, so it stays consistent across
+    # requests for the same itinerary version without needing Atlas to
+    # supply one. Lets a consumer (e.g. UI readiness/anchor matching) match
+    # against the exact item rather than falling back to a fragile day/type
+    # match. Not stable across an itinerary *revision* that reorders/adds/
+    # removes timeline items — callers matching across versions still need
+    # their own reconciliation for that case.
+    id: str
     kind: TimelineKind
     title: str
     location: str
