@@ -20,6 +20,13 @@ class LogisticsConfirmationInput(BaseModel):
     day_number: Optional[int] = Field(default=None, ge=1)
     reference: Optional[LogisticsText] = None
     notes: Optional[LogisticsText] = None
+    # TWM-198/TWM-209: the confirming caller's TripBoardItem.id, when known —
+    # lets readiness matching (bookingReadinessRollup) identify the exact
+    # item this anchor confirms instead of falling back to day/type
+    # matching. Optional and additive: no existing caller is required to
+    # send it, and a day_number-only anchor (including all pre-existing
+    # anchor data) remains valid, just without the tighter match.
+    board_item_id: Optional[LogisticsText] = None
 
 
 class LogisticsAnchor(LogisticsConfirmationInput):
