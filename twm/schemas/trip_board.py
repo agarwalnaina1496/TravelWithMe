@@ -62,6 +62,7 @@ class TripBoardDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     day_number: int
+    date: Optional[str] = None
     items: list[TripBoardItem]
 
 

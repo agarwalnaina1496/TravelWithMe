@@ -11,7 +11,7 @@ from .flight_search import DepartureMonth
 from .logistics import LogisticsConfirmationInput
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
 from .scout import BoundedMessage, TripStage
-from .trip_context import DESTINATIONS_KEY, FIXED_KEYS
+from .trip_context import DESTINATIONS_KEY, FIXED_KEYS, TravelerComposition
 
 
 class MeridianRefinementReference(BaseModel):
@@ -250,6 +250,7 @@ TripCommandName = Literal[
     "accept_itinerary_revision",
     "keep_current_itinerary",
     "update_booking_dates",
+    "update_traveler_composition",
 ]
 
 _MESSAGE_COMMANDS = {"traveler_message"}
@@ -276,6 +277,11 @@ class TripCommandRequest(BaseModel):
     refinement: MeridianRefinement | None = None
     logistics_confirmation: LogisticsConfirmationInput | None = None
     booking_date_update: TripBookingDateInput | None = None
+    # update_traveler_composition command payload (TWM-213): reuses
+    # TravelerComposition directly rather than a bespoke wrapper — same
+    # structured adult/child/infant shape the command persists verbatim to
+    # trip_context.traveler_composition, no additional fields needed.
+    traveler_composition_update: TravelerComposition | None = None
 
     @model_validator(mode="after")
     def validate_command_fields(self) -> "TripCommandRequest":
@@ -298,6 +304,20 @@ class TripCommandRequest(BaseModel):
         if self.command != "update_booking_dates" and self.booking_date_update is not None:
             raise ValueError(
                 "booking_date_update is allowed only for update_booking_dates"
+            )
+        if (
+            self.command == "update_traveler_composition"
+            and self.traveler_composition_update is None
+        ):
+            raise ValueError(
+                "update_traveler_composition requires traveler_composition_update"
+            )
+        if (
+            self.command != "update_traveler_composition"
+            and self.traveler_composition_update is not None
+        ):
+            raise ValueError(
+                "traveler_composition_update is allowed only for update_traveler_composition"
             )
         if self.command not in _MESSAGE_COMMANDS and self.message is not None:
             raise ValueError("message is allowed only for traveler_message")

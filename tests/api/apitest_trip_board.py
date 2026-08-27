@@ -137,6 +137,10 @@ def _ready_trip_state(*, origin_city="Delhi", booking_dates=None):
                                 ],
                                 "timeline": [
                                     {
+                                        "kind": "STAY", "title": "Chennai stay", "location": "Chennai",
+                                        "detail": "Stay overnight.", "reference": _reference(),
+                                    },
+                                    {
                                         "kind": "TRAVEL", "title": "Travel from Chennai to Delhi",
                                         "location": "Chennai to Delhi", "detail": "Return travel.",
                                         "from_city": "Chennai", "to_city": "Delhi",
@@ -193,7 +197,7 @@ def test_get_trip_board_composes_gateway_legs_with_real_feasibility(api_client: 
     assert activity["is_gateway_leg"] is False
     assert activity["feasible_modes"] is None
 
-    inbound = board["days"][1]["items"][0]
+    inbound = board["days"][1]["items"][1]
     assert inbound["is_gateway_leg"] is True
 
 
@@ -210,7 +214,11 @@ def test_get_trip_board_reconciles_exact_booking_dates_per_gateway_direction(api
     assert response.status_code == 200
     board = response.json()
     outbound = board["days"][0]["items"][0]
-    inbound = board["days"][1]["items"][0]
+    inbound = board["days"][1]["items"][1]
+    assert board["days"][0]["date"] == "2026-05-01"
+    assert board["days"][1]["date"] == "2026-05-02"
+    assert board["days"][0]["items"][1]["kind"] == "ACTIVITY"
+    assert board["days"][1]["items"][0]["kind"] == "STAY"
     assert outbound["date_precision"] == "exact"
     assert outbound["departure_date"] == "2026-05-01"
     assert inbound["date_precision"] == "exact"

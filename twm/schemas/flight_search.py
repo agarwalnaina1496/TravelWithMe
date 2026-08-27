@@ -45,6 +45,8 @@ from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from .trip_context import TravelerComposition
+
 
 FlightText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 IataCode = Annotated[
@@ -151,24 +153,12 @@ FlightSearchUnavailableCode = Literal[
 FlightSearchFailureCode = Literal["invalid_request", "internal_error"]
 
 
-class FlightSearchTravelerCount(BaseModel):
+class FlightSearchTravelerCount(TravelerComposition):
     """Used only to compute an approximate group total locally — the
     current provider generation has no per-traveler search filter, so this
     is never forwarded to a provider as a search constraint."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    adults: int = Field(ge=1, le=9)
-    children: int = Field(default=0, ge=0, le=8)
-    infants: int = Field(default=0, ge=0, le=8)
-
-    @model_validator(mode="after")
-    def validate_bounds(self) -> "FlightSearchTravelerCount":
-        if self.adults + self.children + self.infants > 9:
-            raise ValueError("total travelers must not exceed 9")
-        if self.infants > self.adults:
-            raise ValueError("infants cannot exceed adults")
-        return self
+    pass
 
 
 class FlightSearchBudgetCeiling(BaseModel):

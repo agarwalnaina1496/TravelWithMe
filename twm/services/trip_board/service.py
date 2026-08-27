@@ -13,6 +13,7 @@ invents a date neither source gave it.
 """
 
 import logging
+from datetime import date, timedelta
 from typing import Any, Optional
 from uuid import UUID
 
@@ -51,6 +52,7 @@ class TripBoardService:
     ) -> TripBoardResponse:
         origin_city = trip_context.get("origin_city")
         booking_dates = trip_context.get("booking_dates")
+        trip_start = self._exact_trip_start(booking_dates)
 
         days = final_itinerary.get("days", [])
         travel_legs = [
@@ -72,17 +74,47 @@ class TripBoardService:
 
         board_days = []
         for day in days:
+            day_number = day["day_number"]
+            calendar_date = (
+                (trip_start + timedelta(days=day_number - 1)).isoformat()
+                if trip_start is not None
+                else None
+            )
+            if calendar_date is not None:
+                logger.info(
+                    "Computed calendar date for trip-board day.",
+                    extra={
+                        "event": "be.trip_board.day_date.computed",
+                        "trip_id": str(trip_id),
+                        "day_number": day_number,
+                        "calendar_date": calendar_date,
+                    },
+                )
             board_items = [
-                self._build_item(item, index, day["day_number"], outbound, inbound, booking_dates, trip_id)
+                self._build_item(item, index, day_number, outbound, inbound, booking_dates, trip_id)
                 for index, item in enumerate(day.get("timeline", []))
             ]
             board_days.append(
                 TripBoardDay(
-                    day_number=day["day_number"],
+                    day_number=day_number,
+                    date=calendar_date,
                     items=board_items,
                 )
             )
         return TripBoardResponse(version=version, days=board_days)
+
+    @staticmethod
+    def _exact_trip_start(booking_dates: Optional[dict[str, Any]]) -> Optional[date]:
+        if not booking_dates or booking_dates.get("precision") != "exact":
+            return None
+        departure_date = booking_dates.get("departure_date")
+        if not departure_date:
+            return None
+        try:
+            return date.fromisoformat(departure_date)
+        except (TypeError, ValueError):
+            logger.warning("Could not parse exact trip-board departure date.")
+            return None
 
     def _build_item(
         self,

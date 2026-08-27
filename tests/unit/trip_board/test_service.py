@@ -37,6 +37,16 @@ def _activity_item(title="Explore", location="Delhi", detail="Detail."):
     }
 
 
+def _stay_item(location="Chennai"):
+    return {
+        "kind": "STAY",
+        "title": "Overnight stay",
+        "location": location,
+        "detail": "Stay overnight.",
+        "reference": _reference(),
+    }
+
+
 def _travel_item(from_city, to_city, *, departure_date=None, departure_month=None, title=None):
     return {
         "kind": "TRAVEL",
@@ -276,6 +286,63 @@ def test_non_travel_item_never_gets_a_date_precision():
     assert board.days[0].items[0].date_precision is None
 
 
+def test_exact_trip_start_computes_one_calendar_date_per_day(caplog):
+    trusted_action = FakeTrustedActionService()
+    service = TripBoardService(trusted_action)
+    final_itinerary = {
+        "days": [
+            _day(1, [_activity_item()]),
+            _day(2, [_stay_item(), _activity_item(title="Marina Beach")]),
+            _day(3, [_activity_item(title="Museum")]),
+        ]
+    }
+
+    caplog.set_level(logging.INFO)
+    board = service.build(
+        TRIP_ID,
+        1,
+        final_itinerary,
+        {
+            "origin_city": "Delhi",
+            "booking_dates": {
+                "precision": "exact",
+                "departure_date": "2026-05-30",
+            },
+        },
+    )
+
+    assert [day.date for day in board.days] == [
+        "2026-05-30",
+        "2026-05-31",
+        "2026-06-01",
+    ]
+    computed = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "be.trip_board.day_date.computed"
+    ]
+    assert [record.day_number for record in computed] == [1, 2, 3]
+    assert all(record.trip_id == str(TRIP_ID) for record in computed)
+
+
+def test_non_exact_booking_precision_does_not_compute_day_dates():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {"days": [_day(1, [_stay_item()]), _day(2, [_activity_item()])]}
+
+    for booking_dates in (
+        {"precision": "month", "departure_month": "2026-05"},
+        None,
+    ):
+        board = service.build(
+            TRIP_ID,
+            1,
+            final_itinerary,
+            {"origin_city": "Delhi", "booking_dates": booking_dates},
+        )
+
+        assert [day.date for day in board.days] == [None, None]
+
+
 def test_response_shape_is_limited_to_current_frontend_allowlist():
     trusted_action = FakeTrustedActionService()
     service = TripBoardService(trusted_action)
@@ -285,7 +352,7 @@ def test_response_shape_is_limited_to_current_frontend_allowlist():
 
     board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
 
-    assert set(board.days[0].model_dump().keys()) == {"day_number", "items"}
+    assert set(board.days[0].model_dump().keys()) == {"day_number", "date", "items"}
     assert set(board.days[0].items[0].model_dump().keys()) == {
         "id",
         "kind",

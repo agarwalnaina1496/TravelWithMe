@@ -121,7 +121,7 @@ def test_active_phase_prompt_releases_are_complete() -> None:
         "scout": "1.10.0",
         "meridian": "1.12.0",
         "guide": "3.1.0",
-        "atlas": "1.10.0",
+        "atlas": "1.11.0",
     }
     guide_prompt = load_prompt_release("guide").content
     assert "Traveler authority" in guide_prompt
