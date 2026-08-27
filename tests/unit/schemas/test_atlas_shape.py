@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from twm.schemas.atlas import AtlasDay, AtlasTimelineItem
+from twm.schemas.atlas import AtlasDay, AtlasFinalItinerary, AtlasTimelineItem
 
 
 def _reference() -> dict[str, str]:
@@ -60,3 +60,49 @@ def test_atlas_day_uses_notes_instead_of_legacy_guidance_fields():
     for removed_field in ("seasonal_guidance", "permit_or_ticket_guidance"):
         with pytest.raises(ValidationError):
             AtlasDay.model_validate(_day(**{removed_field: "Legacy guidance."}))
+
+
+def test_day_specific_taj_closure_is_not_duplicated_in_trip_practical_notes():
+    itinerary = AtlasFinalItinerary.model_validate(
+        {
+            "trip_summary": {
+                "title": "Agra weekend",
+                "destinations": ["Agra"],
+                "trip_duration": 1,
+                "num_travelers": 2,
+                "date_range": None,
+                "overview": "A short visit to Agra.",
+                "route_rationale": "One base keeps the weekend practical.",
+            },
+            "days": [_day()],
+            "budget_summary": {
+                "currency": "INR",
+                "lines": [
+                    {
+                        "category": "Activities",
+                        "amount_low": 1000,
+                        "amount_high": 2000,
+                        "note": "Allow for monument entry fees.",
+                    }
+                ],
+                "budget_fit": "Within the stated budget.",
+            },
+            "practical_notes": [
+                {
+                    "category": "Emergency planning",
+                    "title": "Keep trip-wide contacts available",
+                    "detail": "Save accommodation and emergency contacts offline.",
+                    "reference": _reference(),
+                }
+            ],
+            "sources": [],
+            "assumptions": [],
+        }
+    )
+
+    day_note_titles = [note.title for note in itinerary.days[0].notes]
+    practical_note_titles = [note.title for note in itinerary.practical_notes]
+
+    assert day_note_titles == ["Taj Mahal Friday closure"]
+    assert practical_note_titles == ["Keep trip-wide contacts available"]
+    assert "Taj Mahal Friday closure" not in practical_note_titles
