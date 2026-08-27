@@ -22,6 +22,26 @@ def test_keyword_alias_resolves_bangalore_to_blr():
     assert result is not None
     assert result.iata == "BLR"
     assert result.source == "ourairports"
+    assert isinstance(result.lat, float)
+    assert isinstance(result.lon, float)
+
+
+def test_curated_fallback_can_override_unrelated_global_same_name_airport():
+    # Bare "Puri" exists in OurAirports as an unrelated non-India airport,
+    # but TWM itinerary usage means Puri, Odisha. The bounded fallback keeps
+    # downstream distance checks on the Indian gateway instead of silently
+    # computing against the wrong continent.
+    result = resolve_airport("Puri")
+    assert result is not None
+    assert result.iata == "BBI"
+    assert result.source == "curated_fallback"
+
+
+def test_curated_fallback_covers_mvp_route_aliases():
+    assert resolve_airport("Mangalore").iata == "IXE"
+    assert resolve_airport("Konark").iata == "BBI"
+    assert resolve_airport("Shimla").iata == "SLV"
+    assert resolve_airport("Ooty").iata == "CJB"
 
 
 def test_scheduled_service_candidate_wins_over_unrelated_same_name_airport():

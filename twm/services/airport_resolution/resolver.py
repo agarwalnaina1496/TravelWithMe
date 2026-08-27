@@ -8,7 +8,11 @@ module is allowed to guess or invent an IATA code.
 
 Resolution order:
 
-1. OurAirports municipality match, unioned with an OurAirports ``keywords``
+1. ``CURATED_FALLBACK`` for bounded MVP aliases and known ambiguous bare
+   place names. Every fallback value is validated against the loaded
+   OurAirports dataset before being trusted (never a bare caller-invented
+   code).
+2. OurAirports municipality match, unioned with an OurAirports ``keywords``
    match (e.g. "Bangalore" is a keyword alias on Kempegowda International's
    "Bengaluru" municipality record) -- this is the primary source per the
    Linear issue's Backend Implementation Direction. Candidates from either
@@ -17,12 +21,6 @@ Resolution order:
    airport abroad -- e.g. a small non-scheduled "Madras Municipal Airport"
    in Oregon, US -- from ever outranking Chennai's MAA, which only appears
    via the keyword alias), then by airport size class.
-2. ``CURATED_FALLBACK`` -- a small, bounded, MVP-known-gap alias map for
-   places the OurAirports municipality/keyword lookup does not cover at all
-   (see ``fallback.py``). Every fallback value is still validated against
-   the loaded OurAirports dataset before being trusted (never a bare
-   caller-invented code).
-
 If neither source resolves a usable, currently-listed IATA code, this
 returns ``None`` -- callers must treat that as a typed clarification/
 unavailable outcome, never as licence to guess.
@@ -40,7 +38,7 @@ AirportResolutionConfidence = Literal["high", "low"]
 
 
 class AirportResolution:
-    __slots__ = ("input_label", "iata", "airport_name", "source", "confidence")
+    __slots__ = ("input_label", "iata", "airport_name", "source", "confidence", "lat", "lon")
 
     def __init__(
         self,
@@ -50,12 +48,16 @@ class AirportResolution:
         airport_name: str,
         source: AirportResolutionSource,
         confidence: AirportResolutionConfidence,
+        lat: float,
+        lon: float,
     ) -> None:
         self.input_label = input_label
         self.iata = iata
         self.airport_name = airport_name
         self.source = source
         self.confidence = confidence
+        self.lat = lat
+        self.lon = lon
 
 
 def _sort_candidate(record: AirportRecord) -> tuple[int, int, str]:
@@ -76,18 +78,6 @@ def resolve_airport(place: Optional[str]) -> Optional[AirportResolution]:
     key = label.casefold()
     dataset = load_dataset()
 
-    candidates: list[AirportRecord] = list(dataset.by_municipality.get(key, ()))
-    candidates.extend(dataset.by_keyword.get(key, ()))
-    if candidates:
-        best = min(candidates, key=_sort_candidate)
-        return AirportResolution(
-            input_label=label,
-            iata=best.iata,
-            airport_name=best.name,
-            source="ourairports",
-            confidence="high" if best.scheduled_service else "low",
-        )
-
     fallback_iata = CURATED_FALLBACK.get(key)
     if fallback_iata is not None:
         record = dataset.by_iata.get(fallback_iata)
@@ -98,6 +88,22 @@ def resolve_airport(place: Optional[str]) -> Optional[AirportResolution]:
                 airport_name=record.name,
                 source="curated_fallback",
                 confidence="low",
+                lat=record.lat,
+                lon=record.lon,
             )
+
+    candidates: list[AirportRecord] = list(dataset.by_municipality.get(key, ()))
+    candidates.extend(dataset.by_keyword.get(key, ()))
+    if candidates:
+        best = min(candidates, key=_sort_candidate)
+        return AirportResolution(
+            input_label=label,
+            iata=best.iata,
+            airport_name=best.name,
+            source="ourairports",
+            confidence="high" if best.scheduled_service else "low",
+            lat=best.lat,
+            lon=best.lon,
+        )
 
     return None

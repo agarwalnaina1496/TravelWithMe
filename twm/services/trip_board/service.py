@@ -13,11 +13,30 @@ invents a date neither source gave it — see twm/schemas/trip_board.py's
 module docstring for the same rule stated as a contract.
 """
 
+import logging
 from typing import Any, Optional
 from uuid import UUID
 
 from ...schemas.trip_board import TripBoardDay, TripBoardItem, TripBoardResponse
+from ..airport_resolution import resolve_airport
 from ..trusted_action import TrustedActionService
+
+logger = logging.getLogger(__name__)
+
+
+def _city_matches(left: str, right: str) -> bool:
+    if left.strip().casefold() == right.strip().casefold():
+        return True
+
+    left_match = resolve_airport(left)
+    right_match = resolve_airport(right)
+    if left_match is None or right_match is None:
+        if left_match is None:
+            logger.warning("Could not resolve trip-board city: %s", left)
+        if right_match is None:
+            logger.warning("Could not resolve trip-board city: %s", right)
+        return False
+    return left_match.iata == right_match.iata
 
 
 class TripBoardService:
@@ -44,11 +63,11 @@ class TripBoardService:
             and item.get("to_city")
         ]
         outbound = next(
-            (leg for leg in travel_legs if origin_city and leg["from_city"] == origin_city),
+            (leg for leg in travel_legs if origin_city and _city_matches(leg["from_city"], origin_city)),
             None,
         )
         inbound = next(
-            (leg for leg in reversed(travel_legs) if origin_city and leg["to_city"] == origin_city),
+            (leg for leg in reversed(travel_legs) if origin_city and _city_matches(leg["to_city"], origin_city)),
             None,
         )
 

@@ -11,22 +11,13 @@ Implementation Direction"). This module is a full rewrite back to pure,
 synchronous, deterministic backend-code rules -- no network call, no agent
 engine, no LLM of any kind.
 
-Signal used: a small, explicitly bounded city-to-city great-circle distance
-table (``_KNOWN_CITY_COORDINATES``), covering only the ~20-25 Indian
-cities/regions that already appear in this codebase's fixtures
-(``tests/resources/*``, ``kb/spiti_valley.yaml``) and the equivalent
-``CITY_IATA`` list in TWM-UI's ``app/src/lib/bookingCatalog.js`` (city-name
-conventions kept consistent with that list on purpose, so a name that
-resolves on one side resolves the same way on the other). This is
-explicitly NOT meant to grow into a general-purpose route-plausibility
-source of truth -- the Linear issue is explicit that expanding this table
-is not "the fix". It is one bounded, conservative signal for this first
-deterministic slice; a real route-mode provider/classifier (actual airline
-route networks, rail/road network data) is an explicit future follow-up
-story once this slice proves insufficient.
+Signal used: the bundled OurAirports-backed resolver already used by flight
+search (``twm.services.airport_resolution.resolve_airport``). This keeps
+city-name aliases and fallback handling in one backend-owned place instead
+of maintaining a second hardcoded coordinate table in this module.
 
-Rules (only apply when BOTH origin and destination resolve in the bounded
-table -- see ``assess_trip_feasibility`` for the unknown-pair behavior):
+Rules (only apply when BOTH origin and destination resolve -- see
+``assess_trip_feasibility`` for the unknown-pair behavior):
 
 - Flight is excluded below ``_FLIGHT_INFEASIBLE_BELOW_KM`` -- a short local
   hop that no domestic carrier operates as a scheduled route (calibrated
@@ -42,19 +33,21 @@ table -- see ``assess_trip_feasibility`` for the unknown-pair behavior):
   rail/road network data. This is a known, documented limitation, not an
   oversight; a follow-up story should add real train/bus network data.
 
-When either city is missing from the bounded table, the pair's distance is
-unknown and this returns a completely empty ``modes: []`` -- fail closed,
-never "assume every mode is feasible" (the original TWM-195 bug) and never
-partially feasible.
+When either city cannot be resolved, the pair's distance is unknown and this
+returns a completely empty ``modes: []`` -- fail closed, never "assume every
+mode is feasible" (the original TWM-195 bug) and never partially feasible.
 """
 
+import logging
 import math
 from typing import Optional
 
 from ...schemas.atlas import AtlasReference
 from ...schemas.trusted_action import ModeFeasibility, TransportMode, TripFeasibilityAssessment
+from ..airport_resolution import resolve_airport
 
 _EARTH_RADIUS_KM = 6371.0
+logger = logging.getLogger(__name__)
 
 # A short-local-hop cutoff: below this distance, no Indian domestic carrier
 # operates a scheduled route in practice (there is no commercial case for a
@@ -72,50 +65,6 @@ _FLIGHT_INFEASIBLE_BELOW_KM = 150.0
 # feasibility.py before commit a92634a). Still comfortably above
 # Bangalore->Mangalore (~352km), which must remain drive-feasible.
 _DRIVE_INFEASIBLE_ABOVE_KM = 800.0
-
-# Fixed, bounded lookup of major Indian cities/regions already used
-# elsewhere in this codebase's fixtures (tests/resources/*,
-# kb/spiti_valley.yaml) and mirrored in TWM-UI's bookingCatalog.js
-# CITY_IATA list, plus the three route-pairs the Linear issue calibrates
-# against (Bhubaneswar/Puri/Konark) and Mangalore (Bangalore->Mangalore's
-# other endpoint). Coordinates are approximate city/region centroids,
-# sufficient for a great-circle distance estimate, never for routing.
-# Case-insensitive exact-name lookup only, not a geocoder. Deliberately NOT
-# expanded beyond this bounded set -- see module docstring.
-_KNOWN_CITY_COORDINATES: dict[str, tuple[float, float]] = {
-    "delhi": (28.6139, 77.2090),
-    "new delhi": (28.6139, 77.2090),
-    "agra": (27.1767, 78.0081),
-    "jaipur": (26.9124, 75.7873),
-    "mumbai": (19.0760, 72.8777),
-    "bengaluru": (12.9716, 77.5946),
-    "bangalore": (12.9716, 77.5946),
-    "mangalore": (12.9141, 74.8560),
-    "mangaluru": (12.9141, 74.8560),
-    "kochi": (9.9312, 76.2673),
-    "cochin": (9.9312, 76.2673),
-    "alleppey": (9.4981, 76.3388),
-    "alappuzha": (9.4981, 76.3388),
-    "coorg": (12.3375, 75.8069),
-    "madikeri": (12.4244, 75.7382),
-    "goa": (15.2993, 74.1240),
-    "panaji": (15.4909, 73.8278),
-    "rishikesh": (30.0869, 78.2676),
-    "manali": (32.2432, 77.1892),
-    "spiti valley": (32.2461, 78.0349),
-    "spiti": (32.2461, 78.0349),
-    "jaisalmer": (26.9157, 70.9083),
-    "udaipur": (24.5854, 73.7125),
-    "varanasi": (25.3176, 82.9739),
-    "chennai": (13.0827, 80.2707),
-    "kolkata": (22.5726, 88.3639),
-    "hyderabad": (17.3850, 78.4867),
-    "pune": (18.5204, 73.8567),
-    "amritsar": (31.6340, 74.8723),
-    "bhubaneswar": (20.2961, 85.8245),
-    "puri": (19.8135, 85.8312),
-    "konark": (19.8876, 86.0945),
-}
 
 _FLIGHT_INCLUDED_REASON = (
     "Distance between these cities is long enough that a domestic flight "
@@ -143,10 +92,16 @@ def _haversine_km(origin: tuple[float, float], destination: tuple[float, float])
 
 
 def _resolve_known_distance_km(origin: str, destination: str) -> Optional[float]:
-    origin_coords = _KNOWN_CITY_COORDINATES.get(origin.strip().casefold())
-    destination_coords = _KNOWN_CITY_COORDINATES.get(destination.strip().casefold())
-    if origin_coords is None or destination_coords is None:
+    origin_match = resolve_airport(origin)
+    destination_match = resolve_airport(destination)
+    if origin_match is None or destination_match is None:
+        if origin_match is None:
+            logger.warning("Could not resolve origin city for feasibility: %s", origin)
+        if destination_match is None:
+            logger.warning("Could not resolve destination city for feasibility: %s", destination)
         return None
+    origin_coords = (origin_match.lat, origin_match.lon)
+    destination_coords = (destination_match.lat, destination_match.lon)
     return _haversine_km(origin_coords, destination_coords)
 
 

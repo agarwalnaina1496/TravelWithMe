@@ -45,6 +45,8 @@ class AirportRecord:
     country: str
     type: str
     scheduled_service: bool
+    lat: float
+    lon: float
     keywords: tuple[str, ...]
 
 
@@ -84,6 +86,8 @@ def load_dataset() -> AirportDataset:
             country=entry.get("country") or "",
             type=entry.get("type") or "",
             scheduled_service=bool(entry.get("scheduled_service")),
+            lat=float(entry["lat"]),
+            lon=float(entry["lon"]),
             keywords=keywords,
         )
         by_iata[record.iata] = record
