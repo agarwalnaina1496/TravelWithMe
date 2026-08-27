@@ -55,8 +55,8 @@ class TripBoardService:
         board_days = []
         for day in days:
             board_items = [
-                self._build_item(item, outbound, inbound, booking_dates, trip_id)
-                for item in day.get("timeline", [])
+                self._build_item(item, index, day["day_number"], outbound, inbound, booking_dates, trip_id)
+                for index, item in enumerate(day.get("timeline", []))
             ]
             board_days.append(
                 TripBoardDay(
@@ -75,6 +75,8 @@ class TripBoardService:
     def _build_item(
         self,
         item: dict[str, Any],
+        index: int,
+        day_number: int,
         outbound: Optional[dict[str, Any]],
         inbound: Optional[dict[str, Any]],
         booking_dates: Optional[dict[str, Any]],
@@ -134,6 +136,11 @@ class TripBoardService:
             feasible_modes = assessment.modes
 
         return TripBoardItem(
+            # TWM-209: deterministic across two build() calls for the same
+            # itinerary version (day_number + timeline index never change
+            # for the same days list), and distinct per item within a day
+            # and across days.
+            id=f"{trip_id}:{day_number}:{index}",
             kind=item["kind"],
             title=item["title"],
             location=item["location"],
