@@ -65,7 +65,6 @@ def atlas_output() -> dict:
             "days": [
                 {
                     "day_number": 1,
-                    "date": None,
                     "title": "Ram Jhula and Triveni Ghat",
                     "primary_location": "Rishikesh",
                     "summary": "An unhurried riverside day.",
@@ -461,7 +460,6 @@ def test_atlas_api_returns_odisha_route_with_canonical_movement_endpoints(
     output["final_itinerary"]["days"] = [
         {
             "day_number": index + 1,
-            "date": None,
             "title": f"{from_city} to {to_city}",
             "primary_location": to_city,
             "summary": "Travel day.",

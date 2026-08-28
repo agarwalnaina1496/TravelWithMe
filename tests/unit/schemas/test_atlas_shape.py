@@ -25,7 +25,6 @@ def _timeline_item(**overrides):
 def _day(**overrides):
     day = {
         "day_number": 1,
-        "date": None,
         "title": "Agra day",
         "primary_location": "Agra",
         "summary": "A practical day in Agra.",

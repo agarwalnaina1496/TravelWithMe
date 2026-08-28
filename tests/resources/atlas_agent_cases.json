@@ -5,12 +5,20 @@
     "input": {
       "trip_context": {
         "origin_city": "Delhi",
-        "num_travelers": 3,
+        "traveler_composition": {
+          "adults": 3,
+          "children": 0,
+          "infants": 0
+        },
         "budget": "INR 50000",
-        "exclusions": ["river rafting"]
+        "exclusions": [
+          "river rafting"
+        ]
       },
       "working_plan": {
-        "destinations": ["Rishikesh"],
+        "destinations": [
+          "Rishikesh"
+        ],
         "trip_duration": 3,
         "start_date": null,
         "approved_places": [
@@ -19,17 +27,39 @@
           "Neer Garh Waterfall"
         ],
         "days": [
-          { "day_number": 1, "date": null, "places": ["Ram Jhula"] },
-          { "day_number": 2, "date": null, "places": ["Triveni Ghat"] },
-          { "day_number": 3, "date": null, "places": ["Neer Garh Waterfall"] }
+          {
+            "day_number": 1,
+            "date": null,
+            "places": [
+              "Ram Jhula"
+            ]
+          },
+          {
+            "day_number": 2,
+            "date": null,
+            "places": [
+              "Triveni Ghat"
+            ]
+          },
+          {
+            "day_number": 3,
+            "date": null,
+            "places": [
+              "Neer Garh Waterfall"
+            ]
+          }
         ]
       }
     },
     "invariants": {
-      "destinations": ["Rishikesh"],
+      "destinations": [
+        "Rishikesh"
+      ],
       "trip_duration": 3,
       "preserve_approved_places": true,
-      "exclude": ["river rafting"],
+      "exclude": [
+        "river rafting"
+      ],
       "requires_day_timeline": true,
       "requires_budget_lines": true
     }
@@ -43,23 +73,59 @@
         "route_order_fixed": true
       },
       "working_plan": {
-        "destinations": ["Delhi", "Agra", "Jaipur"],
+        "destinations": [
+          "Delhi",
+          "Agra",
+          "Jaipur"
+        ],
         "trip_duration": 7,
         "start_date": null,
         "approved_places": [],
         "days": [
-          { "day_number": 1, "date": null, "places": [] },
-          { "day_number": 2, "date": null, "places": [] },
-          { "day_number": 3, "date": null, "places": [] },
-          { "day_number": 4, "date": null, "places": [] },
-          { "day_number": 5, "date": null, "places": [] },
-          { "day_number": 6, "date": null, "places": [] },
-          { "day_number": 7, "date": null, "places": [] }
+          {
+            "day_number": 1,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 2,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 3,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 4,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 5,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 6,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 7,
+            "date": null,
+            "places": []
+          }
         ]
       }
     },
     "invariants": {
-      "destinations": ["Delhi", "Agra", "Jaipur"],
+      "destinations": [
+        "Delhi",
+        "Agra",
+        "Jaipur"
+      ],
       "trip_duration": 7,
       "preserve_destination_order": true,
       "do_not_add_destinations": true
@@ -74,13 +140,23 @@
         "international": true
       },
       "working_plan": {
-        "destinations": ["Kathmandu"],
+        "destinations": [
+          "Kathmandu"
+        ],
         "trip_duration": 2,
         "start_date": null,
         "approved_places": [],
         "days": [
-          { "day_number": 1, "date": null, "places": [] },
-          { "day_number": 2, "date": null, "places": [] }
+          {
+            "day_number": 1,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 2,
+            "date": null,
+            "places": []
+          }
         ]
       }
     },
@@ -100,13 +176,23 @@
         "requested_stay": "Hillcrest Boutique Inn"
       },
       "working_plan": {
-        "destinations": ["Manali"],
+        "destinations": [
+          "Manali"
+        ],
         "trip_duration": 2,
         "start_date": null,
         "approved_places": [],
         "days": [
-          { "day_number": 1, "date": null, "places": [] },
-          { "day_number": 2, "date": null, "places": [] }
+          {
+            "day_number": 1,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 2,
+            "date": null,
+            "places": []
+          }
         ]
       }
     },
@@ -126,13 +212,23 @@
         "budget": "INR 30000"
       },
       "working_plan": {
-        "destinations": ["Jaipur"],
+        "destinations": [
+          "Jaipur"
+        ],
         "trip_duration": 2,
         "start_date": null,
         "approved_places": [],
         "days": [
-          { "day_number": 1, "date": null, "places": [] },
-          { "day_number": 2, "date": null, "places": [] }
+          {
+            "day_number": 1,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 2,
+            "date": null,
+            "places": []
+          }
         ]
       }
     },
@@ -150,15 +246,35 @@
         "origin_city": "Bengaluru"
       },
       "working_plan": {
-        "destinations": ["Bhubaneswar", "Puri", "Konark"],
+        "destinations": [
+          "Bhubaneswar",
+          "Puri",
+          "Konark"
+        ],
         "trip_duration": 4,
         "start_date": null,
         "approved_places": [],
         "days": [
-          { "day_number": 1, "date": null, "places": [] },
-          { "day_number": 2, "date": null, "places": [] },
-          { "day_number": 3, "date": null, "places": [] },
-          { "day_number": 4, "date": null, "places": [] }
+          {
+            "day_number": 1,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 2,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 3,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 4,
+            "date": null,
+            "places": []
+          }
         ]
       }
     },
@@ -178,19 +294,36 @@
         "origin_city": "Delhi"
       },
       "working_plan": {
-        "destinations": ["Udaipur"],
+        "destinations": [
+          "Udaipur"
+        ],
         "trip_duration": 3,
         "start_date": null,
         "approved_places": [],
         "days": [
-          { "day_number": 1, "date": null, "places": [] },
-          { "day_number": 2, "date": null, "places": [] },
-          { "day_number": 3, "date": null, "places": [] }
+          {
+            "day_number": 1,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 2,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 3,
+            "date": null,
+            "places": []
+          }
         ]
       }
     },
     "invariants": {
-      "stay_price_estimate_required_on_days": [1, 2],
+      "stay_price_estimate_required_on_days": [
+        1,
+        2
+      ],
       "stay_price_estimate_tiers_ordered": true
     }
   }

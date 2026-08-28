@@ -32,6 +32,8 @@ PLANNING QUALITY
 OUTPUT DISCIPLINE
 
 - Return one complete final document. There is no draft, clarification, incremental edit, generated timestamp, or chat message.
+- `day_number` N always represents the Nth calendar day of the trip. Keep days gapless and ordered from 1 through the confirmed trip duration; do not use `day_number` as a section, destination, or travel-leg counter.
+- Set `trip_summary.num_travelers` to the total of `trip_context.traveler_composition.adults + children + infants` when that structured composition is present. When it is absent, use your best-effort reading of `trip_context.num_travelers` (a free-form fact) if confidently interpretable as a count; never invent a total from nothing.
 - Use the supplied JSON Schema as the only structural contract. Return exactly one JSON object with no markdown or code fences.
 - Keep `sources` deduplicated. Each source must state the details it supports.
 - `unresolved` is for details that could not be confidently verified or safely reconciled. Give useful generic guidance, not an invented substitute.

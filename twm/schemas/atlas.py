@@ -230,7 +230,6 @@ class AtlasDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     day_number: int = Field(ge=1)
-    date: Optional[AtlasText] = None
     title: AtlasText
     primary_location: AtlasText
     summary: AtlasText

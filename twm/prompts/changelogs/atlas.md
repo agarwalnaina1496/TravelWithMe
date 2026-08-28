@@ -113,3 +113,8 @@
 - Preserves traveler authority while adding practical day-wise enrichment.
 - Establishes explicit verified/general treatment while live research remains a separate integration task.
 - Keeps unsupported specifics honest and leaves trusted provenance to the Backend.
+## Atlas 1.11.0 — 2026-08-27
+
+- Defines `day_number` as an explicit calendar-day-offset invariant (gapless 1..N, never a section/destination/leg counter).
+- Derives `trip_summary.num_travelers` from `trip_context.traveler_composition` when the traveler's exact composition has been confirmed via the Backend-owned `update_traveler_composition` command, falling back to a best-effort reading of the free-form `num_travelers` fact otherwise.
+- Removes the redundant free-text `AtlasDay.date`; post-freeze calendar dates are now computed by the Trip Board (TWM-213).

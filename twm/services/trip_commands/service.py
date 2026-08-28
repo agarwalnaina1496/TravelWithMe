@@ -13,6 +13,7 @@ from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from .atlas_commands import apply_atlas
 from .booking_commands import apply_update_booking_dates
+from .traveler_commands import apply_update_traveler_composition
 from .errors import IdempotencyConflictError, InvalidTripCommandError
 from .logistics_commands import (
     apply_accept_itinerary_revision,
@@ -41,6 +42,7 @@ _POST_FREEZE_COMMANDS = {
     "accept_itinerary_revision",
     "keep_current_itinerary",
     "update_booking_dates",
+    "update_traveler_composition",
 }
 
 
@@ -243,6 +245,10 @@ class TripCommandService:
         if payload.command == "update_booking_dates":
             return apply_update_booking_dates(
                 self.logger, state, payload.booking_date_update
+            )
+        if payload.command == "update_traveler_composition":
+            return apply_update_traveler_composition(
+                self.logger, state, payload.traveler_composition_update
             )
         if payload.command == "continue":
             if state.get("stage") == "planning" or state.get("active_agent") == "guide":
