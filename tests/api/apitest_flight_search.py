@@ -247,7 +247,10 @@ def test_unresolvable_place_endpoint_is_a_typed_clarification_not_a_guess(
     assert body["destination_resolved"]["iata"] == "BBI"
 
 
-def test_missing_travelers_is_a_typed_clarification_field(api_client: TestClient):
+def test_missing_travelers_is_not_a_clarification_field(api_client: TestClient):
+    # TWM-215: the provider itself never takes a traveler count as a search
+    # input, so an unknown count is not a reason to block the search — only
+    # origin/destination/round-trip-return-date remain hard requirements.
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
 
@@ -264,8 +267,13 @@ def test_missing_travelers_is_a_typed_clarification_field(api_client: TestClient
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "clarification_needed"
-    assert body["clarification"]["missing_fields"] == ["travelers"]
+    # No provider is configured in this fixture, so a syntactically-ready
+    # request (which this now is, without travelers) resolves to the
+    # typed "unavailable, provider not configured" outcome rather than a
+    # clarification -- see test_configured_provider_omits_group_total_when_travelers_is_unknown
+    # for the provider-configured, offer-returning case.
+    assert body["status"] == "unavailable"
+    assert body["unavailable"]["code"] == "provider_not_configured"
 
 
 def test_malformed_payload_with_extra_field_is_rejected_with_422(api_client: TestClient):
@@ -499,6 +507,38 @@ def test_configured_provider_returns_offer_status_with_no_raw_payload(api_client
     assert "url" not in offer["provenance"]
     assert offer["is_recommended"] is True
     assert body["unavailable"] is None
+
+
+def test_configured_provider_omits_group_total_when_travelers_is_unknown(api_client: TestClient):
+    # TWM-215: an offer must still come back with the provider's own
+    # per-traveler price when the exact composition isn't known yet --
+    # never a fabricated/guessed group total, and never blocked entirely.
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=False, environment="test", payload_mode=PayloadMode.METADATA, max_field_size=256
+        ),
+        InMemorySink(),
+    )
+    app.dependency_overrides[get_flight_search_service] = lambda: FlightSearchService(
+        logger=logger, adapter=_FakeConfiguredAdapter(), currency="USD"
+    )
+
+    trip_id = _create_trip(api_client)
+    response = api_client.post(
+        f"/trips/{trip_id}/flight-search",
+        json={key: value for key, value in VALID_REQUEST.items() if key != "travelers"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "offer"
+    offer = body["offers"][0]
+    assert offer["money"]["per_traveler_amount_minor_units"] == 500000
+    assert offer["money"]["traveler_count"] is None
+    assert offer["money"]["group_total_minor_units"] is None
+    assert offer["money"]["group_total_is_approximate"] is None
 
 
 class _FakeMultiOfferAdapter:

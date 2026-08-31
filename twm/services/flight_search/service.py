@@ -390,6 +390,11 @@ def _filter_and_dedupe(
             offer
             for offer in filtered
             if offer.money.currency != budget_ceiling.currency
+            # TWM-215: a ceiling is a group-total concept -- an offer with
+            # no group total yet (traveler count unknown) can't be judged
+            # against it, and must never be dropped for a check that
+            # can't actually run rather than silently excluding it.
+            or offer.money.group_total_minor_units is None
             or not exceeds_budget_ceiling(
                 offer.money.group_total_minor_units,
                 budget_ceiling.group_total_minor_units_max,
