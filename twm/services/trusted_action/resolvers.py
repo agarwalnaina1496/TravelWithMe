@@ -22,7 +22,7 @@ the plain place label only if resolution genuinely fails — a less
 prefilled but still safe search, never a blocked one.
 
 Judgement call (documented, not fabricated) for every other partner here:
-Hotellook/Booking.com/Agoda/redBus/Hostelworld/ixigo's exact public
+Hotellook/Booking.com/Agoda/redBus/Hostelworld/ixigo transport exact public
 deep-link path conventions were not confirmed this session beyond the
 shared Travelpayouts ``marker=`` tracking convention already used by
 ``twm/services/flight_search/aviasales.py``. Rather than guess an
@@ -32,6 +32,11 @@ generic query parameters (``origin``, ``destination``, ``depart_date``,
 ``return_date``, ``travelers``). Wiring each partner's actual documented
 deep-link format is a natural follow-up once each is individually
 researched/confirmed.
+
+ixigo stay (TWM-216) is the current exception: its V1 functional redirect
+uses ixigo's destination listing path,
+``hotels/hotels-in-{destination-slug}``, without date, guest, checkout, or
+affiliate tracking prefill.
 
 Tracking parameters:
 
@@ -56,6 +61,8 @@ Tracking parameters:
   only, same reasoning as redbus.
 """
 
+import re
+import unicodedata
 from datetime import date
 from typing import Optional
 
@@ -100,7 +107,11 @@ def resolve_partner_target(
 
     return ActionTarget(
         partner=partner,
-        path=_SEARCH_PATH[partner],
+        path=_target_path(
+            domain=request.domain,
+            destination=request.destination,
+            partner=partner,
+        ),
         query_params=build_query_params(
             domain=request.domain,
             origin=request.origin,
@@ -113,6 +124,26 @@ def resolve_partner_target(
             settings=settings,
         ),
     )
+
+
+def _target_path(
+    *,
+    domain: TrustedActionDomain,
+    destination: Optional[str],
+    partner: PartnerName,
+) -> str:
+    if partner == "ixigo" and domain == "stay":
+        return f"hotels/hotels-in-{_ixigo_destination_slug(destination or '')}"
+    return _SEARCH_PATH[partner]
+
+
+def _ixigo_destination_slug(destination: str) -> str:
+    """Build ixigo's destination listing slug for hotels/hotels-in-* URLs."""
+
+    normalized = unicodedata.normalize("NFKD", destination)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text.strip().lower())
+    return slug.strip("-") or "stay"
 
 
 def build_query_params(
@@ -142,6 +173,8 @@ def build_query_params(
             traveler_count=traveler_count,
             settings=settings,
         )
+    if partner == "ixigo" and domain == "stay":
+        return {}
 
     params: dict[str, str] = {"domain": domain}
     if origin:

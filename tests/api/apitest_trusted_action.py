@@ -324,6 +324,31 @@ def test_stay_domain_resolves_each_allowlisted_partner(api_client: TestClient):
         assert body["action"]["affiliate_disclosure"] is True
 
 
+def test_ixigo_stay_resolves_to_native_hotel_destination_url(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "stay",
+            "destination": "New Delhi",
+            "preferred_partner": "ixigo",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "resolved"
+    target = body["action"]["target"]
+    assert target["partner"] == "ixigo"
+    assert target["path"] == "hotels/hotels-in-new-delhi"
+    assert target["query_params"] == {}
+    assert target["target_url"] == "https://www.ixigo.com/hotels/hotels-in-new-delhi"
+
+
 def test_stay_domain_resolves_without_origin_or_traveler_count(api_client: TestClient):
     # TWM-208: a stay/hotel search has no "origin" or per-leg traveler-count
     # concept the way a transport leg does, and every approved stay partner

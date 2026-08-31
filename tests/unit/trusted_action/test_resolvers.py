@@ -7,7 +7,12 @@ request/response schema models directly in unit tests.
 
 from datetime import date
 
-from twm.services.trusted_action.resolvers import build_query_params, tracking_params
+from twm.services.trusted_action.resolvers import (
+    _ixigo_destination_slug,
+    build_query_params,
+    resolve_partner_target,
+    tracking_params,
+)
 from twm.services.trusted_action.settings import TrustedActionSettings
 
 _NO_TRACKING = TrustedActionSettings(ixigo_affiliate_id=None, travelpayouts_marker=None)
@@ -101,6 +106,57 @@ def test_no_query_param_value_ever_looks_like_a_url():
     for value in params.values():
         assert "://" not in value
         assert not value.startswith("//")
+
+
+def test_ixigo_stay_destination_slug_handles_common_destination_shapes():
+    assert _ixigo_destination_slug("Goa") == "goa"
+    assert _ixigo_destination_slug(" New Delhi ") == "new-delhi"
+    assert _ixigo_destination_slug("McLeod Ganj!") == "mcleod-ganj"
+
+
+def test_ixigo_stay_uses_native_hotel_destination_path_without_query_params():
+    target = resolve_partner_target(
+        _request_like(domain="stay", destination="New Delhi"),
+        partner="ixigo",
+        settings=_WITH_TRACKING,
+    )
+    assert target.path == "hotels/hotels-in-new-delhi"
+    assert target.query_params == {}
+    assert target.target_url == "https://www.ixigo.com/hotels/hotels-in-new-delhi"
+
+
+def test_ixigo_stay_slug_never_turns_url_like_text_into_url_syntax():
+    target = resolve_partner_target(
+        _request_like(domain="stay", destination="https://evil.example.com"),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+    assert target.target_url == "https://www.ixigo.com/hotels/hotels-in-https-evil-example-com"
+    assert "://" not in target.target_url[len("https://") :]
+
+
+def _request_like(
+    *,
+    domain,
+    origin=None,
+    destination=None,
+    departure_date=None,
+    return_date=None,
+    trip_shape="one_way",
+    traveler_count=None,
+):
+    class RequestLike:
+        pass
+
+    request = RequestLike()
+    request.domain = domain
+    request.origin = origin
+    request.destination = destination
+    request.departure_date = departure_date
+    request.return_date = return_date
+    request.trip_shape = trip_shape
+    request.traveler_count = traveler_count
+    return request
 
 
 # --- Aviasales-specific query shape (TWM-196 P1 fix) -------------------------
