@@ -162,13 +162,12 @@ def test_missing_required_fields_returns_typed_missing_input(api_client: TestCli
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "missing_input"
-    # departure_date is deliberately not required (TWM-196): a safe
-    # affiliate/search-redirect URL can still be built without an exact
-    # date — see missing_required_fields' docstring.
+    # departure_date and traveler_count are deliberately not required
+    # (TWM-196/TWM-215): a safe affiliate/search-redirect URL can still be
+    # built without either — see missing_required_fields' docstring.
     assert set(body["missing_input"]["missing_fields"]) == {
         "origin",
         "destination",
-        "traveler_count",
     }
     assert body["action"] is None
 
@@ -367,10 +366,11 @@ def test_stay_domain_still_requires_destination(api_client: TestClient):
     assert body["missing_input"]["missing_fields"] == ["destination"]
 
 
-def test_transport_domains_still_require_origin_and_traveler_count(api_client: TestClient):
-    # Regression guard: TWM-208 narrows the readiness check for domain
-    # "stay" only — flight/train/bus must keep requiring origin and
-    # traveler_count exactly as before.
+def test_transport_domains_still_require_origin(api_client: TestClient):
+    # Regression guard: TWM-208 narrows the origin requirement for domain
+    # "stay" only — flight/train/bus must keep requiring origin exactly as
+    # before. traveler_count is no longer required for any domain
+    # (TWM-215).
     repository = MemoryTripRepository()
     _override_persistence(repository)
     trip_id = _create_trip(api_client)
@@ -383,7 +383,7 @@ def test_transport_domains_still_require_origin_and_traveler_count(api_client: T
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "missing_input"
-    assert set(body["missing_input"]["missing_fields"]) == {"origin", "destination", "traveler_count"}
+    assert set(body["missing_input"]["missing_fields"]) == {"origin", "destination"}
 
 
 def test_malformed_payload_with_extra_field_is_rejected_with_422(api_client: TestClient):
