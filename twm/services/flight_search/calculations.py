@@ -13,6 +13,7 @@ from ...schemas.flight_search import (
     FlightSearchRequest,
     NormalizedFlightOffer,
 )
+from ..booking_readiness import route_readiness
 
 
 def missing_required_fields(payload: FlightSearchRequest) -> list[FlightSearchMissingField]:
@@ -22,6 +23,10 @@ def missing_required_fields(payload: FlightSearchRequest) -> list[FlightSearchMi
     have already collapsed a vague value ("sometime in September") down to
     "not yet known" (a None field) before calling this contract — this
     function only judges presence, never interprets fuzzy text.
+
+    Route completeness is delegated to booking_readiness.route_readiness,
+    shared with trusted_action's equivalent check (TWM-215) -- see that
+    module's docstring for why.
 
     departure_date is deliberately NOT required here (TWM-196): the
     Aviasales Data API's /v1/prices/cheap endpoint serves genuine
@@ -39,12 +44,18 @@ def missing_required_fields(payload: FlightSearchRequest) -> list[FlightSearchMi
     total -- see FlightMoney), not a reason to block the search.
     """
 
+    readiness = route_readiness(
+        has_origin=payload.origin_iata is not None,
+        has_destination=payload.destination_iata is not None,
+        is_round_trip=payload.trip_type == "round_trip",
+        has_return_date=payload.return_date is not None,
+    )
     missing: list[FlightSearchMissingField] = []
-    if payload.origin_iata is None:
+    if readiness.origin_missing:
         missing.append(FlightSearchMissingFieldKeys.ORIGIN)
-    if payload.destination_iata is None:
+    if readiness.destination_missing:
         missing.append(FlightSearchMissingFieldKeys.DESTINATION)
-    if payload.trip_type == "round_trip" and payload.return_date is None:
+    if readiness.return_date_missing:
         missing.append(FlightSearchMissingFieldKeys.RETURN_DATE)
     return missing
 

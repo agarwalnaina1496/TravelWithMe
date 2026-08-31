@@ -12,6 +12,7 @@ from ...schemas.trusted_action import (
     TrustedActionMissingField,
     TrustedActionRequest,
 )
+from ..booking_readiness import route_readiness
 
 # Service-level convenience copy of twm/schemas/trusted_action.py's
 # documented partner allowlist (module docstring / private
@@ -35,32 +36,48 @@ def missing_required_fields(request: TrustedActionRequest) -> list[TrustedAction
     failure — it is a typed ``missing_input`` outcome (see
     TrustedActionResult).
 
-    departure_date is deliberately NOT required here (TWM-196, mirrors the
-    equivalent fix in twm/services/flight_search/calculations.py's
-    missing_required_fields): resolve_partner_target/build_query_params
-    (resolvers.py) already treat depart_date as an optional query
-    parameter, so a genuinely safe affiliate/search-redirect URL can still
-    be built without an exact day — a partner search page degrading to
-    "no date filter" is not the same failure as having no route at all.
-    Blocking the affiliate fallback on an exact date it does not actually
-    need broke the hybrid model's promise (API + affiliate when live data
-    exists, affiliate-only fallback when it doesn't) for every one-way/
-    month/flexible flight leg."""
+    Route completeness is delegated to booking_readiness.route_readiness,
+    shared with flight_search's equivalent check (TWM-215) -- see that
+    module's docstring for why.
 
+    departure_date is deliberately NOT required here (TWM-196):
+    resolve_partner_target/build_query_params (resolvers.py) already treat
+    depart_date as an optional query parameter, so a genuinely safe
+    affiliate/search-redirect URL can still be built without an exact day
+    — a partner search page degrading to "no date filter" is not the same
+    failure as having no route at all. Blocking the affiliate fallback on
+    an exact date it does not actually need broke the hybrid model's
+    promise (API + affiliate when live data exists, affiliate-only
+    fallback when it doesn't) for every one-way/month/flexible flight leg.
+
+    traveler_count is likewise NOT required (TWM-215): build_query_params
+    already treats it as an optional query parameter for every domain --
+    a genuinely safe affiliate/search-redirect URL can still be built
+    without it, a partner search page degrading to "no traveler-count
+    filter" is not the same failure as having no route at all. Blocking
+    the affiliate fallback on a count it does not actually need broke the
+    same hybrid-model promise departure_date's fix above already protects.
+
+    TWM-208: a stay/hotel search has no "origin" concept the way a
+    transport leg does, and build_query_params already treats it as fully
+    optional for every approved stay partner (hotellook/booking_com/agoda/
+    hostelworld/ixigo) -- requiring it here made a stay request
+    permanently unresolvable regardless of input.
+    """
+
+    readiness = route_readiness(
+        has_origin=request.domain == "stay" or request.origin is not None,
+        has_destination=request.destination is not None,
+        is_round_trip=request.trip_shape == "round_trip",
+        has_return_date=request.return_date is not None,
+    )
     missing: list[TrustedActionMissingField] = []
-    # TWM-208: a stay/hotel search has no "origin" or per-leg traveler-count
-    # concept the way a transport leg does, and build_query_params already
-    # treats both as fully optional for every approved stay partner
-    # (hotellook/booking_com/agoda/hostelworld/ixigo) -- requiring them here
-    # made a stay request permanently unresolvable regardless of input.
-    if request.domain != "stay" and request.origin is None:
+    if readiness.origin_missing:
         missing.append(TrustedActionKeys.ORIGIN)
-    if request.destination is None:
+    if readiness.destination_missing:
         missing.append(TrustedActionKeys.DESTINATION)
-    if request.trip_shape == "round_trip" and request.return_date is None:
+    if readiness.return_date_missing:
         missing.append(TrustedActionKeys.RETURN_DATE)
-    if request.domain != "stay" and request.traveler_count is None:
-        missing.append(TrustedActionKeys.TRAVELER_COUNT)
     return missing
 
 
