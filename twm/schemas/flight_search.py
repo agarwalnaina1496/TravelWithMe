@@ -283,20 +283,29 @@ class FlightMoney(BaseModel):
 
     The current provider generation (Aviasales Data API) returns a
     single cached found price, not a confirmed multi-passenger fare
-    breakdown. group_total_minor_units is therefore always Backend-computed
-    as per_traveler_amount_minor_units * traveler_count —
-    group_total_is_approximate is always True while this remains the only
-    reachable provider generation, and is a modeled (not commented) field
-    so a caller can never mistake it for a provider-confirmed group fare.
+    breakdown. per_traveler_amount_minor_units is the one price point the
+    provider actually discloses — it is always present.
+
+    traveler_count/group_total_minor_units/group_total_is_approximate are
+    a Backend-computed enrichment (TWM-215), present only when the
+    traveler's exact composition is known: the provider does not require a
+    traveler count to run this search at all (see
+    calculations.missing_required_fields), so a caller must never be
+    blocked from a per-traveler price just because that enrichment isn't
+    available yet. All three are present together or absent together —
+    never a partial group-total shape. group_total_is_approximate is
+    always True when present, while this remains the only reachable
+    provider generation, and is a modeled (not commented) field so a
+    caller can never mistake it for a provider-confirmed group fare.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     currency: CurrencyCode
     per_traveler_amount_minor_units: int = Field(ge=0)
-    traveler_count: int = Field(ge=1)
-    group_total_minor_units: int = Field(ge=0)
-    group_total_is_approximate: bool
+    traveler_count: Optional[int] = Field(default=None, ge=1)
+    group_total_minor_units: Optional[int] = Field(default=None, ge=0)
+    group_total_is_approximate: Optional[bool] = None
     # The provider does not disclose whether its cached price includes
     # taxes/fees, so this is always None for the current provider
     # generation rather than a guessed True/False.
@@ -304,12 +313,19 @@ class FlightMoney(BaseModel):
 
     @model_validator(mode="after")
     def validate_group_total(self) -> "FlightMoney":
-        expected = self.per_traveler_amount_minor_units * self.traveler_count
-        if self.group_total_minor_units != expected:
+        fields = (self.traveler_count, self.group_total_minor_units, self.group_total_is_approximate)
+        if any(field is not None for field in fields) and any(field is None for field in fields):
             raise ValueError(
-                "group_total_minor_units must equal "
-                "per_traveler_amount_minor_units * traveler_count"
+                "traveler_count, group_total_minor_units, and "
+                "group_total_is_approximate must be present together or absent together"
             )
+        if self.traveler_count is not None and self.group_total_minor_units is not None:
+            expected = self.per_traveler_amount_minor_units * self.traveler_count
+            if self.group_total_minor_units != expected:
+                raise ValueError(
+                    "group_total_minor_units must equal "
+                    "per_traveler_amount_minor_units * traveler_count"
+                )
         return self
 
 

@@ -29,6 +29,14 @@ def missing_required_fields(payload: FlightSearchRequest) -> list[FlightSearchMi
     (flexible) results, so an unknown exact day is a precision limitation
     for the response to label honestly (see resolve_date_precision), not a
     reason to block the search.
+
+    travelers is likewise NOT required here (TWM-215): the provider itself
+    never takes a traveler count as a search input at all -- it always
+    returns one per-adult cached price regardless. Requiring it here would
+    be a Backend-invented gate, not something the provider needs. An
+    unknown traveler count is a precision limitation for the response's
+    money shape to label honestly (per_traveler price only, no group
+    total -- see FlightMoney), not a reason to block the search.
     """
 
     missing: list[FlightSearchMissingField] = []
@@ -38,8 +46,6 @@ def missing_required_fields(payload: FlightSearchRequest) -> list[FlightSearchMi
         missing.append(FlightSearchMissingFieldKeys.DESTINATION)
     if payload.trip_type == "round_trip" and payload.return_date is None:
         missing.append(FlightSearchMissingFieldKeys.RETURN_DATE)
-    if payload.travelers is None:
-        missing.append(FlightSearchMissingFieldKeys.TRAVELERS)
     return missing
 
 
@@ -59,13 +65,16 @@ def resolve_date_precision(
     return "flexible", None
 
 
-def traveler_total(payload: FlightSearchRequest) -> int:
+def traveler_total(payload: FlightSearchRequest) -> int | None:
     """Total traveler count used only for the Backend-computed group total
-    — never forwarded to a provider as a search filter."""
+    — never forwarded to a provider as a search filter. None when the
+    traveler count genuinely isn't known yet (TWM-215) — the caller must
+    then omit the group-total fields on FlightMoney entirely rather than
+    computing one against a guessed count."""
 
     travelers = payload.travelers
     if travelers is None:
-        raise ValueError("traveler_total requires a fully-specified travelers count")
+        return None
     return travelers.adults + travelers.children + travelers.infants
 
 
@@ -91,11 +100,15 @@ def exceeds_max_stops(stop_count: int | None, max_stops: int | None) -> bool:
 def rank_offers(offers: list[NormalizedFlightOffer]) -> list[NormalizedFlightOffer]:
     """Deterministic ranking default (TWM-146).
 
-    Cheapest group_total_minor_units first — price is the primary signal
-    travelers care about for a live-inventory shortlist, and it is the one
-    field every offer always has (unlike stop_count, which the current
-    provider generation frequently cannot disclose — see
-    NormalizedFlightOffer.stop_count).
+    Cheapest per_traveler_amount_minor_units first — price is the primary
+    signal travelers care about for a live-inventory shortlist. Sorting by
+    the per-traveler amount rather than group_total_minor_units (TWM-215)
+    gives the identical order whenever a group total does exist too (every
+    offer in one response shares the same traveler_count, so multiplying
+    by it never changes relative order) and still works when the traveler
+    count — and therefore group_total_minor_units — isn't known at all,
+    unlike stop_count, which the current provider generation frequently
+    cannot disclose (see NormalizedFlightOffer.stop_count).
 
     Tie-break: fewer stops first when stop_count is known, offers with an
     unknown stop_count sort after offers with a known one at the same
@@ -112,7 +125,7 @@ def rank_offers(offers: list[NormalizedFlightOffer]) -> list[NormalizedFlightOff
 
     def _sort_key(offer: NormalizedFlightOffer) -> tuple[int, int]:
         stop_rank = offer.stop_count if offer.stop_count is not None else 999
-        return (offer.money.group_total_minor_units, stop_rank)
+        return (offer.money.per_traveler_amount_minor_units, stop_rank)
 
     ranked = sorted(offers, key=_sort_key)
     return [

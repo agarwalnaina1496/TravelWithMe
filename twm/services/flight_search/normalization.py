@@ -33,6 +33,9 @@ def normalize_aviasales_offers(
     price_found_at: datetime,
     currency: str,
 ) -> list[NormalizedFlightOffer]:
+    # TWM-215: None when the traveler's exact composition isn't known yet —
+    # every offer then carries only the provider's own per-traveler price,
+    # with no Backend-computed group total.
     traveler_count = traveler_total(request)
     offers: list[NormalizedFlightOffer] = []
     for entry in entries:
@@ -47,7 +50,7 @@ def _normalize_one(
     request: FlightSearchRequest,
     price_found_at: datetime,
     currency: str,
-    traveler_count: int,
+    traveler_count: Optional[int],
 ) -> Optional[NormalizedFlightOffer]:
     price = entry.get("price")
     airline = entry.get("airline")
@@ -67,8 +70,13 @@ def _normalize_one(
         return_date = return_at.date()
 
     per_traveler_amount_minor_units = round(float(price) * 100)
-    group_total_minor_units = compute_group_total_minor_units(
-        per_traveler_amount_minor_units, traveler_count
+    # TWM-215: only compute a group total when the traveler count is
+    # actually known -- these three FlightMoney fields are present together
+    # or absent together (see its own validator).
+    group_total_minor_units = (
+        compute_group_total_minor_units(per_traveler_amount_minor_units, traveler_count)
+        if traveler_count is not None
+        else None
     )
 
     provider_reference = hashlib.sha256(
@@ -92,7 +100,7 @@ def _normalize_one(
                 per_traveler_amount_minor_units=per_traveler_amount_minor_units,
                 traveler_count=traveler_count,
                 group_total_minor_units=group_total_minor_units,
-                group_total_is_approximate=True,
+                group_total_is_approximate=True if traveler_count is not None else None,
                 tax_fee_included=None,
             ),
             baggage=FlightBaggageAllowance(),
