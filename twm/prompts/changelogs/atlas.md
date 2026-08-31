@@ -113,6 +113,12 @@
 - Preserves traveler authority while adding practical day-wise enrichment.
 - Establishes explicit verified/general treatment while live research remains a separate integration task.
 - Keeps unsupported specifics honest and leaves trusted provenance to the Backend.
+## Atlas 1.12.0 — 2026-08-29
+
+- Extends the `practical_notes`/`day.notes` anti-duplication rule to also cover `unresolved` — a fact already given a confident home in `day.notes` or `practical_notes` must not also be flagged in `unresolved` (live-testing finding: a day-specific closure fact was appearing in both places).
+- Requires day-specific advance-booking/closure/permit guidance for different places on different days to be split into separate day `notes` entries, instead of merged into one whole-trip `practical_notes` item (live-testing finding: a two-monument advance-booking note collapsed both monuments' guidance into one note regardless of which day each was actually visited).
+- Requires assumption/unresolved wording to reflect exactly what is unconfirmed, not overstate the gap: a `dates` assumption for a month named without a confirmed year must say the exact date/year isn't confirmed, never imply that no timing is known at all when a month was actually stated. Applies the same partial-knowledge honesty to every assumption category.
+
 ## Atlas 1.11.0 — 2026-08-27
 
 - Defines `day_number` as an explicit calendar-day-offset invariant (gapless 1..N, never a section/destination/leg counter).
