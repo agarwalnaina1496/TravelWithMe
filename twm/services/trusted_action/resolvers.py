@@ -21,22 +21,20 @@ raw/guessed city string when a real code is available), and degrades to
 the plain place label only if resolution genuinely fails — a less
 prefilled but still safe search, never a blocked one.
 
-Judgement call (documented, not fabricated) for every other partner here:
-Hotellook/Booking.com/Agoda/redBus/Hostelworld/ixigo transport exact public
-deep-link path conventions were not confirmed this session beyond the
-shared Travelpayouts ``marker=`` tracking convention already used by
-``twm/services/flight_search/aviasales.py``. Rather than guess an
-undocumented partner-specific path/param naming scheme, every one of those
-partners still uses the same generic ``search`` path plus clearly-named
-generic query parameters (``origin``, ``destination``, ``depart_date``,
-``return_date``, ``travelers``). Wiring each partner's actual documented
-deep-link format is a natural follow-up once each is individually
-researched/confirmed.
+Judgement call (documented, not fabricated) for non-stay partners here:
+redBus/Hostelworld/ixigo transport exact public deep-link path conventions
+were not confirmed this session beyond the generic, safe ``search`` path
+used below. Rather than guess an undocumented partner-specific transport
+path/param naming scheme, those unresolved transport partners still use
+clearly-named generic query parameters (``origin``, ``destination``,
+``depart_date``, ``return_date``, ``travelers``).
 
-ixigo stay (TWM-216) is the current exception: its V1 functional redirect
-uses ixigo's destination listing path,
-``hotels/hotels-in-{destination-slug}``, without date, guest, checkout, or
-affiliate tracking prefill.
+Stay redirects (TWM-216) now use the confirmed capability matrix:
+Booking.com gets its native ``searchresults.html`` query shape, Agoda gets
+a native ``city=`` search only when Backend has verified destination
+metadata, and ixigo gets its destination hotel listing path
+``hotels/hotels-in-{destination-slug}``. None of these direct stay links
+claims affiliate tracking unless a real tracking param is present.
 
 Tracking parameters:
 
@@ -44,8 +42,8 @@ Tracking parameters:
   (EarnKaro/Cuelinks-style attribution, a separate account from
   Travelpayouts). Omitted entirely when unset — never fails, never a fake
   placeholder.
-- aviasales / hotellook / booking_com / agoda (Travelpayouts-brand
-  partners): ``marker``, sourced from
+- aviasales / hotellook (confirmed Travelpayouts redirect shapes here):
+  ``marker``, sourced from
   ``TrustedActionSettings.travelpayouts_marker`` — the *same* Travelpayouts
   partner/marker ID the Aviasales adapter already uses for its live-price
   calls (twm/services/flight_search/aviasales.py, same account), injected

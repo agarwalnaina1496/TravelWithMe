@@ -58,10 +58,10 @@ def missing_required_fields(request: TrustedActionRequest) -> list[TrustedAction
     the affiliate fallback on a count it does not actually need broke the
     same hybrid-model promise departure_date's fix above already protects.
 
-    TWM-208: a stay/hotel search has no "origin" concept the way a
+    TWM-208/TWM-216: a stay/hotel search has no "origin" concept the way a
     transport leg does, and build_query_params already treats it as fully
-    optional for every approved stay partner (hotellook/booking_com/agoda/
-    hostelworld/ixigo) -- requiring it here made a stay request
+    optional for every approved stay partner (booking_com/agoda/ixigo) --
+    requiring it here made a stay request
     permanently unresolvable regardless of input.
     """
 
