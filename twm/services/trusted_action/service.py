@@ -24,6 +24,7 @@ from uuid import UUID
 
 from ...schemas.trusted_action import (
     TrustedAction,
+    TrustedActionDisabledDetail,
     TrustedActionMissingInputDetail,
     TrustedActionRequest,
     TrustedActionResult,
@@ -33,11 +34,12 @@ from ...schemas.trusted_action import (
 from ...telemetry import TelemetryLogger
 from .calculations import missing_required_fields, resolve_partner
 from .feasibility import assess_trip_feasibility
-from .resolvers import resolve_partner_target
+from .resolvers import action_capability_metadata, partner_has_capability, resolve_partner_target
 from .settings import TrustedActionSettings
 
 _MISSING_INPUT_MESSAGE = "Tell us the missing trip details so we can build this action."
 _UNSUPPORTED_PARTNER_MESSAGE = "No approved partner is available for this request."
+_NO_CAPABILITY_MESSAGE = "No confirmed useful provider redirect is available for this stay yet."
 
 
 @dataclass
@@ -111,11 +113,21 @@ class TrustedActionService:
             )
 
         target = resolve_partner_target(request, partner=partner, settings=self.settings)
+        if not partner_has_capability(request, partner=partner):
+            return TrustedActionResult(
+                status="disabled",
+                generated_at=generated_at,
+                disabled=TrustedActionDisabledDetail(reason=_NO_CAPABILITY_MESSAGE),
+            )
+        capability, cta_label, capability_note = action_capability_metadata(request, partner=partner)
         action = TrustedAction(
             action_type=request.action_type,
             domain=request.domain,
             target=target,
-            affiliate_disclosure=True,
+            affiliate_disclosure=_has_affiliate_disclosure(request, partner=partner, target_query_params=target.query_params),
+            capability=capability,
+            cta_label=cta_label,
+            capability_note=capability_note,
             origin=request.origin,
             destination=request.destination,
             departure_date=request.departure_date,
@@ -173,4 +185,13 @@ class TrustedActionService:
             domain=action.domain,
             partner=action.target.partner if action.target is not None else None,
             internal_capability=action.internal_capability,
+            capability=action.capability,
         )
+
+
+def _has_affiliate_disclosure(
+    request: TrustedActionRequest, *, partner: str, target_query_params: dict[str, str]
+) -> bool:
+    if request.domain == "stay" and partner in {"booking_com", "agoda", "ixigo"}:
+        return any(key in target_query_params for key in ("marker", "affiliate_id"))
+    return True

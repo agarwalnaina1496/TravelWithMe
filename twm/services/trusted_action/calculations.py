@@ -26,7 +26,7 @@ _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, tuple[PartnerName, ...]] 
     "flight": ("aviasales",),
     "train": ("ixigo",),
     "bus": ("ixigo", "redbus"),
-    "stay": ("hotellook", "booking_com", "agoda", "hostelworld", "ixigo"),
+    "stay": ("booking_com", "agoda", "ixigo"),
 }
 
 

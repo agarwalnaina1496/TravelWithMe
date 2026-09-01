@@ -297,10 +297,8 @@ def test_stay_domain_resolves_each_allowlisted_partner(api_client: TestClient):
     trip_id = _create_trip(api_client)
 
     partner_domains = {
-        "hotellook": "search.hotellook.com",
         "booking_com": "www.booking.com",
         "agoda": "www.agoda.com",
-        "hostelworld": "www.hostelworld.com",
         "ixigo": "www.ixigo.com",
     }
     for partner, expected_domain in partner_domains.items():
@@ -309,8 +307,7 @@ def test_stay_domain_resolves_each_allowlisted_partner(api_client: TestClient):
             json={
                 "action_type": "SEARCH_REDIRECT",
                 "domain": "stay",
-                "origin": "Goa",
-                "destination": "Coorg",
+                "destination": "Goa",
                 "trip_shape": "one_way",
                 "departure_date": "2026-09-10",
                 "traveler_count": 2,
@@ -321,7 +318,9 @@ def test_stay_domain_resolves_each_allowlisted_partner(api_client: TestClient):
         body = response.json()
         assert body["status"] == "resolved"
         assert body["action"]["target"]["target_url"].startswith(f"https://{expected_domain}/")
-        assert body["action"]["affiliate_disclosure"] is True
+        assert body["action"]["affiliate_disclosure"] is False
+        assert body["action"]["capability"] is not None
+        assert body["action"]["cta_label"] is not None
 
 
 def test_ixigo_stay_resolves_to_native_hotel_destination_url(api_client: TestClient):
@@ -347,6 +346,65 @@ def test_ixigo_stay_resolves_to_native_hotel_destination_url(api_client: TestCli
     assert target["path"] == "hotels/hotels-in-new-delhi"
     assert target["query_params"] == {}
     assert target["target_url"] == "https://www.ixigo.com/hotels/hotels-in-new-delhi"
+    assert body["action"]["capability"] == "destination_redirect"
+    assert body["action"]["cta_label"] == "Browse ixigo hotels"
+
+
+def test_booking_stay_resolves_to_confirmed_prefilled_search_url(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "stay",
+            "destination": "Goa",
+            "trip_shape": "round_trip",
+            "departure_date": "2026-09-15",
+            "return_date": "2026-09-16",
+            "traveler_count": 2,
+            "preferred_partner": "booking_com",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "resolved"
+    action = body["action"]
+    assert action["affiliate_disclosure"] is False
+    assert action["capability"] == "prefilled_search"
+    assert action["cta_label"] == "Search Booking.com"
+    target = action["target"]
+    assert target["path"] == "searchresults.html"
+    assert target["query_params"]["ss"] == "Goa"
+    assert target["query_params"]["checkin"] == "2026-09-15"
+    assert target["query_params"]["checkout"] == "2026-09-16"
+    assert target["query_params"]["group_adults"] == "2"
+    assert "marker" not in target["query_params"]
+
+
+def test_agoda_unknown_destination_returns_disabled_not_generic_search(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "stay",
+            "destination": "Coorg",
+            "preferred_partner": "agoda",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "disabled"
+    assert body["action"] is None
+    assert body["disabled"]["reason"] == "No confirmed useful provider redirect is available for this stay yet."
 
 
 def test_stay_domain_resolves_without_origin_or_traveler_count(api_client: TestClient):
@@ -365,14 +423,14 @@ def test_stay_domain_resolves_without_origin_or_traveler_count(api_client: TestC
             "action_type": "SEARCH_REDIRECT",
             "domain": "stay",
             "destination": "Coorg",
-            "preferred_partner": "hotellook",
+            "preferred_partner": "booking_com",
         },
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "resolved"
-    assert body["action"]["target"]["target_url"].startswith("https://search.hotellook.com/")
+    assert body["action"]["target"]["target_url"].startswith("https://www.booking.com/searchresults.html?")
 
 
 def test_stay_domain_still_requires_destination(api_client: TestClient):
@@ -487,7 +545,7 @@ def test_ixigo_affiliate_id_is_appended_when_configured(api_client: TestClient):
     assert "affiliate_id=ek-999" in body["action"]["target"]["target_url"]
 
 
-def test_travelpayouts_marker_is_appended_when_configured(api_client: TestClient):
+def test_travelpayouts_marker_is_appended_to_confirmed_travelpayouts_redirect_when_configured(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_persistence(repository)
     app.dependency_overrides[get_trusted_action_service] = lambda: TrustedActionService(
@@ -500,13 +558,13 @@ def test_travelpayouts_marker_is_appended_when_configured(api_client: TestClient
         f"/trips/{trip_id}/trusted-action",
         json={
             "action_type": "SEARCH_REDIRECT",
-            "domain": "stay",
-            "origin": "Goa",
-            "destination": "Coorg",
+            "domain": "flight",
+            "origin": "Delhi",
+            "destination": "Mumbai",
             "trip_shape": "one_way",
             "departure_date": "2026-09-10",
             "traveler_count": 2,
-            "preferred_partner": "hotellook",
+            "preferred_partner": "aviasales",
         },
     )
 
