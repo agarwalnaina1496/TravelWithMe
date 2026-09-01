@@ -384,6 +384,31 @@ def test_stay_segments_do_not_fabricate_exact_dates_without_exact_trip_start():
     assert flexible_board.stay_segments[0].checkout_date is None
 
 
+def test_stay_segments_skip_stays_without_known_location():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {
+        "days": [
+            _day(1, [_stay_item("Jaipur")]),
+            _day(2, [_stay_item(None)]),
+            _day(3, [_stay_item("   ")]),
+            _day(4, [_stay_item("Agra")]),
+        ]
+    }
+
+    board = service.build(
+        TRIP_ID,
+        1,
+        final_itinerary,
+        {"origin_city": "Delhi", "booking_dates": {"precision": "exact", "departure_date": "2026-05-01"}},
+    )
+
+    assert [(segment.location, segment.start_day_number, segment.end_day_number) for segment in board.stay_segments] == [
+        ("Jaipur", 1, 1),
+        ("Agra", 4, 4),
+    ]
+    assert all(segment.location != "None" for segment in board.stay_segments)
+
+
 def test_non_exact_booking_precision_does_not_compute_day_dates():
     service = TripBoardService(FakeTrustedActionService())
     final_itinerary = {"days": [_day(1, [_stay_item()]), _day(2, [_activity_item()])]}

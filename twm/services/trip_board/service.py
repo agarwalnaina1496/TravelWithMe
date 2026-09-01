@@ -123,7 +123,12 @@ class TripBoardService:
         for day in board_days:
             stay_items = [item for item in day.items if item.kind == "STAY"]
             for item in stay_items:
-                location = str(item.location)
+                location = item.location.strip() if item.location else ""
+                if not location:
+                    if current:
+                        segments.append(TripBoardService._finish_stay_segment(trip_id, current, board_days, booking_dates))
+                        current = None
+                    continue
                 if current and current["location"].casefold() == location.casefold() and day.day_number == current["end_day_number"] + 1:
                     current["end_day_number"] = day.day_number
                     current["board_item_ids"].append(item.id)
