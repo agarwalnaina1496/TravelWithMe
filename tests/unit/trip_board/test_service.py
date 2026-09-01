@@ -325,6 +325,90 @@ def test_exact_trip_start_computes_one_calendar_date_per_day(caplog):
     assert all(record.trip_id == str(TRIP_ID) for record in computed)
 
 
+def test_stay_segments_group_consecutive_same_location_stays_with_exact_dates():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {
+        "days": [
+            _day(1, [_travel_item("Delhi", "Jaipur"), _stay_item("Jaipur")]),
+            _day(2, [_activity_item(location="Jaipur"), _stay_item("Jaipur")]),
+            _day(3, [_travel_item("Jaipur", "Agra"), _stay_item("Agra")]),
+            _day(4, [_activity_item(location="Agra"), _stay_item("Agra")]),
+            _day(5, [_travel_item("Agra", "Delhi")]),
+        ]
+    }
+
+    board = service.build(
+        TRIP_ID,
+        1,
+        final_itinerary,
+        {
+            "origin_city": "Delhi",
+            "booking_dates": {
+                "precision": "exact",
+                "departure_date": "2026-05-01",
+                "return_date": "2026-05-05",
+            },
+        },
+    )
+
+    assert [(segment.location, segment.nights) for segment in board.stay_segments] == [
+        ("Jaipur", 2),
+        ("Agra", 2),
+    ]
+    assert board.stay_segments[0].checkin_date == "2026-05-01"
+    assert board.stay_segments[0].checkout_date == "2026-05-03"
+    assert board.stay_segments[1].checkin_date == "2026-05-03"
+    assert board.stay_segments[1].checkout_date == "2026-05-05"
+    assert board.days[0].items[1].id in board.stay_segments[0].board_item_ids
+    assert board.days[2].items[1].id in board.stay_segments[1].board_item_ids
+
+
+def test_stay_segments_do_not_fabricate_exact_dates_without_exact_trip_start():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {"days": [_day(1, [_stay_item("Jaipur")]), _day(2, [_stay_item("Jaipur")])]}
+
+    month_board = service.build(
+        TRIP_ID,
+        1,
+        final_itinerary,
+        {"origin_city": "Delhi", "booking_dates": {"precision": "month", "departure_month": "2026-05"}},
+    )
+    flexible_board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
+
+    assert month_board.stay_segments[0].date_precision == "month"
+    assert month_board.stay_segments[0].departure_month == "2026-05"
+    assert month_board.stay_segments[0].checkin_date is None
+    assert month_board.stay_segments[0].checkout_date is None
+    assert flexible_board.stay_segments[0].date_precision == "flexible"
+    assert flexible_board.stay_segments[0].checkin_date is None
+    assert flexible_board.stay_segments[0].checkout_date is None
+
+
+def test_stay_segments_skip_stays_without_known_location():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {
+        "days": [
+            _day(1, [_stay_item("Jaipur")]),
+            _day(2, [_stay_item(None)]),
+            _day(3, [_stay_item("   ")]),
+            _day(4, [_stay_item("Agra")]),
+        ]
+    }
+
+    board = service.build(
+        TRIP_ID,
+        1,
+        final_itinerary,
+        {"origin_city": "Delhi", "booking_dates": {"precision": "exact", "departure_date": "2026-05-01"}},
+    )
+
+    assert [(segment.location, segment.start_day_number, segment.end_day_number) for segment in board.stay_segments] == [
+        ("Jaipur", 1, 1),
+        ("Agra", 4, 4),
+    ]
+    assert all(segment.location != "None" for segment in board.stay_segments)
+
+
 def test_non_exact_booking_precision_does_not_compute_day_dates():
     service = TripBoardService(FakeTrustedActionService())
     final_itinerary = {"days": [_day(1, [_stay_item()]), _day(2, [_activity_item()])]}
@@ -356,6 +440,7 @@ def test_response_shape_is_limited_to_current_frontend_allowlist():
     assert set(board.days[0].items[0].model_dump().keys()) == {
         "id",
         "kind",
+        "location",
         "from_city",
         "to_city",
         "is_gateway_leg",
@@ -364,6 +449,7 @@ def test_response_shape_is_limited_to_current_frontend_allowlist():
         "departure_date",
         "departure_month",
     }
+    assert set(board.model_dump().keys()) == {"version", "days", "stay_segments"}
 
 
 # TWM-209: stable, deterministic per-item id.

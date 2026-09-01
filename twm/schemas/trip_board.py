@@ -7,7 +7,7 @@ precision. Atlas remains the source for itinerary content.
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .atlas import TimelineKind
 from .trusted_action import ModeFeasibility
@@ -30,6 +30,7 @@ class TripBoardItem(BaseModel):
     # their own reconciliation for that case.
     id: str
     kind: TimelineKind
+    location: Optional[str] = None
 
     # TRAVEL-only, passed through verbatim from Atlas.
     from_city: Optional[str] = None
@@ -58,6 +59,23 @@ class TripBoardItem(BaseModel):
     departure_month: Optional[str] = None
 
 
+class TripBoardStaySegment(BaseModel):
+    """One bookable overnight stay segment derived from Atlas STAY rows."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    location: str
+    start_day_number: int
+    end_day_number: int
+    nights: int
+    date_precision: DatePrecision
+    checkin_date: Optional[str] = None
+    checkout_date: Optional[str] = None
+    departure_month: Optional[str] = None
+    board_item_ids: list[str]
+
+
 class TripBoardDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -71,3 +89,4 @@ class TripBoardResponse(BaseModel):
 
     version: int
     days: list[TripBoardDay]
+    stay_segments: list[TripBoardStaySegment] = Field(default_factory=list)

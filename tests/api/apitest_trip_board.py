@@ -223,6 +223,20 @@ def test_get_trip_board_reconciles_exact_booking_dates_per_gateway_direction(api
     assert outbound["departure_date"] == "2026-05-01"
     assert inbound["date_precision"] == "exact"
     assert inbound["departure_date"] == "2026-05-10"
+    assert board["stay_segments"] == [
+        {
+            "id": f"{trip_id}:stay:2:2:chennai",
+            "location": "Chennai",
+            "start_day_number": 2,
+            "end_day_number": 2,
+            "nights": 1,
+            "date_precision": "exact",
+            "checkin_date": "2026-05-02",
+            "checkout_date": "2026-05-03",
+            "departure_month": None,
+            "board_item_ids": [board["days"][1]["items"][0]["id"]],
+        }
+    ]
 
 
 def test_get_trip_board_returns_404_for_unknown_trip(api_client: TestClient):

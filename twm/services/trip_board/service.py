@@ -17,7 +17,12 @@ from datetime import date, timedelta
 from typing import Any, Optional
 from uuid import UUID
 
-from ...schemas.trip_board import TripBoardDay, TripBoardItem, TripBoardResponse
+from ...schemas.trip_board import (
+    TripBoardDay,
+    TripBoardItem,
+    TripBoardResponse,
+    TripBoardStaySegment,
+)
 from ..airport_resolution import resolve_airport
 from ..trusted_action import TrustedActionService
 
@@ -101,7 +106,91 @@ class TripBoardService:
                     items=board_items,
                 )
             )
-        return TripBoardResponse(version=version, days=board_days)
+        return TripBoardResponse(
+            version=version,
+            days=board_days,
+            stay_segments=self._build_stay_segments(trip_id, board_days, booking_dates),
+        )
+
+    @staticmethod
+    def _build_stay_segments(
+        trip_id: UUID,
+        board_days: list[TripBoardDay],
+        booking_dates: Optional[dict[str, Any]],
+    ) -> list[TripBoardStaySegment]:
+        segments: list[TripBoardStaySegment] = []
+        current: dict[str, Any] | None = None
+        for day in board_days:
+            stay_items = [item for item in day.items if item.kind == "STAY"]
+            for item in stay_items:
+                location = item.location.strip() if item.location else ""
+                if not location:
+                    if current:
+                        segments.append(TripBoardService._finish_stay_segment(trip_id, current, board_days, booking_dates))
+                        current = None
+                    continue
+                if current and current["location"].casefold() == location.casefold() and day.day_number == current["end_day_number"] + 1:
+                    current["end_day_number"] = day.day_number
+                    current["board_item_ids"].append(item.id)
+                    continue
+                if current:
+                    segments.append(TripBoardService._finish_stay_segment(trip_id, current, board_days, booking_dates))
+                current = {
+                    "location": location,
+                    "start_day_number": day.day_number,
+                    "end_day_number": day.day_number,
+                    "board_item_ids": [item.id],
+                }
+        if current:
+            segments.append(TripBoardService._finish_stay_segment(trip_id, current, board_days, booking_dates))
+        return segments
+
+    @staticmethod
+    def _finish_stay_segment(
+        trip_id: UUID,
+        segment: dict[str, Any],
+        board_days: list[TripBoardDay],
+        booking_dates: Optional[dict[str, Any]],
+    ) -> TripBoardStaySegment:
+        day_by_number = {day.day_number: day for day in board_days}
+        start_day_number = segment["start_day_number"]
+        end_day_number = segment["end_day_number"]
+        nights = end_day_number - start_day_number + 1
+        start_date = day_by_number.get(start_day_number).date if day_by_number.get(start_day_number) else None
+        if start_date:
+            checkin = date.fromisoformat(start_date)
+            checkin_date = checkin.isoformat()
+            checkout_date = (checkin + timedelta(days=nights)).isoformat()
+            date_precision = "exact"
+            departure_month = None
+        elif booking_dates and booking_dates.get("precision") == "month":
+            checkin_date = None
+            checkout_date = None
+            date_precision = "month"
+            departure_month = booking_dates.get("departure_month")
+        else:
+            checkin_date = None
+            checkout_date = None
+            date_precision = "flexible"
+            departure_month = None
+        slug = TripBoardService._segment_slug(segment["location"])
+        return TripBoardStaySegment(
+            id=f"{trip_id}:stay:{start_day_number}:{end_day_number}:{slug}",
+            location=segment["location"],
+            start_day_number=start_day_number,
+            end_day_number=end_day_number,
+            nights=nights,
+            date_precision=date_precision,
+            checkin_date=checkin_date,
+            checkout_date=checkout_date,
+            departure_month=departure_month,
+            board_item_ids=segment["board_item_ids"],
+        )
+
+    @staticmethod
+    def _segment_slug(value: str) -> str:
+        slug = "".join(char.lower() if char.isalnum() else "-" for char in value.strip())
+        return "-".join(part for part in slug.split("-") if part) or "stay"
 
     @staticmethod
     def _exact_trip_start(booking_dates: Optional[dict[str, Any]]) -> Optional[date]:
@@ -186,6 +275,7 @@ class TripBoardService:
             # and across days.
             id=f"{trip_id}:{day_number}:{index}",
             kind=item["kind"],
+            location=item.get("location"),
             from_city=item.get("from_city"),
             to_city=item.get("to_city"),
             is_gateway_leg=is_gateway_leg,
