@@ -21,22 +21,20 @@ raw/guessed city string when a real code is available), and degrades to
 the plain place label only if resolution genuinely fails — a less
 prefilled but still safe search, never a blocked one.
 
-Judgement call (documented, not fabricated) for every other partner here:
-Hotellook/Booking.com/Agoda/redBus/Hostelworld/ixigo transport exact public
-deep-link path conventions were not confirmed this session beyond the
-shared Travelpayouts ``marker=`` tracking convention already used by
-``twm/services/flight_search/aviasales.py``. Rather than guess an
-undocumented partner-specific path/param naming scheme, every one of those
-partners still uses the same generic ``search`` path plus clearly-named
-generic query parameters (``origin``, ``destination``, ``depart_date``,
-``return_date``, ``travelers``). Wiring each partner's actual documented
-deep-link format is a natural follow-up once each is individually
-researched/confirmed.
+Judgement call (documented, not fabricated) for non-stay partners here:
+redBus/Hostelworld/ixigo transport exact public deep-link path conventions
+were not confirmed this session beyond the generic, safe ``search`` path
+used below. Rather than guess an undocumented partner-specific transport
+path/param naming scheme, those unresolved transport partners still use
+clearly-named generic query parameters (``origin``, ``destination``,
+``depart_date``, ``return_date``, ``travelers``).
 
-ixigo stay (TWM-216) is the current exception: its V1 functional redirect
-uses ixigo's destination listing path,
-``hotels/hotels-in-{destination-slug}``, without date, guest, checkout, or
-affiliate tracking prefill.
+Stay redirects (TWM-216) now use the confirmed capability matrix:
+Booking.com gets its native ``searchresults.html`` query shape, Agoda gets
+a native ``city=`` search only when Backend has verified destination
+metadata, and ixigo gets its destination hotel listing path
+``hotels/hotels-in-{destination-slug}``. None of these direct stay links
+claims affiliate tracking unless a real tracking param is present.
 
 Tracking parameters:
 
@@ -44,8 +42,8 @@ Tracking parameters:
   (EarnKaro/Cuelinks-style attribution, a separate account from
   Travelpayouts). Omitted entirely when unset — never fails, never a fake
   placeholder.
-- aviasales / hotellook / booking_com / agoda (Travelpayouts-brand
-  partners): ``marker``, sourced from
+- aviasales / hotellook (confirmed Travelpayouts redirect shapes here):
+  ``marker``, sourced from
   ``TrustedActionSettings.travelpayouts_marker`` — the *same* Travelpayouts
   partner/marker ID the Aviasales adapter already uses for its live-price
   calls (twm/services/flight_search/aviasales.py, same account), injected
@@ -69,8 +67,10 @@ from typing import Optional
 from ...schemas.trusted_action import (
     ActionTarget,
     PartnerName,
+    TrustedActionCapability,
     TrustedActionDomain,
     TrustedActionRequest,
+    TrustedActionText,
     TrustedActionTripType,
 )
 from ..airport_resolution import resolve_airport
@@ -85,9 +85,13 @@ _SEARCH_PATH: dict[PartnerName, str] = {
     "ixigo": "search",
     "redbus": "search",
     "hotellook": "search",
-    "booking_com": "search",
+    "booking_com": "searchresults.html",
     "agoda": "search",
     "hostelworld": "search",
+}
+
+_AGODA_DESTINATIONS: dict[str, dict[str, str]] = {
+    "goa": {"city": "11304", "city_path": "city/goa-in.html", "label": "Goa"},
 }
 
 
@@ -134,6 +138,10 @@ def _target_path(
 ) -> str:
     if partner == "ixigo" and domain == "stay":
         return f"hotels/hotels-in-{_ixigo_destination_slug(destination or '')}"
+    if partner == "agoda" and domain == "stay":
+        metadata = _agoda_destination_metadata(destination)
+        if metadata is not None and "city" not in metadata:
+            return metadata["city_path"]
     return _SEARCH_PATH[partner]
 
 
@@ -175,6 +183,20 @@ def build_query_params(
         )
     if partner == "ixigo" and domain == "stay":
         return {}
+    if partner == "booking_com" and domain == "stay":
+        return _booking_stay_query_params(
+            destination=destination,
+            departure_date=departure_date,
+            return_date=return_date,
+            traveler_count=traveler_count,
+        )
+    if partner == "agoda" and domain == "stay":
+        return _agoda_stay_query_params(
+            destination=destination,
+            departure_date=departure_date,
+            return_date=return_date,
+            traveler_count=traveler_count,
+        )
 
     params: dict[str, str] = {"domain": domain}
     if origin:
@@ -190,6 +212,106 @@ def build_query_params(
 
     params.update(tracking_params(partner, settings))
     return params
+
+
+def _booking_stay_query_params(
+    *,
+    destination: Optional[str],
+    departure_date: Optional[date],
+    return_date: Optional[date],
+    traveler_count: Optional[int],
+) -> dict[str, str]:
+    params: dict[str, str] = {
+        "ss": destination or "",
+        "no_rooms": "1",
+        "group_children": "0",
+        "selected_currency": "INR",
+        "lang": "en-us",
+    }
+    if departure_date is not None:
+        params["checkin"] = departure_date.isoformat()
+    if return_date is not None:
+        params["checkout"] = return_date.isoformat()
+    if traveler_count is not None:
+        params["group_adults"] = str(traveler_count)
+    return params
+
+
+def _agoda_stay_query_params(
+    *,
+    destination: Optional[str],
+    departure_date: Optional[date],
+    return_date: Optional[date],
+    traveler_count: Optional[int],
+) -> dict[str, str]:
+    metadata = _agoda_destination_metadata(destination)
+    if metadata is None or "city" not in metadata:
+        return {}
+    params: dict[str, str] = {
+        "city": metadata["city"],
+        "rooms": "1",
+        "children": "0",
+        "locale": "en-us",
+        "currency": "INR",
+        "textToSearch": metadata["label"],
+    }
+    if departure_date is not None:
+        params["checkIn"] = departure_date.isoformat()
+    if return_date is not None:
+        params["checkOut"] = return_date.isoformat()
+    if traveler_count is not None:
+        params["adults"] = str(traveler_count)
+    return params
+
+
+def _agoda_destination_metadata(destination: Optional[str]) -> Optional[dict[str, str]]:
+    if not destination:
+        return None
+    return _AGODA_DESTINATIONS.get(_ixigo_destination_slug(destination))
+
+
+def partner_has_capability(request: TrustedActionRequest, *, partner: PartnerName) -> bool:
+    if request.domain == "stay" and partner == "agoda":
+        return _agoda_destination_metadata(request.destination) is not None
+    return True
+
+
+def action_capability_metadata(
+    request: TrustedActionRequest, *, partner: PartnerName
+) -> tuple[TrustedActionCapability, TrustedActionText, TrustedActionText]:
+    if request.domain != "stay":
+        return ("prefilled_search", "Search options", "Search opens on the selected provider.")
+
+    destination = request.destination or "stays"
+    has_dates = request.departure_date is not None and request.return_date is not None
+    if partner == "booking_com":
+        note = (
+            "Destination, dates, room, and traveler count are prefilled on Booking.com."
+            if has_dates
+            else "Destination search opens on Booking.com; choose exact dates there if needed."
+        )
+        return ("prefilled_search" if has_dates else "destination_search", "Search Booking.com", note)
+    if partner == "agoda":
+        metadata = _agoda_destination_metadata(request.destination)
+        if metadata is not None and "city" in metadata:
+            note = (
+                "Known Agoda city metadata lets us prefill this stay search."
+                if has_dates
+                else "Known Agoda city metadata opens the correct destination search; choose exact dates there if needed."
+            )
+            return (
+                "known_destination_search",
+                "Search Agoda",
+                note,
+            )
+        return ("destination_redirect", "Browse Agoda", f"Browse Agoda stays for {destination}.")
+    if partner == "ixigo":
+        return (
+            "destination_redirect",
+            "Browse ixigo hotels",
+            "ixigo opens the destination hotel page; dates and guests are selected on ixigo.",
+        )
+    return ("destination_search", "Search stays", "Search opens on the selected provider.")
 
 
 def _aviasales_query_params(
@@ -256,7 +378,7 @@ def _aviasales_query_params(
 
 
 _TRAVELPAYOUTS_PARTNERS: frozenset[PartnerName] = frozenset(
-    {"aviasales", "hotellook", "booking_com", "agoda"}
+    {"aviasales", "hotellook"}
 )
 
 

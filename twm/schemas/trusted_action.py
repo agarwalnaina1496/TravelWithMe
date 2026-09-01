@@ -40,7 +40,7 @@ partner later is a contract change), all verified this session:
   partner as the live-data path, replacing the earlier ixigo placeholder)
 - train: ixigo
 - bus: ixigo, redbus
-- stay: hotellook, booking_com, agoda, hostelworld, ixigo
+- stay: booking_com, agoda, ixigo
 
 ixigo's affiliate program (via EarnKaro/Cuelinks, confirmed category-wise
 payouts) is separate from Travelpayouts (which covers Aviasales, Hotellook,
@@ -61,10 +61,10 @@ Security posture (structural, not documentation):
 - No query parameter value may itself look like a URL (blocks
   open-redirect-via-param): values containing "://", starting with "//",
   or naming a scheme (http/https/javascript/data/...) are rejected.
-- ``affiliate_disclosure: bool`` is mandatory ``True`` whenever the
-  resolved partner is one of the affiliate partners above, and mandatory
-  ``False`` when there is no partner (CHECK_PRICES) — enforced by a
-  validator.
+- ``affiliate_disclosure: bool`` reflects whether this resolved action
+  actually carries a tracked/affiliate handoff. It is mandatory ``False``
+  when there is no partner (CHECK_PRICES), and direct provider-native stay
+  links must not imply affiliate tracking unless tracking is truly present.
 - No model in this file has a price, rating, availability, or
   booking-confirmed field, for any action type. That is
   ``NormalizedFlightOffer``'s territory (a live offer) or
@@ -118,6 +118,12 @@ TrustedActionText = Annotated[str, StringConstraints(strip_whitespace=True, min_
 TravelActionType = Literal["CHECK_PRICES", "PROVIDER", "SEARCH_REDIRECT"]
 TrustedActionDomain = Literal["flight", "train", "bus", "stay"]
 TrustedActionTripType = Literal["one_way", "round_trip"]
+TrustedActionCapability = Literal[
+    "prefilled_search",
+    "known_destination_search",
+    "destination_search",
+    "destination_redirect",
+]
 
 # Closed partner allowlist. Adding a partner is a contract change, not a
 # runtime config value.
@@ -161,13 +167,8 @@ _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] =
     "flight": frozenset({"aviasales"}),
     "train": frozenset({"ixigo"}),
     "bus": frozenset({"ixigo", "redbus"}),
-    "stay": frozenset({"hotellook", "booking_com", "agoda", "hostelworld", "ixigo"}),
+    "stay": frozenset({"booking_com", "agoda", "ixigo"}),
 }
-
-# All partners in the allowlist are affiliate relationships (confirmed this
-# session). Kept as an explicit set (not "always True for any partner") so a
-# future non-affiliate partner addition cannot silently inherit True.
-_AFFILIATE_PARTNERS: frozenset[PartnerName] = frozenset(_PARTNER_BASE_DOMAIN.keys())
 
 _UNSAFE_VALUE_MARKERS = ("://", "//", "javascript:", "data:", "vbscript:")
 
@@ -334,6 +335,9 @@ class TrustedAction(BaseModel):
     target: Optional[ActionTarget] = None
     internal_capability: Optional[InternalCapability] = None
     affiliate_disclosure: bool
+    capability: Optional[TrustedActionCapability] = None
+    cta_label: Optional[TrustedActionText] = None
+    capability_note: Optional[TrustedActionText] = None
 
     # Canonical input identity carried onto the resolved action for
     # traceability. Permissive at this stage on purpose — not every field
@@ -383,11 +387,7 @@ class TrustedAction(BaseModel):
 
     @model_validator(mode="after")
     def validate_affiliate_disclosure(self) -> "TrustedAction":
-        partner = self.target.partner if self.target is not None else None
-        is_affiliate = partner is not None and partner in _AFFILIATE_PARTNERS
-        if is_affiliate and not self.affiliate_disclosure:
-            raise ValueError("affiliate_disclosure must be True for an affiliate partner")
-        if not is_affiliate and self.affiliate_disclosure:
+        if self.target is None and self.affiliate_disclosure:
             raise ValueError("affiliate_disclosure must be False when there is no affiliate partner")
         return self
 
@@ -552,6 +552,7 @@ __all__ = [
     "TravelActionType",
     "TrustedActionDomain",
     "TrustedActionTripType",
+    "TrustedActionCapability",
     "PartnerName",
     "ActionTarget",
     "TransportMode",

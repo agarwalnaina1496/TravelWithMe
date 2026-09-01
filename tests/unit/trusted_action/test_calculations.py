@@ -24,5 +24,5 @@ def test_bus_allows_ixigo_and_redbus():
     assert allowed_partners("bus") == ("ixigo", "redbus")
 
 
-def test_stay_allows_all_stay_partners():
-    assert allowed_partners("stay") == ("hotellook", "booking_com", "agoda", "hostelworld", "ixigo")
+def test_stay_allows_current_stay_providers():
+    assert allowed_partners("stay") == ("booking_com", "agoda", "ixigo")
