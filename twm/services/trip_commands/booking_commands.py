@@ -10,10 +10,10 @@ exist post-generation).
 from typing import Any
 
 from ...schemas.booking_setup import (
-    ScheduleDateInput,
     SearchPrefClearInput,
     SearchPrefInput,
     TravelerComposition,
+    TripStartInput,
 )
 from ...telemetry import TelemetryLogger
 from .errors import InvalidTripCommandError
@@ -42,12 +42,16 @@ def _booking_setup(state: dict[str, Any]) -> dict[str, Any]:
 def apply_set_trip_start(
     logger: TelemetryLogger,
     state: dict[str, Any],
-    update: ScheduleDateInput,
+    update: TripStartInput,
 ) -> dict[str, Any]:
     _require_generated_itinerary(state)
     branch = _booking_setup(state)
     previous = branch.get("start")
-    branch["start"] = update.as_stored()
+    stored = update.as_stored()
+    if stored is None:
+        branch.pop("start", None)  # flexible — remove the anchor entirely
+    else:
+        branch["start"] = stored
 
     logger.info(
         "Updated the trip calendar anchor.",
@@ -55,7 +59,7 @@ def apply_set_trip_start(
         source="application",
         trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
         previous_precision=previous.get("precision") if isinstance(previous, dict) else None,
-        new_precision=branch["start"]["precision"],
+        new_precision=update.precision,
         itinerary_regeneration_skipped=True,
     )
     return {"message": None, "agent_meta": None}

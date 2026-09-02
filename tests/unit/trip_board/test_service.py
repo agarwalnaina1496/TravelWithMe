@@ -360,6 +360,26 @@ def test_stay_segments_group_consecutive_same_location_stays_with_exact_dates():
     assert board.days[2].items[1].id in board.stay_segments[1].board_item_ids
 
 
+def test_search_pref_for_an_unknown_entity_is_inert():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {"days": [_day(1, [_stay_item("Agra")]), _day(2, [_stay_item("Agra")])]}
+
+    board = service.build(
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"},
+        {
+            **_start(date="2026-05-01"),
+            **_pref("stay", f"{TRIP_ID}:stay:9:9:nowhere", date="2026-12-25"),
+            **_pref("transport", f"{TRIP_ID}:99:0", date="2026-12-25"),
+        },
+    )
+
+    # The stale prefs never resolve to a live entity, so the segment keeps
+    # its anchor-derived dates and nothing carries the 2026-12-25 override.
+    segment = board.stay_segments[0]
+    assert segment.checkin_date == "2026-05-01"
+    assert segment.date_source == "anchor"
+
+
 def test_stay_search_pref_sets_checkin_and_derives_checkout_from_nights():
     service = TripBoardService(FakeTrustedActionService())
     final_itinerary = {

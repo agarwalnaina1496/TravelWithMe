@@ -144,7 +144,7 @@ class MemoryTripRepository:
             return []
         return list(self.itinerary_versions.get(trip_id) or [])
 
-    async def commit_command(self, owner, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches=frozenset(), new_recommendation=None, new_itinerary_version=None):
+    async def commit_command(self, owner, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches=frozenset(), new_recommendation=None):
         key = (owner.user_id or owner.guest_session_id, trip_id, idempotency_key)
         if key in self.commands:
             return self.commands[key]
@@ -166,14 +166,6 @@ class MemoryTripRepository:
                 traveler_criteria=new_recommendation.get("traveler_criteria"),
                 constraint_adjustment_suggestions=new_recommendation.get("constraint_adjustment_suggestions"),
                 agent_meta=new_recommendation["agent_meta"],
-                created_at=datetime.now(timezone.utc),
-            ))
-        if new_itinerary_version is not None:
-            self.itinerary_versions.setdefault(trip_id, []).append(ItineraryVersionRecord(
-                trip_id=trip_id,
-                version=new_itinerary_version["version"],
-                source_guide_revision=new_itinerary_version["source_guide_revision"],
-                result=new_itinerary_version["result"],
                 created_at=datetime.now(timezone.utc),
             ))
         stored = dict(response)
@@ -1546,7 +1538,7 @@ def test_set_trip_start_persists_exact_anchor_without_touching_itinerary(api_cli
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
-        json=_command(trip, "set_trip_start", trip_start_update={"date": "2026-05-01"}),
+        json=_command(trip, "set_trip_start", trip_start_update={"precision": "exact", "date": "2026-05-01"}),
     )
 
     assert response.status_code == 200
@@ -1574,12 +1566,12 @@ def test_set_trip_start_logs_a_structured_update_event(api_client: TestClient):
 
     api_client.post(
         f"/trips/{trip['id']}/commands",
-        json=_command(trip, "set_trip_start", trip_start_update={"date": "2026-05-01"}),
+        json=_command(trip, "set_trip_start", trip_start_update={"precision": "exact", "date": "2026-05-01"}),
     )
     api_client.post(
         f"/trips/{trip['id']}/commands",
         json={"command": "set_trip_start", "expected_version": trip["version"] + 1,
-              "idempotency_key": str(uuid4()), "trip_start_update": {"month": "2026-06"}},
+              "idempotency_key": str(uuid4()), "trip_start_update": {"precision": "month", "month": "2026-06"}},
     )
 
     events = [e for e in sink.events if e["event"] == "be.trip.booking_setup.start.updated"]
@@ -1594,6 +1586,48 @@ def test_set_trip_start_logs_a_structured_update_event(api_client: TestClient):
     app.dependency_overrides.clear()
 
 
+def test_set_party_and_search_pref_log_structured_events(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True, environment="test",
+            payload_mode=PayloadMode.METADATA, max_field_size=256,
+        ),
+        sink,
+    )
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+    segment_id = f"{trip['id']}:stay:1:1:rishikesh"
+
+    party = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(trip, "set_party", party_update={"adults": 2, "children": 1, "infants": 0}),
+    )
+    api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "set_search_pref", "expected_version": party.json()["trip"]["version"],
+              "idempotency_key": str(uuid4()),
+              "search_pref_update": {"target_type": "stay", "target_id": segment_id, "date": "2026-06-10"}},
+    )
+
+    [party_event] = [e for e in sink.events if e["event"] == "be.trip.booking_setup.party.updated"]
+    assert party_event["message"] == "Updated the structured traveler party."
+    assert party_event["fields"]["trip_id"] == trip["id"]
+    assert party_event["fields"]["new_total"] == 3
+
+    [pref_event] = [e for e in sink.events if e["event"] == "be.trip.booking_setup.search_pref.updated"]
+    assert pref_event["fields"]["trip_id"] == trip["id"]
+    assert pref_event["fields"]["target_type"] == "stay"
+    assert pref_event["fields"]["target_id"] == segment_id
+    assert pref_event["fields"]["new_precision"] == "exact"
+    assert pref_event["fields"]["itinerary_regeneration_skipped"] is True
+    app.dependency_overrides.clear()
+
+
 def test_set_trip_start_persists_month_and_survives_reload(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
@@ -1603,11 +1637,65 @@ def test_set_trip_start_persists_month_and_survives_reload(api_client: TestClien
 
     api_client.post(
         f"/trips/{trip['id']}/commands",
-        json=_command(trip, "set_trip_start", trip_start_update={"month": "2026-05"}),
+        json=_command(trip, "set_trip_start", trip_start_update={"precision": "month", "month": "2026-05"}),
     )
 
     reloaded = api_client.get(f"/trips/{trip['id']}").json()
     assert reloaded["trip_state"]["booking_setup"]["start"] == {"precision": "month", "month": "2026-05"}
+
+
+def test_set_trip_start_flexible_clears_a_previously_set_anchor(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+
+    exact = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(trip, "set_trip_start", trip_start_update={"precision": "exact", "date": "2026-05-01"}),
+    )
+    assert exact.json()["trip"]["trip_state"]["booking_setup"]["start"]["precision"] == "exact"
+
+    cleared = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "set_trip_start", "expected_version": exact.json()["trip"]["version"],
+              "idempotency_key": str(uuid4()), "trip_start_update": {"precision": "flexible"}},
+    )
+    assert cleared.status_code == 200
+    assert "start" not in cleared.json()["trip"]["trip_state"]["booking_setup"]
+
+
+def test_set_trip_start_flexible_rejects_a_date(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(trip, "set_trip_start", trip_start_update={"precision": "flexible", "date": "2026-05-01"}),
+    )
+    assert response.status_code == 422
+
+
+def test_removed_booking_and_logistics_commands_are_rejected_as_unknown(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+
+    for command in (
+        "update_booking_dates", "update_traveler_composition",
+        "confirm_logistics", "accept_itinerary_revision", "keep_current_itinerary",
+    ):
+        response = api_client.post(
+            f"/trips/{trip['id']}/commands",
+            json={"command": command, "expected_version": trip["version"], "idempotency_key": str(uuid4())},
+        )
+        assert response.status_code == 422, command
 
 
 def test_set_trip_start_rejects_both_date_and_month(api_client: TestClient):
@@ -1619,7 +1707,7 @@ def test_set_trip_start_rejects_both_date_and_month(api_client: TestClient):
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
-        json=_command(trip, "set_trip_start", trip_start_update={"date": "2026-05-01", "month": "2026-05"}),
+        json=_command(trip, "set_trip_start", trip_start_update={"precision": "exact", "date": "2026-05-01", "month": "2026-05"}),
     )
 
     assert response.status_code == 422
@@ -1634,7 +1722,7 @@ def test_set_trip_start_rejects_invalid_month_shape(api_client: TestClient):
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
-        json=_command(trip, "set_trip_start", trip_start_update={"month": "May 2026"}),
+        json=_command(trip, "set_trip_start", trip_start_update={"precision": "month", "month": "May 2026"}),
     )
 
     assert response.status_code == 422
@@ -1649,7 +1737,7 @@ def test_set_trip_start_requires_generated_itinerary(api_client: TestClient):
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
-        json=_command(trip, "set_trip_start", trip_start_update={"date": "2026-05-01"}),
+        json=_command(trip, "set_trip_start", trip_start_update={"precision": "exact", "date": "2026-05-01"}),
     )
 
     assert response.status_code == 422
@@ -1665,7 +1753,7 @@ def test_set_trip_start_rejects_unknown_trip(api_client: TestClient):
     response = api_client.post(
         f"/trips/{uuid4()}/commands",
         json={"command": "set_trip_start", "expected_version": 1,
-              "idempotency_key": str(uuid4()), "trip_start_update": {"date": "2026-05-01"}},
+              "idempotency_key": str(uuid4()), "trip_start_update": {"precision": "exact", "date": "2026-05-01"}},
     )
 
     assert response.status_code == 404
@@ -1745,7 +1833,7 @@ def test_search_pref_update_rejected_for_wrong_command(api_client: TestClient):
         f"/trips/{trip['id']}/commands",
         json=_command(
             trip, "set_trip_start",
-            trip_start_update={"date": "2026-05-01"},
+            trip_start_update={"precision": "exact", "date": "2026-05-01"},
             search_pref_update={"target_type": "stay", "target_id": "x", "date": "2026-06-10"},
         ),
     )

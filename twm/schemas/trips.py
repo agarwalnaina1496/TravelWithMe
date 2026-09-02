@@ -6,11 +6,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .booking_setup import ScheduleDateInput, SearchPrefClearInput, SearchPrefInput
+from .booking_setup import (
+    SearchPrefClearInput,
+    SearchPrefInput,
+    TravelerComposition,
+    TripStartInput,
+)
 from .common import AgentMeta
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
 from .scout import BoundedMessage, TripStage
-from .trip_context import DESTINATIONS_KEY, FIXED_KEYS, TravelerComposition
+from .trip_context import DESTINATIONS_KEY, FIXED_KEYS
 
 
 class MeridianRefinementReference(BaseModel):
@@ -127,7 +132,7 @@ class TripSummaryState(BaseModel):
 class TripSummary(BaseModel):
     """My Trips / Landing list item (TWM-159, extended TWM-182) — a small
     recap, not the full trip_state. The Atlas itinerary result and
-    matcher/logistics state never belong on a card the list screen never
+    matcher/booking_setup state never belong on a card the list screen never
     reads them from; planner_state contributes only the three cheap derived
     fields on TripSummaryState above, never its own nested day_plan/
     frozen_plan/history."""
@@ -235,7 +240,7 @@ class TripCommandRequest(BaseModel):
     refinement: MeridianRefinement | None = None
     # booking_setup command payloads — all post-freeze, deterministic, and
     # never regenerate the itinerary (see twm/schemas/booking_setup.py).
-    trip_start_update: ScheduleDateInput | None = None
+    trip_start_update: TripStartInput | None = None
     party_update: TravelerComposition | None = None
     search_pref_update: SearchPrefInput | None = None
     search_pref_clear: SearchPrefClearInput | None = None

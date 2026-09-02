@@ -37,7 +37,7 @@ TWM-145 selects and wires the Aviasales adapter against this contract
 
 House style: Pydantic v2, extra="forbid" on every model, Literal for closed
 enums, model_validator(mode="after") for cross-field invariants — mirrors
-twm/schemas/atlas.py and twm/schemas/logistics.py.
+twm/schemas/atlas.py.
 """
 
 from datetime import date, datetime

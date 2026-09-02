@@ -250,31 +250,6 @@ def test_itinerary_state_write_archives_the_active_version_unconditionally():
     assert db.itinerary_state[trip_id] == {"status": "ready", "current_version": 1}
 
 
-def test_accepting_a_revision_archives_the_outgoing_version_via_new_itinerary_version():
-    db = FakeDatabase(SCHEMA)
-    repository = _repository(db)
-    guest_id = uuid4()
-    trip_id = _seed_trip(db, guest_id)
-
-    asyncio.run(repository.commit_command(
-        _owner(guest_id), trip_id, 1, uuid4(), "hash",
-        trip_state={
-            "status": "free", "stage": "planned", "active_agent": None, "trip_context": {},
-            "itinerary_state": {
-                "status": "ready",
-                "current_version": {"version": 2, "source_guide_revision": 5, "result": {"final_itinerary": {"days": ["v2"]}}},
-            },
-        },
-        response_trip_state={}, response={"message": None, "agent_meta": None},
-        touched_branches=frozenset({"itinerary_state"}),
-        new_itinerary_version={"version": 1, "source_guide_revision": 5, "result": {"final_itinerary": {"days": ["v1"]}}},
-    ))
-
-    assert (trip_id, 1) in db.itinerary_versions  # outgoing, archived explicitly
-    assert (trip_id, 2) in db.itinerary_versions  # new active version, archived unconditionally
-    assert db.itinerary_state[trip_id]["current_version"] == 2
-
-
 def test_get_current_itinerary_reads_the_version_the_pointer_names():
     db = FakeDatabase(SCHEMA)
     repository = _repository(db)

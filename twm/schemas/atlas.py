@@ -22,8 +22,8 @@ AtlasAssumptionCategory = Literal[
     "traveler_count",
     "other",
 ]
-# Atlas never sees a real reservation, so "confirmed" is deliberately absent:
-# confirmed logistics are an application-owned anchor added by a later capability.
+# Atlas never sees a real reservation, so "confirmed" is deliberately absent —
+# TWM never holds or verifies a booking at all.
 AtlasBookingReadiness = Literal["suggested", "needs_advance_booking", "unresolved"]
 
 _MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")

@@ -76,7 +76,7 @@ def _response(record: TripRecord) -> TripResponse:
 def _summary(record: TripRecord, has_recommendation: bool) -> TripSummary:
     """GET /trips (TWM-159, extended TWM-182, TWM-190): a small My Trips/Landing
     recap, not the full trip_state — the list screen never reads matcher/
-    logistics state or the itinerary result, so none of it belongs on a
+    booking_setup state or the itinerary result, so none of it belongs on a
     list card. planner_state contributes only a cheap derived
     awaiting/has_day_plan/has_places signal (never the nested day_plan/
     frozen_plan/history) — enough for the traveler-facing card to tell

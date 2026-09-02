@@ -14,7 +14,7 @@ concrete, prefilled provider searches. Three concerns:
 * ``search_prefs`` — per-entity date prefill for provider redirect links,
   keyed by the stable Trip Board id of the stay segment or transport item.
   Pure search convenience; a stale entry whose target no longer resolves to a
-  live Board entity is dropped on read, never persisted away.
+  live Board entity is simply never applied (inert, not an error).
 
 Nothing here regenerates or re-plans the itinerary.
 """
@@ -31,6 +31,7 @@ from .trip_context import TravelerComposition
 # though its canonical home moved out of trip_context with this change.
 __all__ = [
     "TravelerComposition",
+    "TripStartInput",
     "ScheduleDateInput",
     "SearchPrefInput",
     "SearchPrefClearInput",
@@ -42,11 +43,48 @@ BOOKING_SETUP_BRANCH = "booking_setup"
 SearchPrefTarget = Literal["stay", "transport"]
 
 
+class TripStartInput(BaseModel):
+    """``set_trip_start`` payload — the trip calendar anchor. Three explicit
+    precisions: ``exact`` (a validated date), ``month`` (a validated YYYY-MM
+    window), or ``flexible`` (no date at all — the way to revert an anchor
+    the traveler previously set). Never free text; the UI must not guess a
+    year from a month label.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    precision: Literal["exact", "month", "flexible"]
+    date: Optional[_date] = None
+    month: Optional[DepartureMonth] = None
+
+    @model_validator(mode="after")
+    def validate_precision(self) -> "TripStartInput":
+        if self.precision == "exact" and self.date is None:
+            raise ValueError("exact precision requires date")
+        if self.precision == "month" and self.month is None:
+            raise ValueError("month precision requires month")
+        if self.precision != "exact" and self.date is not None:
+            raise ValueError("date is allowed only for exact precision")
+        if self.precision != "month" and self.month is not None:
+            raise ValueError("month is allowed only for month precision")
+        return self
+
+    def as_stored(self) -> Optional[dict[str, Any]]:
+        """The dict persisted to ``booking_setup.start``, or None for
+        ``flexible`` (which removes the anchor entirely — an absent anchor
+        and an explicit flexible one behave identically on the Trip Board)."""
+        if self.precision == "exact":
+            return {"precision": "exact", "date": self.date.isoformat()}
+        if self.precision == "month":
+            return {"precision": "month", "month": self.month}
+        return None
+
+
 class ScheduleDateInput(BaseModel):
     """An exact date XOR a YYYY-MM month window. Never free text — the UI must
     not guess a year from a month label; only a validated exact date or a
-    validated month is accepted. Shared by ``set_trip_start`` (the trip
-    calendar anchor) and ``set_search_pref`` (a single entity's search date).
+    validated month is accepted. Base for ``set_search_pref`` (a single
+    entity's search date; removal is ``clear_search_pref``).
     """
 
     model_config = ConfigDict(extra="forbid")

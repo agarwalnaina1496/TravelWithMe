@@ -139,7 +139,7 @@ class PostgresTripRepository:
 
     async def list_trips(self, owner: TripOwner) -> list[TripRecord]:
         """GET /trips (TWM-182): batched, summary-scoped composition — the
-        generic per-trip _compose_trip_state (matcher/planner/logistics
+        generic per-trip _compose_trip_state (matcher/planner/booking_setup
         branch reads plus full itinerary-result composition) previously ran
         once per trip here, an N+1 pattern whose output the router's
         _summary() then discarded almost entirely. The list endpoint's
@@ -307,7 +307,6 @@ class PostgresTripRepository:
         response_trip_state: dict[str, Any], response: dict[str, Any],
         touched_branches: frozenset[str],
         new_recommendation: dict[str, Any] | None = None,
-        new_itinerary_version: dict[str, Any] | None = None,
     ) -> TripRecord | TripCommandRecord | None:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
@@ -353,14 +352,6 @@ class PostgresTripRepository:
                         json.dumps(new_recommendation.get("constraint_adjustment_suggestions")) if new_recommendation.get("constraint_adjustment_suggestions") is not None else None,
                         json.dumps(new_recommendation["agent_meta"]),
                     )
-                if new_itinerary_version is not None:
-                    await connection.execute(
-                        f"""INSERT INTO {self.schema}.itinerary_versions
-                        (trip_id,version,source_guide_revision,result)
-                        VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (trip_id, version) DO NOTHING""",
-                        trip_id, new_itinerary_version["version"], new_itinerary_version["source_guide_revision"],
-                        json.dumps(new_itinerary_version["result"]),
-                    )
                 stored_response = dict(response)
                 response_record = _record(row).__dict__.copy()
                 response_record["trip_state"] = response_trip_state
@@ -397,8 +388,8 @@ class PostgresTripRepository:
             trip_id, itinerary.get("status"), current_version["version"] if current_version else None,
         )
         if current_version is not None:
-            # Every active current_version is archived here too now, not only
-            # the superseded one (see new_itinerary_version above) — TWM-158.
+            # TWM-158: every active current_version is archived to
+            # itinerary_versions on write (trip_state keeps only the pointer).
             await connection.execute(
                 f"""INSERT INTO {self.schema}.itinerary_versions (trip_id,version,source_guide_revision,result)
                 VALUES ($1,$2,$3,$4::jsonb) ON CONFLICT (trip_id, version) DO NOTHING""",
