@@ -32,7 +32,6 @@ from .trip_context import TravelerComposition
 __all__ = [
     "TravelerComposition",
     "TripStartInput",
-    "ScheduleDateInput",
     "SearchPrefInput",
     "SearchPrefClearInput",
     "BOOKING_SETUP_BRANCH",

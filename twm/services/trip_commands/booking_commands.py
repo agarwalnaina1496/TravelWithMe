@@ -123,8 +123,16 @@ def apply_clear_search_pref(
 ) -> dict[str, Any]:
     _require_generated_itinerary(state)
     branch = _booking_setup(state)
-    bucket = branch.get("search_prefs", {}).get(f"{update.target_type}s", {})
+    prefs = branch.get("search_prefs", {})
+    bucket_key = f"{update.target_type}s"
+    bucket = prefs.get(bucket_key, {})
     removed = bucket.pop(update.target_id, None)
+    # Don't leave an empty bucket (or an empty search_prefs) behind — a
+    # cleared pref should read back identically to one that was never set.
+    if not bucket:
+        prefs.pop(bucket_key, None)
+    if not prefs:
+        branch.pop("search_prefs", None)
 
     logger.info(
         "Cleared a booking-search date preference.",

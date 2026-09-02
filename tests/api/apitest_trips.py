@@ -1819,7 +1819,9 @@ def test_set_and_clear_search_pref_round_trip_for_a_stay_segment(api_client: Tes
               "search_pref_clear": {"target_type": "stay", "target_id": segment_id}},
     )
     assert clear_response.status_code == 200
-    assert clear_response.json()["trip"]["trip_state"]["booking_setup"]["search_prefs"]["stays"] == {}
+    # A cleared pref reads back identically to one that was never set — no
+    # empty stays bucket or empty search_prefs left behind.
+    assert "search_prefs" not in clear_response.json()["trip"]["trip_state"]["booking_setup"]
 
 
 def test_search_pref_update_rejected_for_wrong_command(api_client: TestClient):
