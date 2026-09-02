@@ -278,14 +278,19 @@ class TripBoardService:
             atlas_date = item.get("departure_date")
             atlas_month = item.get("departure_month")
             override = _search_pref(search_prefs, "transports", item_id)
-            if atlas_date:
-                departure_date, date_precision, date_source = atlas_date, "exact", "itinerary"
-            elif atlas_month:
-                departure_month, date_precision, date_source = atlas_month, "month", "itinerary"
-            elif override and override.get("precision") == "exact" and override.get("date"):
+            # Precedence (module docstring): an explicit per-leg search pref is
+            # the most specific signal the traveler can give, so it wins over
+            # Atlas's own per-item date. In the UI these never collide — the
+            # per-leg date editor is hidden once date_source is "itinerary" —
+            # so this only orders a direct API caller.
+            if override and override.get("precision") == "exact" and override.get("date"):
                 departure_date, date_precision, date_source = override["date"], "exact", "override"
             elif override and override.get("precision") == "month" and override.get("month"):
                 departure_month, date_precision, date_source = override["month"], "month", "override"
+            elif atlas_date:
+                departure_date, date_precision, date_source = atlas_date, "exact", "itinerary"
+            elif atlas_month:
+                departure_month, date_precision, date_source = atlas_month, "month", "itinerary"
             elif calendar_date is not None:
                 # Every leg happens on its own itinerary day, so the anchor
                 # gives it that day's real date — gateway or internal alike.

@@ -257,6 +257,21 @@ def test_month_anchor_applies_to_any_dateless_leg_gateway_or_internal():
     assert gateway_leg.departure_month == "2026-05"
 
 
+def test_transport_search_pref_wins_over_an_atlas_supplied_leg_date():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {"days": [_day(1, [_travel_item("Delhi", "Chennai", departure_date="2026-05-01")])]}
+    leg_id = f"{TRIP_ID}:1:0"
+
+    board = service.build(
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"},
+        _pref("transport", leg_id, date="2026-06-15"),
+    )
+
+    leg = board.days[0].items[0]
+    assert leg.departure_date == "2026-06-15"
+    assert leg.date_source == "override"
+
+
 def test_transport_search_pref_overrides_the_anchor_for_that_leg_only():
     service = TripBoardService(FakeTrustedActionService())
     final_itinerary = {
