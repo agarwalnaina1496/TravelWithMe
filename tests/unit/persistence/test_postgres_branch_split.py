@@ -59,7 +59,7 @@ def test_scout_only_commit_writes_only_trips_and_matcher_state():
     assert db.written_tables == {"trips", "trip_commands", "matcher_state"}
     assert "planner_state" not in db.written_tables
     assert "itinerary_state" not in db.written_tables
-    assert "logistics_state" not in db.written_tables
+    assert "booking_setup" not in db.written_tables
 
 
 def test_commit_command_replays_a_stored_response_for_a_reused_idempotency_key():
@@ -139,14 +139,14 @@ def test_get_trip_composes_blob_branches_from_dedicated_tables():
     guest_id = uuid4()
     trip_id = _seed_trip(db, guest_id, core_state={"status": "free", "stage": "planning", "trip_context": {"destinations": ["Goa"]}})
     db.branch_tables["planner_state"][trip_id] = {"state": __import__("json").dumps({"places": ["Baga Beach"]})}
-    db.branch_tables["logistics_state"][trip_id] = {"state": __import__("json").dumps({"anchors": []})}
+    db.branch_tables["booking_setup"][trip_id] = {"state": __import__("json").dumps({"start": {"precision": "month", "month": "2026-05"}})}
 
     trip = asyncio.run(repository.get_trip(_owner(guest_id), trip_id))
 
     assert trip.trip_state["stage"] == "planning"
     assert trip.trip_state["trip_context"] == {"destinations": ["Goa"]}
     assert trip.trip_state["planner_state"] == {"places": ["Baga Beach"]}
-    assert trip.trip_state["logistics_state"] == {"anchors": []}
+    assert trip.trip_state["booking_setup"] == {"start": {"precision": "month", "month": "2026-05"}}
     assert "matcher_state" not in trip.trip_state
     assert "itinerary_state" not in trip.trip_state
 
@@ -174,7 +174,7 @@ def test_list_trips_batches_summary_branch_reads_instead_of_querying_per_trip():
     # 1 trips-table SELECT + 1 batched planner_state SELECT + 1 batched
     # itinerary_state SELECT — never scales with trip count.
     assert len(db.query_log) == 3
-    assert not any("matcher_state" in q or "logistics_state" in q or "itinerary_versions" in q for q in db.query_log)
+    assert not any("matcher_state" in q or "booking_setup" in q or "itinerary_versions" in q for q in db.query_log)
 
 
 def test_list_trips_composes_planner_state_and_itinerary_status_per_trip():
@@ -203,7 +203,7 @@ def test_list_trips_composes_planner_state_and_itinerary_status_per_trip():
     assert "itinerary_state" not in by_id[empty_id].trip_state
 
 
-def test_get_trip_composes_itinerary_state_current_version_and_proposed_revision():
+def test_get_trip_composes_itinerary_state_current_version():
     db = FakeDatabase(SCHEMA)
     repository = _repository(db)
     guest_id = uuid4()
@@ -214,11 +214,6 @@ def test_get_trip_composes_itinerary_state_current_version_and_proposed_revision
         "result": __import__("json").dumps({"final_itinerary": {"days": []}}),
         "created_at": datetime.now(timezone.utc),
     }
-    db.itinerary_proposed_revisions[trip_id] = {
-        "base_version": 1, "result": __import__("json").dumps({"final_itinerary": {"days": ["revised"]}}),
-        "affected_days": __import__("json").dumps([1]), "changes": __import__("json").dumps(["Day 1: revised"]),
-        "triggered_by": __import__("json").dumps({"type": "transport"}),
-    }
 
     trip = asyncio.run(repository.get_trip(_owner(guest_id), trip_id))
 
@@ -227,10 +222,7 @@ def test_get_trip_composes_itinerary_state_current_version_and_proposed_revision
     assert itinerary["current_version"] == {
         "version": 1, "source_guide_revision": 5, "result": {"final_itinerary": {"days": []}},
     }
-    assert itinerary["proposed_revision"] == {
-        "version": 2, "base_version": 1, "result": {"final_itinerary": {"days": ["revised"]}},
-        "affected_days": [1], "changes": ["Day 1: revised"], "triggered_by": {"type": "transport"},
-    }
+    assert "proposed_revision" not in itinerary
 
 
 def test_itinerary_state_write_archives_the_active_version_unconditionally():
@@ -248,7 +240,6 @@ def test_itinerary_state_write_archives_the_active_version_unconditionally():
             "itinerary_state": {
                 "status": "ready",
                 "current_version": {"version": 1, "source_guide_revision": 5, "result": {"final_itinerary": {"days": []}}},
-                "proposed_revision": None,
             },
         },
         response_trip_state={}, response={"message": None, "agent_meta": None},
@@ -257,33 +248,6 @@ def test_itinerary_state_write_archives_the_active_version_unconditionally():
 
     assert (trip_id, 1) in db.itinerary_versions
     assert db.itinerary_state[trip_id] == {"status": "ready", "current_version": 1}
-    assert trip_id not in db.itinerary_proposed_revisions
-
-
-def test_accepting_a_revision_archives_the_outgoing_version_via_new_itinerary_version():
-    db = FakeDatabase(SCHEMA)
-    repository = _repository(db)
-    guest_id = uuid4()
-    trip_id = _seed_trip(db, guest_id)
-
-    asyncio.run(repository.commit_command(
-        _owner(guest_id), trip_id, 1, uuid4(), "hash",
-        trip_state={
-            "status": "free", "stage": "planned", "active_agent": None, "trip_context": {},
-            "itinerary_state": {
-                "status": "ready",
-                "current_version": {"version": 2, "source_guide_revision": 5, "result": {"final_itinerary": {"days": ["v2"]}}},
-                "proposed_revision": None,
-            },
-        },
-        response_trip_state={}, response={"message": None, "agent_meta": None},
-        touched_branches=frozenset({"itinerary_state"}),
-        new_itinerary_version={"version": 1, "source_guide_revision": 5, "result": {"final_itinerary": {"days": ["v1"]}}},
-    ))
-
-    assert (trip_id, 1) in db.itinerary_versions  # outgoing, archived explicitly
-    assert (trip_id, 2) in db.itinerary_versions  # new active version, archived unconditionally
-    assert db.itinerary_state[trip_id]["current_version"] == 2
 
 
 def test_get_current_itinerary_reads_the_version_the_pointer_names():

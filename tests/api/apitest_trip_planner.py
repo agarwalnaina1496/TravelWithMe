@@ -364,7 +364,7 @@ def test_atlas_api_forwards_finalized_context_and_plan(
     }
     assert body["final_itinerary"]["budget_summary"]["total_low"] == 1700
     assert body["final_itinerary"]["budget_summary"]["total_high"] == 2600
-    engine.atlas.assert_awaited_once_with({**payload, "confirmed_anchors": []}, None)
+    engine.atlas.assert_awaited_once_with(payload, None)
 
 
 def test_atlas_api_uses_prompt_schema_and_common_validation(

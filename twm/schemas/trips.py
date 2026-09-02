@@ -1,17 +1,21 @@
 """Canonical HTTP contracts for database-backed trips."""
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .booking_setup import (
+    SearchPrefClearInput,
+    SearchPrefInput,
+    TravelerComposition,
+    TripStartInput,
+)
 from .common import AgentMeta
-from .flight_search import DepartureMonth
-from .logistics import LogisticsConfirmationInput
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
 from .scout import BoundedMessage, TripStage
-from .trip_context import DESTINATIONS_KEY, FIXED_KEYS, TravelerComposition
+from .trip_context import DESTINATIONS_KEY, FIXED_KEYS
 
 
 class MeridianRefinementReference(BaseModel):
@@ -31,46 +35,6 @@ class MeridianRefinement(BaseModel):
     type: Literal["MORE_LIKE_THIS"]
     reference: MeridianRefinementReference
     instructions: BoundedMessage | None = None
-
-
-class TripBookingDateInput(BaseModel):
-    """update_booking_dates command payload (TWM-201): post-freeze booking-
-    date precision for the traveler's own flight legs. Exact XOR month,
-    same shape/constraint as FlightSearchRequest's departure_date/
-    departure_month so booking legs can pass this straight through to a
-    flight search once persisted. Never accepts free text — the UI must
-    not guess a year from a month label; only a validated exact date or a
-    validated YYYY-MM window is accepted here.
-
-    return_date (PR review, TWM-201): a Dashboard Bookings gateway trip has
-    an independent outbound and return leg (bookingCatalog.js's
-    gatewayLegs), so a single exact date is not route-safe — applying it as
-    a fallback to both legs would confidently misdate the return search.
-    Only meaningful alongside departure_date (exact precision); month
-    precision stays a single coarse window with no separate return value,
-    since that scope was never in question on review."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    departure_date: date | None = None
-    return_date: date | None = None
-    departure_month: DepartureMonth | None = None
-
-    @model_validator(mode="after")
-    def validate_precision(self) -> "TripBookingDateInput":
-        if self.departure_date is not None and self.departure_month is not None:
-            raise ValueError("departure_date and departure_month are mutually exclusive")
-        if self.departure_date is None and self.departure_month is None:
-            raise ValueError("one of departure_date or departure_month is required")
-        if self.return_date is not None and self.departure_date is None:
-            raise ValueError("return_date requires departure_date")
-        if (
-            self.return_date is not None
-            and self.departure_date is not None
-            and self.return_date < self.departure_date
-        ):
-            raise ValueError("return_date cannot be before departure_date")
-        return self
 
 
 class TripCreateRequest(BaseModel):
@@ -168,7 +132,7 @@ class TripSummaryState(BaseModel):
 class TripSummary(BaseModel):
     """My Trips / Landing list item (TWM-159, extended TWM-182) — a small
     recap, not the full trip_state. The Atlas itinerary result and
-    matcher/logistics state never belong on a card the list screen never
+    matcher/booking_setup state never belong on a card the list screen never
     reads them from; planner_state contributes only the three cheap derived
     fields on TripSummaryState above, never its own nested day_plan/
     frozen_plan/history."""
@@ -246,11 +210,10 @@ TripCommandName = Literal[
     "reopen_destination_revisit",
     "reopen_destination_fresh",
     "start_itinerary",
-    "confirm_logistics",
-    "accept_itinerary_revision",
-    "keep_current_itinerary",
-    "update_booking_dates",
-    "update_traveler_composition",
+    "set_trip_start",
+    "set_party",
+    "set_search_pref",
+    "clear_search_pref",
 ]
 
 _MESSAGE_COMMANDS = {"traveler_message"}
@@ -275,13 +238,12 @@ class TripCommandRequest(BaseModel):
     entry_intent: EntryIntent | None = None
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
     refinement: MeridianRefinement | None = None
-    logistics_confirmation: LogisticsConfirmationInput | None = None
-    booking_date_update: TripBookingDateInput | None = None
-    # update_traveler_composition command payload (TWM-213): reuses
-    # TravelerComposition directly rather than a bespoke wrapper — same
-    # structured adult/child/infant shape the command persists verbatim to
-    # trip_context.traveler_composition, no additional fields needed.
-    traveler_composition_update: TravelerComposition | None = None
+    # booking_setup command payloads — all post-freeze, deterministic, and
+    # never regenerate the itinerary (see twm/schemas/booking_setup.py).
+    trip_start_update: TripStartInput | None = None
+    party_update: TravelerComposition | None = None
+    search_pref_update: SearchPrefInput | None = None
+    search_pref_clear: SearchPrefClearInput | None = None
 
     @model_validator(mode="after")
     def validate_command_fields(self) -> "TripCommandRequest":
@@ -293,32 +255,16 @@ class TripCommandRequest(BaseModel):
             raise ValueError("select_destination requires option_id")
         if self.command == "more_like_this" and self.refinement is None:
             raise ValueError("more_like_this requires refinement")
-        if self.command == "confirm_logistics" and self.logistics_confirmation is None:
-            raise ValueError("confirm_logistics requires logistics_confirmation")
-        if self.command != "confirm_logistics" and self.logistics_confirmation is not None:
-            raise ValueError(
-                "logistics_confirmation is allowed only for confirm_logistics"
-            )
-        if self.command == "update_booking_dates" and self.booking_date_update is None:
-            raise ValueError("update_booking_dates requires booking_date_update")
-        if self.command != "update_booking_dates" and self.booking_date_update is not None:
-            raise ValueError(
-                "booking_date_update is allowed only for update_booking_dates"
-            )
-        if (
-            self.command == "update_traveler_composition"
-            and self.traveler_composition_update is None
+        for command, field_name, value in (
+            ("set_trip_start", "trip_start_update", self.trip_start_update),
+            ("set_party", "party_update", self.party_update),
+            ("set_search_pref", "search_pref_update", self.search_pref_update),
+            ("clear_search_pref", "search_pref_clear", self.search_pref_clear),
         ):
-            raise ValueError(
-                "update_traveler_composition requires traveler_composition_update"
-            )
-        if (
-            self.command != "update_traveler_composition"
-            and self.traveler_composition_update is not None
-        ):
-            raise ValueError(
-                "traveler_composition_update is allowed only for update_traveler_composition"
-            )
+            if self.command == command and value is None:
+                raise ValueError(f"{command} requires {field_name}")
+            if self.command != command and value is not None:
+                raise ValueError(f"{field_name} is allowed only for {command}")
         if self.command not in _MESSAGE_COMMANDS and self.message is not None:
             raise ValueError("message is allowed only for traveler_message")
         if self.command != "traveler_message" and self.entry_intent is not None:

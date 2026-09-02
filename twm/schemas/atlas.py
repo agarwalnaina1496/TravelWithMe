@@ -22,8 +22,8 @@ AtlasAssumptionCategory = Literal[
     "traveler_count",
     "other",
 ]
-# Atlas never sees a real reservation, so "confirmed" is deliberately absent:
-# confirmed logistics are an application-owned anchor added by a later capability.
+# Atlas never sees a real reservation, so "confirmed" is deliberately absent —
+# TWM never holds or verifies a booking at all.
 AtlasBookingReadiness = Literal["suggested", "needs_advance_booking", "unresolved"]
 
 _MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -34,20 +34,6 @@ class AtlasAssumption(BaseModel):
 
     category: AtlasAssumptionCategory
     detail: AtlasText
-
-
-LogisticsAnchorType = Literal["transport", "stay", "activity"]
-
-
-class AtlasConfirmedAnchor(BaseModel):
-    """An application-owned confirmed logistics fact Atlas must respect."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    type: LogisticsAnchorType
-    label: AtlasText
-    detail: AtlasText
-    day_number: Optional[int] = Field(default=None, ge=1)
 
 
 class AtlasReference(BaseModel):
@@ -106,7 +92,6 @@ class AtlasRequest(BaseModel):
 
     trip_context: TripContext = Field(default_factory=TripContext)
     working_plan: AtlasWorkingPlan
-    confirmed_anchors: list[AtlasConfirmedAnchor] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_request(self) -> "AtlasRequest":

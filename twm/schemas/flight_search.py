@@ -37,7 +37,7 @@ TWM-145 selects and wires the Aviasales adapter against this contract
 
 House style: Pydantic v2, extra="forbid" on every model, Literal for closed
 enums, model_validator(mode="after") for cross-field invariants — mirrors
-twm/schemas/atlas.py and twm/schemas/logistics.py.
+twm/schemas/atlas.py.
 """
 
 from datetime import date, datetime
@@ -357,10 +357,10 @@ class NormalizedFlightOffer(BaseModel):
     concept: it is not an Atlas qualified estimate
     (AtlasTimelineItem.estimated_cost_low/high — a different type with no
     shared base class implying equivalence), not evidence (AtlasReference's
-    VERIFIED/GENERAL_GUIDANCE), not a trusted action/booking-link object
-    (no url field, no booking authority), and not a confirmed booking
-    (LogisticsAnchor — a booked fact; a live offer is never in that
-    state).
+    VERIFIED/GENERAL_GUIDANCE), and not a trusted action/booking-link object
+    (no url field, no booking authority). TWM never holds a confirmed
+    booking; a live offer is only ever a price the provider's cache
+    returned.
 
     price_found_at names the provider's own cache timestamp honestly (when
     the provider's cache found this price) — distinct from the result

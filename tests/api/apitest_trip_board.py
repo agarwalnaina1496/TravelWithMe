@@ -80,13 +80,12 @@ def _reference():
     return {"status": "GENERAL_GUIDANCE"}
 
 
-def _ready_trip_state(*, origin_city="Delhi", booking_dates=None):
+def _ready_trip_state(*, origin_city="Delhi", booking_setup=None):
     trip_context = {"origin_city": origin_city, "destinations": ["Chennai"]}
-    if booking_dates is not None:
-        trip_context["booking_dates"] = booking_dates
     return {
         "stage": "planned",
         "trip_context": trip_context,
+        "booking_setup": booking_setup or {},
         "planner_state": {"frozen_plan": {"guide_revision": 1, "guide_state": {}}},
         "itinerary_state": {
             "status": "ready",
@@ -160,7 +159,6 @@ def _ready_trip_state(*, origin_city="Delhi", booking_dates=None):
                     "agent_meta": {"agent": "atlas", "prompt_version": "1.0.0"},
                 },
             },
-            "proposed_revision": None,
         },
     }
 
@@ -201,12 +199,12 @@ def test_get_trip_board_composes_gateway_legs_with_real_feasibility(api_client: 
     assert inbound["is_gateway_leg"] is True
 
 
-def test_get_trip_board_reconciles_exact_booking_dates_per_gateway_direction(api_client: TestClient):
+def test_get_trip_board_resolves_every_entity_date_from_the_calendar_anchor(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_dependencies(repository)
     trip_id = _create_trip(
         api_client, repository,
-        _ready_trip_state(booking_dates={"precision": "exact", "departure_date": "2026-05-01", "return_date": "2026-05-10"}),
+        _ready_trip_state(booking_setup={"start": {"precision": "exact", "date": "2026-05-01"}}),
     )
 
     response = api_client.get(f"/trips/{trip_id}/board")
@@ -221,8 +219,10 @@ def test_get_trip_board_reconciles_exact_booking_dates_per_gateway_direction(api
     assert board["days"][1]["items"][0]["kind"] == "STAY"
     assert outbound["date_precision"] == "exact"
     assert outbound["departure_date"] == "2026-05-01"
+    assert outbound["date_source"] == "anchor"
     assert inbound["date_precision"] == "exact"
-    assert inbound["departure_date"] == "2026-05-10"
+    assert inbound["departure_date"] == "2026-05-02"
+    assert inbound["date_source"] == "anchor"
     assert board["stay_segments"] == [
         {
             "id": f"{trip_id}:stay:2:2:chennai",
@@ -234,6 +234,7 @@ def test_get_trip_board_reconciles_exact_booking_dates_per_gateway_direction(api
             "checkin_date": "2026-05-02",
             "checkout_date": "2026-05-03",
             "departure_month": None,
+            "date_source": "anchor",
             "board_item_ids": [board["days"][1]["items"][0]["id"]],
         }
     ]

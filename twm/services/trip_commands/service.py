@@ -12,14 +12,13 @@ from ...schemas.trips import TripCommandRequest, TripCommandResponse, TripFirstM
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from .atlas_commands import apply_atlas
-from .booking_commands import apply_update_booking_dates
-from .traveler_commands import apply_update_traveler_composition
-from .errors import IdempotencyConflictError, InvalidTripCommandError
-from .logistics_commands import (
-    apply_accept_itinerary_revision,
-    apply_confirm_logistics,
-    apply_keep_current_itinerary,
+from .booking_commands import (
+    apply_clear_search_pref,
+    apply_set_party,
+    apply_set_search_pref,
+    apply_set_trip_start,
 )
+from .errors import IdempotencyConflictError, InvalidTripCommandError
 from .matcher_commands import apply_meridian, select_destination
 from .planner_commands import (
     apply_guide,
@@ -38,11 +37,10 @@ from .state import (
 
 _POST_FREEZE_COMMANDS = {
     "start_itinerary",
-    "confirm_logistics",
-    "accept_itinerary_revision",
-    "keep_current_itinerary",
-    "update_booking_dates",
-    "update_traveler_composition",
+    "set_trip_start",
+    "set_party",
+    "set_search_pref",
+    "clear_search_pref",
 }
 
 
@@ -74,7 +72,6 @@ class TripCommandService:
         touched = touched_branches(state, before)
         shaped_trip_state = shape_command_trip_state(state, touched)
         new_recommendation = result.pop("new_recommendation", None)
-        new_itinerary_version = result.pop("new_itinerary_version", None)
         response_without_trip = {
             "message": result["message"],
             "agent_meta": result["agent_meta"],
@@ -90,7 +87,6 @@ class TripCommandService:
             response_without_trip,
             frozenset(touched),
             new_recommendation,
-            new_itinerary_version,
         )
         if committed is None:
             raise LookupError("Trip not found.")
@@ -127,15 +123,6 @@ class TripCommandService:
                 trip_id=str(trip.id),
                 version=new_recommendation["version"],
                 option_count=len(new_recommendation.get("options") or []),
-            )
-        if new_itinerary_version is not None:
-            self.logger.info(
-                "Archived an itinerary version.",
-                event="be.trip.itinerary_versions.archived",
-                source="application",
-                trip_id=str(trip.id),
-                version=new_itinerary_version["version"],
-                source_guide_revision=new_itinerary_version["source_guide_revision"],
             )
         return response
 
@@ -178,18 +165,17 @@ class TripCommandService:
                 detail=str(error)[:500],
             )
             raise
-        for leaked_key in ("new_recommendation", "new_itinerary_version"):
-            if result.pop(leaked_key, None) is not None:
-                self.logger.warning(
-                    "First-message agent turn produced an archive-table "
-                    "result before any trip existed to archive it against; "
-                    "discarding it — this should be unreachable once the "
-                    "Meridian/Guide gates hold.",
-                    event="be.trip.first_message.unexpected_archive_result",
-                    source="application",
-                    entry_intent=payload.entry_intent,
-                    leaked_key=leaked_key,
-                )
+        if result.pop("new_recommendation", None) is not None:
+            self.logger.warning(
+                "First-message agent turn produced an archive-table "
+                "result before any trip existed to archive it against; "
+                "discarding it — this should be unreachable once the "
+                "Meridian/Guide gates hold.",
+                event="be.trip.first_message.unexpected_archive_result",
+                source="application",
+                entry_intent=payload.entry_intent,
+                leaked_key="new_recommendation",
+            )
         trip = await self.repository.create_trip(
             owner.guest_session_id, owner.user_id, payload.title, payload.product_mode, state, {}
         )
@@ -234,22 +220,14 @@ class TripCommandService:
             )
         if payload.command == "start_itinerary":
             return await apply_atlas(self.engine, self.logger, state)
-        if payload.command == "confirm_logistics":
-            return await apply_confirm_logistics(
-                self.engine, self.logger, state, payload.logistics_confirmation
-            )
-        if payload.command == "accept_itinerary_revision":
-            return apply_accept_itinerary_revision(self.logger, state)
-        if payload.command == "keep_current_itinerary":
-            return apply_keep_current_itinerary(self.logger, state)
-        if payload.command == "update_booking_dates":
-            return apply_update_booking_dates(
-                self.logger, state, payload.booking_date_update
-            )
-        if payload.command == "update_traveler_composition":
-            return apply_update_traveler_composition(
-                self.logger, state, payload.traveler_composition_update
-            )
+        if payload.command == "set_trip_start":
+            return apply_set_trip_start(self.logger, state, payload.trip_start_update)
+        if payload.command == "set_party":
+            return apply_set_party(self.logger, state, payload.party_update)
+        if payload.command == "set_search_pref":
+            return apply_set_search_pref(self.logger, state, payload.search_pref_update)
+        if payload.command == "clear_search_pref":
+            return apply_clear_search_pref(self.logger, state, payload.search_pref_clear)
         if payload.command == "continue":
             if state.get("stage") == "planning" or state.get("active_agent") == "guide":
                 if guide_has_started(state):
