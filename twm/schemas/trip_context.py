@@ -7,8 +7,10 @@ semantic key, so `extra="allow"` preserves Scout's free-form extraction.
 Values stay untyped and verbatim for every fixed key, including
 ``num_travelers`` — same "loose conversational fact" role as ``travel_dates``,
 used only for early planning/affordability judgment, never trusted for an
-exact booking-time count. See ``TRAVELER_COMPOSITION_KEY`` below for the
-structured, Backend-owned counterpart booking surfaces actually read.
+exact booking-time count. The structured, Backend-owned booking-precision
+counterparts (calendar anchor, adult/child/infant party) live in the
+``booking_setup`` state branch, never in trip_context — nothing an agent
+extracts belongs there.
 
 `destinations` is a second, separately-named field — not one of the five
 `FIXED_KEYS` — because it isn't genuinely 3-way shared the same way: only
@@ -46,35 +48,22 @@ FIXED_KEYS = (
 
 DESTINATIONS_KEY = "destinations"
 
-# BOOKING_DATE_KEY (TWM-201): the canonical post-freeze booking-date
-# precision context — Backend-owned, written only by the update_booking_dates
-# trip command, never by Scout/Meridian/Guide extraction. Separate from
-# travel_dates (a Scout-extracted, untyped, free-form fact used for planning
-# context) because this field is structured (exact date XOR month) and
-# exists specifically so booking legs can carry departure_date/
-# departure_month at the precision the traveler actually confirmed.
-BOOKING_DATE_KEY = "booking_dates"
-
-# TRAVELER_COMPOSITION_KEY (TWM-213): the canonical structured traveler
-# composition — Backend-owned, written only by the
-# update_traveler_composition trip command, never by Scout/Meridian/Guide
-# extraction. Separate from num_travelers (a Scout-extracted, untyped,
-# free-form fact used for early planning/affordability judgment) for the
-# same reason booking_dates is separate from travel_dates: flight fare
-# rules and other booking surfaces need an exact adult/child/infant
-# breakdown, and LLM chat extraction is not trusted to reliably produce
-# that exact a structured value.
-TRAVELER_COMPOSITION_KEY = "traveler_composition"
-
 # Every addressable (non-extra) TripContext field — used only to decide
 # which fields must not round-trip as an explicit null when unset (see the
 # serializer below). Not the same thing as "shared across every phase";
 # see DESTINATIONS_KEY's own docstring note above for why it's separate
 # from FIXED_KEYS.
-_ADDRESSABLE_KEYS = (*FIXED_KEYS, DESTINATIONS_KEY, BOOKING_DATE_KEY, TRAVELER_COMPOSITION_KEY)
+_ADDRESSABLE_KEYS = (*FIXED_KEYS, DESTINATIONS_KEY)
 
 
 class TravelerComposition(BaseModel):
+    """Structured adult/child/infant party. Lives on the ``booking_setup``
+    state branch (written by the ``set_party`` command), never in
+    trip_context — the free-form ``num_travelers`` fact is the only traveler
+    count an agent ever touches. Kept in this module as a shared value type
+    so schema imports have one stable home.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     adults: int = Field(ge=1, le=9)
@@ -103,8 +92,6 @@ class TripContext(BaseModel):
     travel_dates: Optional[Any] = None
     budget: Optional[Any] = None
     destinations: Optional[list[str]] = None
-    booking_dates: Optional[dict[str, Any]] = None
-    traveler_composition: Optional[TravelerComposition] = None
 
     @model_serializer(mode="wrap")
     def _omit_unset_fixed_keys(self, handler: Any) -> dict[str, Any]:

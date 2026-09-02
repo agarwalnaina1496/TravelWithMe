@@ -1,5 +1,19 @@
 # Atlas prompt changelog
 
+## Atlas 1.13.0 — 2026-09-02
+
+- Removes the `confirmed_anchors` instruction block: the confirmed-logistics
+  anchor capability and its itinerary revision-review flow are gone (TWM-216),
+  so Atlas only ever runs once, on the initial `start_itinerary`, and never
+  receives anchors.
+- Drops the `trip_context.traveler_composition` reading for
+  `trip_summary.num_travelers`; that structured value now lives on the
+  `booking_setup` state branch, which Atlas is not given. Atlas reads only the
+  free-form `trip_context.num_travelers` fact, as before, and records a
+  `traveler_count` assumption when it is approximate.
+- Replaces the stray "working plan's confirmed anchors" phrasing in the
+  `from_city`/`to_city` rule with "working plan's approved places".
+
 ## Atlas 1.10.0 — 2026-08-27
 
 - Moves day-specific seasonal, permit, ticket, closure, safety, packing,

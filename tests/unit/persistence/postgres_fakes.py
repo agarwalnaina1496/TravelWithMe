@@ -72,10 +72,9 @@ class FakeDatabase:
     def __init__(self, schema: str):
         self.schema = schema
         self.trips: dict[UUID, dict] = {}
-        self.branch_tables = {"matcher_state": {}, "planner_state": {}, "logistics_state": {}}
+        self.branch_tables = {"matcher_state": {}, "planner_state": {}, "booking_setup": {}}
         self.itinerary_state: dict[UUID, dict] = {}
         self.itinerary_versions: dict[tuple[UUID, int], dict] = {}
-        self.itinerary_proposed_revisions: dict[UUID, dict] = {}
         self.trip_commands: dict[tuple, dict] = {}
         self.matcher_recommendations: dict[tuple[UUID, int], dict] = {}
         self.written_tables: set[str] = set()
@@ -188,7 +187,7 @@ class FakeDatabase:
             (owner_value,) = args
             return [dict(t) for t in self.trips.values() if _owned_by(t, owner_value)]
 
-        # --- blob branch tables (matcher_state/planner_state/logistics_state) ---
+        # --- blob branch tables (matcher_state/planner_state/booking_setup) ---
         for branch in self.branch_tables:
             if q.startswith(f"INSERT INTO {self.q(branch)} (trip_id, state)"):
                 trip_id, state = args
@@ -249,26 +248,6 @@ class FakeDatabase:
             if not pointer or pointer["current_version"] is None:
                 return None
             row = self.itinerary_versions.get((trip_id, pointer["current_version"]))
-            return dict(row) if row else None
-
-        # --- itinerary_proposed_revisions ---
-        if q.startswith(f"INSERT INTO {self.q('itinerary_proposed_revisions')}"):
-            trip_id, base_version, result, affected_days, changes, triggered_by = args
-            self.itinerary_proposed_revisions[trip_id] = {
-                "base_version": base_version, "result": result,
-                "affected_days": affected_days, "changes": changes, "triggered_by": triggered_by,
-            }
-            self.written_tables.add("itinerary_proposed_revisions")
-            return None
-        if q.startswith(f"DELETE FROM {self.q('itinerary_proposed_revisions')}"):
-            (trip_id,) = args
-            existed = self.itinerary_proposed_revisions.pop(trip_id, None)
-            if existed is not None:
-                self.written_tables.add("itinerary_proposed_revisions")
-            return None
-        if q.startswith(f"SELECT base_version, result, affected_days, changes, triggered_by FROM {self.q('itinerary_proposed_revisions')}"):
-            (trip_id,) = args
-            row = self.itinerary_proposed_revisions.get(trip_id)
             return dict(row) if row else None
 
         # --- matcher_recommendations ---

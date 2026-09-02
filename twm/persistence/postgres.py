@@ -13,8 +13,8 @@ from .contracts import DuplicateEmailError, GuestSession, ItineraryVersionRecord
 # Branches split out of trips.trip_state into dedicated tables (TWM-158).
 # itinerary_state is handled separately below — it is pointer-only
 # (status, current_version) with the full result composed from
-# itinerary_versions / itinerary_proposed_revisions.
-_BLOB_BRANCHES = ("matcher_state", "planner_state", "logistics_state")
+# itinerary_versions.
+_BLOB_BRANCHES = ("matcher_state", "planner_state", "booking_setup")
 _ITINERARY_BRANCH = "itinerary_state"
 
 # trips.trip_state now holds only these non-touchable fields; everything
@@ -405,20 +405,6 @@ class PostgresTripRepository:
                 trip_id, current_version["version"], current_version["source_guide_revision"],
                 json.dumps(current_version["result"]),
             )
-        proposed = itinerary.get("proposed_revision")
-        if proposed is not None:
-            await connection.execute(
-                f"""INSERT INTO {self.schema}.itinerary_proposed_revisions
-                (trip_id,base_version,result,affected_days,changes,triggered_by)
-                VALUES ($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6::jsonb)
-                ON CONFLICT (trip_id) DO UPDATE SET base_version=EXCLUDED.base_version, result=EXCLUDED.result,
-                affected_days=EXCLUDED.affected_days, changes=EXCLUDED.changes, triggered_by=EXCLUDED.triggered_by, updated_at=now()""",
-                trip_id, proposed["base_version"], json.dumps(proposed["result"]),
-                json.dumps(proposed.get("affected_days") or []), json.dumps(proposed.get("changes") or []),
-                json.dumps(proposed["triggered_by"]),
-            )
-        else:
-            await connection.execute(f"DELETE FROM {self.schema}.itinerary_proposed_revisions WHERE trip_id=$1", trip_id)
 
     async def _compose_trip_state(self, connection: asyncpg.Connection, trip_id: UUID, core_state: dict[str, Any]) -> dict[str, Any]:
         state = dict(core_state)
@@ -435,7 +421,7 @@ class PostgresTripRepository:
         pointer = await connection.fetchrow(f"SELECT status, current_version FROM {self.schema}.itinerary_state WHERE trip_id=$1", trip_id)
         if pointer is None:
             return None
-        itinerary: dict[str, Any] = {"status": pointer["status"], "current_version": None, "proposed_revision": None}
+        itinerary: dict[str, Any] = {"status": pointer["status"], "current_version": None}
         if pointer["current_version"] is not None:
             version_row = await connection.fetchrow(
                 f"""SELECT version, source_guide_revision, result FROM {self.schema}.itinerary_versions
@@ -448,18 +434,4 @@ class PostgresTripRepository:
                     "source_guide_revision": version_row["source_guide_revision"],
                     "result": _json_object(version_row["result"]),
                 }
-        proposed_row = await connection.fetchrow(
-            f"""SELECT base_version, result, affected_days, changes, triggered_by
-            FROM {self.schema}.itinerary_proposed_revisions WHERE trip_id=$1""",
-            trip_id,
-        )
-        if proposed_row:
-            itinerary["proposed_revision"] = {
-                "version": proposed_row["base_version"] + 1,
-                "base_version": proposed_row["base_version"],
-                "result": _json_object(proposed_row["result"]),
-                "affected_days": _json_value(proposed_row["affected_days"]),
-                "changes": _json_value(proposed_row["changes"]),
-                "triggered_by": _json_object(proposed_row["triggered_by"]),
-            }
         return itinerary

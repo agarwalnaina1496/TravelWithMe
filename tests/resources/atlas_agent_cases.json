@@ -5,11 +5,7 @@
     "input": {
       "trip_context": {
         "origin_city": "Delhi",
-        "traveler_composition": {
-          "adults": 3,
-          "children": 0,
-          "infants": 0
-        },
+        "num_travelers": "3 friends",
         "budget": "INR 50000",
         "exclusions": [
           "river rafting"

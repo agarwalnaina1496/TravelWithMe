@@ -287,12 +287,6 @@ class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
     async def atlas(self, trip_state, message):
         self.calls.append(("atlas", trip_state, message))
         working_plan = trip_state["working_plan"]
-        confirmed_anchors = trip_state.get("confirmed_anchors") or []
-        anchor_by_day = {
-            anchor["day_number"]: anchor
-            for anchor in confirmed_anchors
-            if anchor.get("day_number")
-        }
         return AgentExecution(
             response={
                 "final_itinerary": {
@@ -306,11 +300,7 @@ class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
                     "days": [
                         {
                             "day_number": day["day_number"],
-                            "title": (
-                                f"{anchor_by_day[day['day_number']]['label']} (confirmed)"
-                                if day["day_number"] in anchor_by_day
-                                else f"Day {day['day_number']}"
-                            ),
+                            "title": f"Day {day['day_number']}",
                             "primary_location": working_plan["destinations"][0],
                             "summary": "Summary.",
                             "timeline": [
@@ -1383,7 +1373,7 @@ def test_start_itinerary_invokes_atlas_from_frozen_plan(api_client: TestClient):
     saved = response.json()["trip"]["trip_state"]
     itinerary = saved["itinerary_state"]
     assert itinerary["status"] == "ready"
-    assert itinerary["proposed_revision"] is None
+    assert "proposed_revision" not in itinerary
     assert "history" not in itinerary  # archived history lives in itinerary_versions now (TWM-155)
     current = itinerary["current_version"]
     assert current["version"] == 1
@@ -1453,9 +1443,9 @@ def test_start_itinerary_rejects_browser_supplied_plan_fields(api_client: TestCl
 
 def _seed_ready_itinerary(api_client, repository, engine, *, guide_revision=5, trip_duration=1):
     """Seeds a frozen plan, then drives the real start_itinerary command so the
-    resulting itinerary_state.current_version has the exact same normalized
-    shape confirm_logistics will later diff against (all Pydantic default
-    fields present) — avoids a hand-written fixture drifting from the schema.
+    resulting itinerary_state.current_version has the fully normalized shape
+    (all Pydantic default fields present) rather than a hand-written fixture
+    that could drift from the schema.
     """
     state = _frozen_plan_trip_state(guide_revision=guide_revision, trip_duration=trip_duration)
     trip = _create_seeded_trip(api_client, repository, trip_state=state)
@@ -1465,202 +1455,6 @@ def _seed_ready_itinerary(api_client, repository, engine, *, guide_revision=5, t
     )
     assert response.status_code == 200
     return response.json()["trip"]
-
-
-def _confirm_logistics_payload(**overrides):
-    payload = {
-        "command": "confirm_logistics", "expected_version": 1, "idempotency_key": str(uuid4()),
-        "logistics_confirmation": {
-            "type": "transport", "label": "Delhi to Rishikesh arrival",
-            "detail": "Confirmed arrival at 2:00 PM via train 12050.",
-            "day_number": 1, "reference": "PNR-12345", "notes": None,
-        },
-    }
-    payload.update(overrides)
-    return payload
-
-
-def test_confirm_logistics_requires_existing_itinerary(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    state = _frozen_plan_trip_state(guide_revision=5)
-    trip = _create_seeded_trip(api_client, repository, trip_state=state)
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands", json=_confirm_logistics_payload(),
-    )
-
-    assert response.status_code == 422
-    assert engine.calls == []
-
-
-def test_confirm_logistics_persists_anchor_and_proposes_revision(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json=_confirm_logistics_payload(expected_version=trip["version"]),
-    )
-
-    assert response.status_code == 200
-    assert len(engine.calls) == 2  # start_itinerary + confirm_logistics
-    call_trip_state = engine.calls[1][1]
-    assert call_trip_state["confirmed_anchors"] == [
-        {"type": "transport", "label": "Delhi to Rishikesh arrival",
-         "detail": "Confirmed arrival at 2:00 PM via train 12050.", "day_number": 1}
-    ]
-    saved = response.json()["trip"]["trip_state"]
-    anchors = saved["logistics_state"]["anchors"]
-    assert len(anchors) == 1
-    assert anchors[0]["type"] == "transport"
-    assert anchors[0]["confirmed_at_version"] == 1
-
-    proposed = saved["itinerary_state"]["proposed_revision"]
-    assert proposed["base_version"] == 1
-    assert proposed["version"] == 2
-    assert proposed["affected_days"] == [1]
-    assert proposed["changes"] == ["Day 1: Delhi to Rishikesh arrival (confirmed)"]
-    assert proposed["triggered_by"]["type"] == "transport"
-    assert saved["itinerary_state"]["current_version"]["version"] == 1
-
-
-# TWM-198/TWM-209: board_item_id is optional and additive on
-# LogisticsConfirmationInput/LogisticsAnchor -- persisted so the UI's
-# bookingReadinessRollup can match a confirmed anchor to the exact
-# TripBoardItem it confirms, but never sent to Atlas (AtlasConfirmedAnchor
-# forbids extra fields -- Atlas has no use for a UI-side matching id).
-def test_confirm_logistics_persists_board_item_id_but_never_sends_it_to_atlas(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json=_confirm_logistics_payload(
-            expected_version=trip["version"],
-            logistics_confirmation={
-                "type": "transport", "label": "Delhi to Rishikesh arrival",
-                "detail": "Confirmed arrival at 2:00 PM via train 12050.",
-                "day_number": 1, "reference": "PNR-12345", "notes": None,
-                "board_item_id": f"{trip['id']}:1:0",
-            },
-        ),
-    )
-
-    assert response.status_code == 200
-    saved = response.json()["trip"]["trip_state"]
-    anchors = saved["logistics_state"]["anchors"]
-    assert anchors[0]["board_item_id"] == f"{trip['id']}:1:0"
-
-    # Atlas's own request shape is untouched -- board_item_id is a UI-side
-    # matching concern, not something Atlas needs for revision reasoning.
-    call_trip_state = engine.calls[1][1]
-    assert call_trip_state["confirmed_anchors"] == [
-        {"type": "transport", "label": "Delhi to Rishikesh arrival",
-         "detail": "Confirmed arrival at 2:00 PM via train 12050.", "day_number": 1}
-    ]
-
-
-def test_confirm_logistics_without_board_item_id_still_works(api_client: TestClient):
-    # Legacy/no-caller-support case -- board_item_id must stay genuinely
-    # optional so every existing confirm_logistics caller keeps working.
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json=_confirm_logistics_payload(expected_version=trip["version"]),
-    )
-
-    assert response.status_code == 200
-    anchors = response.json()["trip"]["trip_state"]["logistics_state"]["anchors"]
-    assert anchors[0]["board_item_id"] is None
-
-
-def test_confirm_logistics_second_call_replaces_pending_proposal(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
-
-    first = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json=_confirm_logistics_payload(expected_version=trip["version"]),
-    )
-    second = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json=_confirm_logistics_payload(
-            expected_version=first.json()["trip"]["version"], idempotency_key=str(uuid4()),
-            logistics_confirmation={
-                "type": "stay", "label": "Riverside stay", "detail": "Confirmed check-in Day 2.",
-                "day_number": 2, "reference": None, "notes": None,
-            },
-        ),
-    )
-
-    assert first.status_code == 200
-    assert second.status_code == 200
-    assert len(engine.calls) == 3  # start_itinerary + 2x confirm_logistics
-    second_call_trip_state = engine.calls[2][1]
-    assert len(second_call_trip_state["confirmed_anchors"]) == 2
-
-    saved = second.json()["trip"]["trip_state"]
-    assert len(saved["logistics_state"]["anchors"]) == 2
-    proposed = saved["itinerary_state"]["proposed_revision"]
-    assert proposed["version"] == 2
-    assert set(proposed["affected_days"]) == {1, 2}
-    assert saved["itinerary_state"]["current_version"]["version"] == 1
-
-
-def test_accept_itinerary_revision_activates_and_archives(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
-
-    confirm = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json=_confirm_logistics_payload(expected_version=trip["version"]),
-    )
-    accept = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={"command": "accept_itinerary_revision",
-              "expected_version": confirm.json()["trip"]["version"],
-              "idempotency_key": str(uuid4())},
-    )
-
-    assert confirm.status_code == 200
-    assert accept.status_code == 200
-    saved = accept.json()["trip"]["trip_state"]
-    itinerary = saved["itinerary_state"]
-    assert itinerary["proposed_revision"] is None
-    assert itinerary["current_version"]["version"] == 2
-    assert "history" not in itinerary  # archived history lives in itinerary_versions now (TWM-155)
-    archived = repository.itinerary_versions[UUID(trip["id"])]
-    assert len(archived) == 1
-    assert archived[0].version == 1
-    fetched = api_client.get(f"/trips/{trip['id']}/itinerary-versions")
-    assert fetched.status_code == 200
-    [version_1] = fetched.json()["versions"]
-    assert version_1["version"] == 1
-    assert version_1["source_guide_revision"] == 5
-    assert version_1["days"] == [
-        {"day_number": 1, "title": "Day 1"},
-        {"day_number": 2, "title": "Day 2"},
-    ]
 
 
 def test_itinerary_versions_empty_before_any_accepted_revision(api_client: TestClient):
@@ -1733,73 +1527,16 @@ def test_get_current_itinerary_is_ownership_guarded():
     app.dependency_overrides.clear()
 
 
-def test_accept_itinerary_revision_requires_pending_proposal(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={"command": "accept_itinerary_revision", "expected_version": trip["version"],
-              "idempotency_key": str(uuid4())},
-    )
-
-    assert response.status_code == 422
+def _command(trip, command, **fields):
+    return {
+        "command": command,
+        "expected_version": trip["version"],
+        "idempotency_key": str(uuid4()),
+        **fields,
+    }
 
 
-def test_keep_current_itinerary_discards_proposal_but_keeps_anchor(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
-
-    confirm = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json=_confirm_logistics_payload(expected_version=trip["version"]),
-    )
-    keep = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={"command": "keep_current_itinerary",
-              "expected_version": confirm.json()["trip"]["version"],
-              "idempotency_key": str(uuid4())},
-    )
-
-    assert confirm.status_code == 200
-    assert keep.status_code == 200
-    saved = keep.json()["trip"]["trip_state"]
-    itinerary = saved["itinerary_state"]
-    assert itinerary["proposed_revision"] is None
-    assert itinerary["current_version"]["version"] == 1
-    assert "history" not in itinerary
-    assert not repository.itinerary_versions.get(UUID(trip["id"]))  # keep discards, never archives
-    # keep_current_itinerary only touches itinerary_state — logistics_state
-    # (the anchor from the earlier confirm_logistics call) is correctly
-    # absent from this trimmed response; confirm it's still persisted.
-    assert "logistics_state" not in saved
-    persisted_anchors = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["logistics_state"]["anchors"]
-    assert len(persisted_anchors) == 1
-
-
-def test_keep_current_itinerary_requires_pending_proposal(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={"command": "keep_current_itinerary", "expected_version": trip["version"],
-              "idempotency_key": str(uuid4())},
-    )
-
-    assert response.status_code == 422
-
-
-def test_update_booking_dates_persists_exact_date(api_client: TestClient):
+def test_set_trip_start_persists_exact_anchor_without_touching_itinerary(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -1809,112 +1546,55 @@ def test_update_booking_dates_persists_exact_date(api_client: TestClient):
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_date": "2026-05-01"},
-        },
+        json=_command(trip, "set_trip_start", trip_start_update={"date": "2026-05-01"}),
     )
 
     assert response.status_code == 200
     assert engine.calls == []
     saved = response.json()["trip"]["trip_state"]
-    assert saved["trip_context"]["booking_dates"] == {
-        "precision": "exact",
-        "departure_date": "2026-05-01",
-    }
+    assert saved["booking_setup"]["start"] == {"precision": "exact", "date": "2026-05-01"}
+    assert "itinerary_state" not in saved
 
 
-def test_update_booking_dates_persists_month(api_client: TestClient):
+def test_set_trip_start_logs_a_structured_update_event(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(
+            enabled=True, environment="test",
+            payload_mode=PayloadMode.METADATA, max_field_size=256,
+        ),
+        sink,
+    )
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
     trip = _seed_ready_itinerary(api_client, repository, engine)
 
-    response = api_client.post(
+    api_client.post(
         f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_month": "2026-05"},
-        },
+        json=_command(trip, "set_trip_start", trip_start_update={"date": "2026-05-01"}),
+    )
+    api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "set_trip_start", "expected_version": trip["version"] + 1,
+              "idempotency_key": str(uuid4()), "trip_start_update": {"month": "2026-06"}},
     )
 
-    assert response.status_code == 200
-    saved = response.json()["trip"]["trip_state"]
-    assert saved["trip_context"]["booking_dates"] == {
-        "precision": "month",
-        "departure_month": "2026-05",
-    }
+    events = [e for e in sink.events if e["event"] == "be.trip.booking_setup.start.updated"]
+    assert len(events) == 2
+    assert events[0]["message"] == "Updated the trip calendar anchor."
+    assert events[0]["fields"]["trip_id"] == trip["id"]
+    assert events[0]["fields"]["previous_precision"] is None
+    assert events[0]["fields"]["new_precision"] == "exact"
+    assert events[0]["fields"]["itinerary_regeneration_skipped"] is True
+    assert events[1]["fields"]["previous_precision"] == "exact"
+    assert events[1]["fields"]["new_precision"] == "month"
+    app.dependency_overrides.clear()
 
 
-def test_update_booking_dates_rejects_both_date_and_month(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {
-                "departure_date": "2026-05-01",
-                "departure_month": "2026-05",
-            },
-        },
-    )
-
-    assert response.status_code == 422
-
-
-def test_update_booking_dates_rejects_neither_date_nor_month(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {},
-        },
-    )
-
-    assert response.status_code == 422
-
-
-def test_update_booking_dates_rejects_invalid_month_shape(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_month": "May 2026"},
-        },
-    )
-
-    assert response.status_code == 422
-
-
-def test_update_booking_dates_survives_trip_reload(api_client: TestClient):
+def test_set_trip_start_persists_month_and_survives_reload(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -1923,122 +1603,14 @@ def test_update_booking_dates_survives_trip_reload(api_client: TestClient):
 
     api_client.post(
         f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_date": "2026-05-01"},
-        },
+        json=_command(trip, "set_trip_start", trip_start_update={"month": "2026-05"}),
     )
 
     reloaded = api_client.get(f"/trips/{trip['id']}").json()
-    assert reloaded["trip_state"]["trip_context"]["booking_dates"] == {
-        "precision": "exact",
-        "departure_date": "2026-05-01",
-    }
+    assert reloaded["trip_state"]["booking_setup"]["start"] == {"precision": "month", "month": "2026-05"}
 
 
-def test_update_booking_dates_does_not_touch_itinerary(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=1)
-    before = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["itinerary_state"]
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_month": "2026-06"},
-        },
-    )
-
-    assert response.status_code == 200
-    assert "itinerary_state" not in response.json()["trip"]["trip_state"]
-    after = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["itinerary_state"]
-    assert after == before
-
-
-def test_update_booking_dates_rejects_unknown_trip(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-
-    response = api_client.post(
-        f"/trips/{uuid4()}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": 1,
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_date": "2026-05-01"},
-        },
-    )
-
-    assert response.status_code == 404
-
-
-def test_update_booking_dates_requires_frozen_plan(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    state = {
-        "stage": "planning", "active_agent": "guide",
-        "trip_context": {"destination": "Rishikesh"},
-        "planner_state": {"guide_session": {"revision": 1, "state": {
-            "phase": "PLACES_DRAFT", "destinations": ["Rishikesh"],
-            "trip_duration": None, "start_date": None, "places": [],
-            "day_plan": [], "preferences": [], "exclusions": [],
-            "applied_changes": [], "pending_clarification": None,
-        }}},
-    }
-    trip = _create_seeded_trip(api_client, repository, trip_state=state)
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": 1,
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_date": "2026-05-01"},
-        },
-    )
-
-    assert response.status_code == 422
-    persisted_context = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["trip_context"]
-    assert "booking_dates" not in persisted_context
-
-
-def test_update_booking_dates_requires_atlas_itinerary(api_client: TestClient):
-    # PR review, TWM-207: frozen_plan alone doesn't guarantee Atlas has run —
-    # a plan can be frozen before start_itinerary is ever called, and no
-    # transport leg exists yet for a date to apply to.
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_date": "2026-05-01"},
-        },
-    )
-
-    assert response.status_code == 422
-    persisted_context = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]["trip_context"]
-    assert "booking_dates" not in persisted_context
-
-
-def test_update_booking_dates_persists_exact_date_with_return_date(api_client: TestClient):
+def test_set_trip_start_rejects_both_date_and_month(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -2047,44 +1619,28 @@ def test_update_booking_dates_persists_exact_date_with_return_date(api_client: T
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_date": "2026-05-01", "return_date": "2026-05-10"},
-        },
-    )
-
-    assert response.status_code == 200
-    saved = response.json()["trip"]["trip_state"]
-    assert saved["trip_context"]["booking_dates"] == {
-        "precision": "exact",
-        "departure_date": "2026-05-01",
-        "return_date": "2026-05-10",
-    }
-
-
-def test_update_booking_dates_rejects_return_date_before_departure_date(api_client: TestClient):
-    repository = MemoryTripRepository()
-    engine = FakeAtlasLifecycleEngine()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    app.dependency_overrides[get_engine] = lambda: engine
-    trip = _create_seeded_trip(api_client, repository, trip_state=_frozen_plan_trip_state())
-
-    response = api_client.post(
-        f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_date": "2026-05-10", "return_date": "2026-05-01"},
-        },
+        json=_command(trip, "set_trip_start", trip_start_update={"date": "2026-05-01", "month": "2026-05"}),
     )
 
     assert response.status_code == 422
 
 
-def test_update_booking_dates_rejects_return_date_with_month_precision(api_client: TestClient):
+def test_set_trip_start_rejects_invalid_month_shape(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(trip, "set_trip_start", trip_start_update={"month": "May 2026"}),
+    )
+
+    assert response.status_code == 422
+
+
+def test_set_trip_start_requires_generated_itinerary(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -2093,12 +1649,105 @@ def test_update_booking_dates_rejects_return_date_with_month_precision(api_clien
 
     response = api_client.post(
         f"/trips/{trip['id']}/commands",
-        json={
-            "command": "update_booking_dates",
-            "expected_version": trip["version"],
-            "idempotency_key": str(uuid4()),
-            "booking_date_update": {"departure_month": "2026-05", "return_date": "2026-05-10"},
-        },
+        json=_command(trip, "set_trip_start", trip_start_update={"date": "2026-05-01"}),
+    )
+
+    assert response.status_code == 422
+    assert "booking_setup" not in api_client.get(f"/trips/{trip['id']}").json()["trip_state"]
+
+
+def test_set_trip_start_rejects_unknown_trip(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+
+    response = api_client.post(
+        f"/trips/{uuid4()}/commands",
+        json={"command": "set_trip_start", "expected_version": 1,
+              "idempotency_key": str(uuid4()), "trip_start_update": {"date": "2026-05-01"}},
+    )
+
+    assert response.status_code == 404
+
+
+def test_set_party_persists_structured_composition(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(trip, "set_party", party_update={"adults": 2, "children": 1, "infants": 0}),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["trip"]["trip_state"]["booking_setup"]["party"] == {
+        "adults": 2, "children": 1, "infants": 0,
+    }
+
+
+def test_set_party_rejects_infants_exceeding_adults(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(trip, "set_party", party_update={"adults": 1, "children": 0, "infants": 2}),
+    )
+
+    assert response.status_code == 422
+
+
+def test_set_and_clear_search_pref_round_trip_for_a_stay_segment(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+    segment_id = f"{trip['id']}:stay:1:1:rishikesh"
+
+    set_response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(
+            trip, "set_search_pref",
+            search_pref_update={"target_type": "stay", "target_id": segment_id, "date": "2026-06-10"},
+        ),
+    )
+    assert set_response.status_code == 200
+    stays = set_response.json()["trip"]["trip_state"]["booking_setup"]["search_prefs"]["stays"]
+    assert stays[segment_id] == {"precision": "exact", "date": "2026-06-10"}
+
+    reload_version = api_client.get(f"/trips/{trip['id']}").json()["version"]
+    clear_response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "clear_search_pref", "expected_version": reload_version,
+              "idempotency_key": str(uuid4()),
+              "search_pref_clear": {"target_type": "stay", "target_id": segment_id}},
+    )
+    assert clear_response.status_code == 200
+    assert clear_response.json()["trip"]["trip_state"]["booking_setup"]["search_prefs"]["stays"] == {}
+
+
+def test_search_pref_update_rejected_for_wrong_command(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(
+            trip, "set_trip_start",
+            trip_start_update={"date": "2026-05-01"},
+            search_pref_update={"target_type": "stay", "target_id": "x", "date": "2026-06-10"},
+        ),
     )
 
     assert response.status_code == 422

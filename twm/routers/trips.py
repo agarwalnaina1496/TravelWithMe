@@ -51,7 +51,7 @@ async def _resolve_owner(request: Request, response: Response, persistence: Trip
 
 
 def _response(record: TripRecord) -> TripResponse:
-    """GET /trips/{id} (TWM-159): matcher/planner/logistics stay inline
+    """GET /trips/{id} (TWM-159): matcher/planner/booking_setup stay inline
     (small, one shared resume call every screen relies on) — only the
     Atlas itinerary result is dropped, since only the Trip Dashboard
     screen reads it (via the dedicated /itinerary endpoint instead)."""
@@ -312,6 +312,7 @@ async def get_trip_board(
         version=current.version,
         final_itinerary=current.result["final_itinerary"],
         trip_context=trip.trip_state.get("trip_context") or {},
+        booking_setup=trip.trip_state.get("booking_setup") or {},
     )
     logger.info(
         "Composed Trip Board.",

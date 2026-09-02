@@ -209,7 +209,10 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
         "matcher_state": {"conversation_context": {}},
         "planner_state": {},
         "itinerary_state": {},
-        "logistics_state": {"anchors": []},
+        # booking_setup (TWM-216): deterministic, UI-owned scheduling — the
+        # trip calendar anchor, structured party, and per-entity search-date
+        # preferences. Never written by an agent, never re-plans.
+        "booking_setup": {},
     }
     for name, default in object_branches.items():
         if not isinstance(state.get(name), dict):
@@ -221,7 +224,7 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
 # size; response shaping includes a branch only when a command actually
 # touched it. advisor_state is deliberately excluded from this set — it
 # never appears in a command response at all (see shape_command_trip_state).
-TOUCHABLE_BRANCHES = ("matcher_state", "planner_state", "itinerary_state", "logistics_state")
+TOUCHABLE_BRANCHES = ("matcher_state", "planner_state", "itinerary_state", "booking_setup")
 
 # Always-present fields a command response needs regardless of what a
 # command touched — everything resume/CTA logic and the next command's

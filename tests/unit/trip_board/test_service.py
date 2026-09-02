@@ -61,6 +61,19 @@ def _travel_item(from_city, to_city, *, departure_date=None, departure_month=Non
     }
 
 
+def _start(*, date=None, month=None):
+    """A booking_setup dict carrying just the calendar anchor."""
+    if date is not None:
+        return {"start": {"precision": "exact", "date": date}}
+    return {"start": {"precision": "month", "month": month}}
+
+
+def _pref(target_type, target_id, *, date=None, month=None):
+    """A booking_setup dict carrying one per-entity search-date preference."""
+    entry = {"precision": "exact", "date": date} if date is not None else {"precision": "month", "month": month}
+    return {"search_prefs": {f"{target_type}s": {target_id: entry}}}
+
+
 def _day(day_number, timeline):
     return {
         "day_number": day_number,
@@ -169,30 +182,16 @@ def test_item_own_date_takes_precedence_and_is_passed_through_exactly():
 
     board = service.build(
         TRIP_ID, 1, final_itinerary,
-        {"origin_city": "Delhi", "booking_dates": {"precision": "exact", "departure_date": "2026-09-01"}},
+        {"origin_city": "Delhi"}, _start(date="2026-09-01"),
     )
 
     leg = board.days[0].items[0]
     assert leg.date_precision == "exact"
     assert leg.departure_date == "2026-05-01"
+    assert leg.date_source == "itinerary"
 
 
-def test_outbound_gateway_gets_departure_date_from_booking_dates():
-    trusted_action = FakeTrustedActionService()
-    service = TripBoardService(trusted_action)
-    final_itinerary = {"days": [_day(1, [_travel_item("Delhi", "Chennai")])]}
-
-    board = service.build(
-        TRIP_ID, 1, final_itinerary,
-        {"origin_city": "Delhi", "booking_dates": {"precision": "exact", "departure_date": "2026-05-01", "return_date": "2026-05-10"}},
-    )
-
-    leg = board.days[0].items[0]
-    assert leg.date_precision == "exact"
-    assert leg.departure_date == "2026-05-01"
-
-
-def test_inbound_gateway_gets_its_own_date_from_booking_dates_return_date():
+def test_every_leg_gets_its_own_day_date_from_the_calendar_anchor():
     trusted_action = FakeTrustedActionService()
     service = TripBoardService(trusted_action)
     final_itinerary = {
@@ -203,44 +202,39 @@ def test_inbound_gateway_gets_its_own_date_from_booking_dates_return_date():
     }
 
     board = service.build(
-        TRIP_ID, 1, final_itinerary,
-        {"origin_city": "Delhi", "booking_dates": {"precision": "exact", "departure_date": "2026-05-01", "return_date": "2026-05-10"}},
-    )
-
-    inbound_leg = board.days[1].items[0]
-    assert inbound_leg.is_gateway_leg is True
-    assert inbound_leg.date_precision == "exact"
-    assert inbound_leg.departure_date == "2026-05-10"
-
-
-def test_inbound_leg_falls_back_to_flexible_when_return_date_not_yet_confirmed():
-    # PR review, TWM-202: "exact" precision only guarantees departure_date
-    # is confirmed -- return_date is documented optional even then. The
-    # inbound leg must never report date_precision="exact" with a null
-    # departure_date underneath; that's worse than reporting "flexible".
-    trusted_action = FakeTrustedActionService()
-    service = TripBoardService(trusted_action)
-    final_itinerary = {
-        "days": [
-            _day(1, [_travel_item("Delhi", "Chennai")]),
-            _day(2, [_travel_item("Chennai", "Delhi")]),
-        ],
-    }
-
-    board = service.build(
-        TRIP_ID, 1, final_itinerary,
-        {"origin_city": "Delhi", "booking_dates": {"precision": "exact", "departure_date": "2026-05-01"}},
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"}, _start(date="2026-05-01"),
     )
 
     outbound_leg = board.days[0].items[0]
     inbound_leg = board.days[1].items[0]
     assert outbound_leg.date_precision == "exact"
     assert outbound_leg.departure_date == "2026-05-01"
-    assert inbound_leg.date_precision == "flexible"
-    assert inbound_leg.departure_date is None
+    assert outbound_leg.date_source == "anchor"
+    assert inbound_leg.is_gateway_leg is True
+    assert inbound_leg.date_precision == "exact"
+    assert inbound_leg.departure_date == "2026-05-02"
+    assert inbound_leg.date_source == "anchor"
 
 
-def test_month_precision_applies_to_any_dateless_leg_gateway_or_internal():
+def test_legs_are_flexible_when_no_calendar_anchor_is_set():
+    trusted_action = FakeTrustedActionService()
+    service = TripBoardService(trusted_action)
+    final_itinerary = {
+        "days": [
+            _day(1, [_travel_item("Delhi", "Chennai")]),
+            _day(2, [_travel_item("Chennai", "Delhi")]),
+        ],
+    }
+
+    board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
+
+    for leg in (board.days[0].items[0], board.days[1].items[0]):
+        assert leg.date_precision == "flexible"
+        assert leg.departure_date is None
+        assert leg.date_source == "none"
+
+
+def test_month_anchor_applies_to_any_dateless_leg_gateway_or_internal():
     trusted_action = FakeTrustedActionService()
     service = TripBoardService(trusted_action)
     final_itinerary = {
@@ -251,16 +245,37 @@ def test_month_precision_applies_to_any_dateless_leg_gateway_or_internal():
     }
 
     board = service.build(
-        TRIP_ID, 1, final_itinerary,
-        {"origin_city": "Delhi", "booking_dates": {"precision": "month", "departure_month": "2026-05"}},
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"}, _start(month="2026-05"),
     )
 
     internal_leg = board.days[0].items[0]
     gateway_leg = board.days[1].items[0]
     assert internal_leg.date_precision == "month"
     assert internal_leg.departure_month == "2026-05"
+    assert internal_leg.date_source == "anchor"
     assert gateway_leg.date_precision == "month"
     assert gateway_leg.departure_month == "2026-05"
+
+
+def test_transport_search_pref_overrides_the_anchor_for_that_leg_only():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {
+        "days": [
+            _day(1, [_travel_item("Delhi", "Agra")]),
+            _day(2, [_travel_item("Agra", "Delhi")]),
+        ],
+    }
+    override_leg_id = f"{TRIP_ID}:2:0"
+
+    board = service.build(
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"},
+        {**_start(date="2026-05-01"), **_pref("transport", override_leg_id, date="2026-05-09")},
+    )
+
+    assert board.days[0].items[0].departure_date == "2026-05-01"
+    assert board.days[0].items[0].date_source == "anchor"
+    assert board.days[1].items[0].departure_date == "2026-05-09"
+    assert board.days[1].items[0].date_source == "override"
 
 
 def test_no_date_information_at_all_is_flexible_not_fabricated():
@@ -299,16 +314,7 @@ def test_exact_trip_start_computes_one_calendar_date_per_day(caplog):
 
     caplog.set_level(logging.INFO)
     board = service.build(
-        TRIP_ID,
-        1,
-        final_itinerary,
-        {
-            "origin_city": "Delhi",
-            "booking_dates": {
-                "precision": "exact",
-                "departure_date": "2026-05-30",
-            },
-        },
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"}, _start(date="2026-05-30"),
     )
 
     assert [day.date for day in board.days] == [
@@ -338,17 +344,7 @@ def test_stay_segments_group_consecutive_same_location_stays_with_exact_dates():
     }
 
     board = service.build(
-        TRIP_ID,
-        1,
-        final_itinerary,
-        {
-            "origin_city": "Delhi",
-            "booking_dates": {
-                "precision": "exact",
-                "departure_date": "2026-05-01",
-                "return_date": "2026-05-05",
-            },
-        },
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"}, _start(date="2026-05-01"),
     )
 
     assert [(segment.location, segment.nights) for segment in board.stay_segments] == [
@@ -357,10 +353,33 @@ def test_stay_segments_group_consecutive_same_location_stays_with_exact_dates():
     ]
     assert board.stay_segments[0].checkin_date == "2026-05-01"
     assert board.stay_segments[0].checkout_date == "2026-05-03"
+    assert board.stay_segments[0].date_source == "anchor"
     assert board.stay_segments[1].checkin_date == "2026-05-03"
     assert board.stay_segments[1].checkout_date == "2026-05-05"
     assert board.days[0].items[1].id in board.stay_segments[0].board_item_ids
     assert board.days[2].items[1].id in board.stay_segments[1].board_item_ids
+
+
+def test_stay_search_pref_sets_checkin_and_derives_checkout_from_nights():
+    service = TripBoardService(FakeTrustedActionService())
+    final_itinerary = {
+        "days": [
+            _day(1, [_stay_item("Agra")]),
+            _day(2, [_stay_item("Agra")]),
+        ]
+    }
+    segment_id = f"{TRIP_ID}:stay:1:2:agra"
+
+    board = service.build(
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"},
+        {**_start(date="2026-05-01"), **_pref("stay", segment_id, date="2026-06-10")},
+    )
+
+    segment = board.stay_segments[0]
+    assert segment.checkin_date == "2026-06-10"
+    assert segment.checkout_date == "2026-06-12"
+    assert segment.date_precision == "exact"
+    assert segment.date_source == "override"
 
 
 def test_stay_segments_do_not_fabricate_exact_dates_without_exact_trip_start():
@@ -368,10 +387,7 @@ def test_stay_segments_do_not_fabricate_exact_dates_without_exact_trip_start():
     final_itinerary = {"days": [_day(1, [_stay_item("Jaipur")]), _day(2, [_stay_item("Jaipur")])]}
 
     month_board = service.build(
-        TRIP_ID,
-        1,
-        final_itinerary,
-        {"origin_city": "Delhi", "booking_dates": {"precision": "month", "departure_month": "2026-05"}},
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"}, _start(month="2026-05"),
     )
     flexible_board = service.build(TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"})
 
@@ -379,9 +395,11 @@ def test_stay_segments_do_not_fabricate_exact_dates_without_exact_trip_start():
     assert month_board.stay_segments[0].departure_month == "2026-05"
     assert month_board.stay_segments[0].checkin_date is None
     assert month_board.stay_segments[0].checkout_date is None
+    assert month_board.stay_segments[0].date_source == "anchor"
     assert flexible_board.stay_segments[0].date_precision == "flexible"
     assert flexible_board.stay_segments[0].checkin_date is None
     assert flexible_board.stay_segments[0].checkout_date is None
+    assert flexible_board.stay_segments[0].date_source == "none"
 
 
 def test_stay_segments_skip_stays_without_known_location():
@@ -396,10 +414,7 @@ def test_stay_segments_skip_stays_without_known_location():
     }
 
     board = service.build(
-        TRIP_ID,
-        1,
-        final_itinerary,
-        {"origin_city": "Delhi", "booking_dates": {"precision": "exact", "departure_date": "2026-05-01"}},
+        TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"}, _start(date="2026-05-01"),
     )
 
     assert [(segment.location, segment.start_day_number, segment.end_day_number) for segment in board.stay_segments] == [
@@ -413,15 +428,9 @@ def test_non_exact_booking_precision_does_not_compute_day_dates():
     service = TripBoardService(FakeTrustedActionService())
     final_itinerary = {"days": [_day(1, [_stay_item()]), _day(2, [_activity_item()])]}
 
-    for booking_dates in (
-        {"precision": "month", "departure_month": "2026-05"},
-        None,
-    ):
+    for booking_setup in (_start(month="2026-05"), None):
         board = service.build(
-            TRIP_ID,
-            1,
-            final_itinerary,
-            {"origin_city": "Delhi", "booking_dates": booking_dates},
+            TRIP_ID, 1, final_itinerary, {"origin_city": "Delhi"}, booking_setup,
         )
 
         assert [day.date for day in board.days] == [None, None]
@@ -448,6 +457,7 @@ def test_response_shape_is_limited_to_current_frontend_allowlist():
         "date_precision",
         "departure_date",
         "departure_month",
+        "date_source",
     }
     assert set(board.model_dump().keys()) == {"version", "days", "stay_segments"}
 

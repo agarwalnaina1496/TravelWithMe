@@ -20,9 +20,8 @@ Three closed action types (TravelActionType):
 - PROVIDER: an approved, resolved-price *external* provider handoff, for a
   domain/mode where TWM does not itself own the live pricing capability.
   This contract never lets a PROVIDER action carry the price itself — the
-  price lives with the provider being linked to (or, once resolved,
-  ``LogisticsAnchor`` for a confirmed booking, twm/schemas/logistics.py);
-  this action only carries a safe link to *reach* that provider.
+  price lives with the provider being linked to; this action only carries a
+  safe link to *reach* that provider.
   domain=flight is not valid for PROVIDER, since flight's resolved-price
   path is CHECK_PRICES/Aviasales, not a generic external partner.
 - SEARCH_REDIRECT: a prefilled search on a partner site. For train/bus/stay,
@@ -66,11 +65,10 @@ Security posture (structural, not documentation):
   when there is no partner (CHECK_PRICES), and direct provider-native stay
   links must not imply affiliate tracking unless tracking is truly present.
 - No model in this file has a price, rating, availability, or
-  booking-confirmed field, for any action type. That is
-  ``NormalizedFlightOffer``'s territory (a live offer) or
-  ``LogisticsAnchor``'s territory (a confirmed booking) — never this
-  contract's. This contract is only about reaching a provider safely,
-  never about what is found there.
+  booking-confirmed field, for any action type. A price is
+  ``NormalizedFlightOffer``'s territory (a live offer); TWM never holds a
+  confirmed booking at all. This contract is only about reaching a provider
+  safely, never about what is found there.
 - Evidence and actions are structurally distinct types. ``AtlasReference``
   (twm/schemas/atlas.py) is TWM's evidence/citation shape; nothing in this
   module shares a base class or field shape with it, so a caller cannot

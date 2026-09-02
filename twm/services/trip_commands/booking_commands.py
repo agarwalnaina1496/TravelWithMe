@@ -1,71 +1,135 @@
-"""Post-freeze booking-date context update (TWM-201)."""
+"""``booking_setup`` command handlers (TWM-216).
+
+Four deterministic, Backend-owned writes to the ``booking_setup`` state
+branch — the calendar anchor, the structured party, and per-entity search
+dates. None regenerates or re-plans the itinerary; all require a frozen
+plan with an itinerary already generated (the surfaces that call them only
+exist post-generation).
+"""
 
 from typing import Any
 
-from ...schemas.trip_context import BOOKING_DATE_KEY
-from ...schemas.trips import TripBookingDateInput
+from ...schemas.booking_setup import (
+    ScheduleDateInput,
+    SearchPrefClearInput,
+    SearchPrefInput,
+    TravelerComposition,
+)
 from ...telemetry import TelemetryLogger
 from .errors import InvalidTripCommandError
 
 
-def apply_update_booking_dates(
-    logger: TelemetryLogger,
-    state: dict[str, Any],
-    update: TripBookingDateInput,
-) -> dict[str, Any]:
-    trip_id = str(state.get("trip_id")) if state.get("trip_id") else None
-    # PR review, TWM-201: _POST_FREEZE_COMMANDS only permits this command
-    # once frozen — it never requires freeze. Dashboard Bookings (the only
-    # caller) only exists post-freeze, so a positive guard here rejects any
-    # earlier call instead of silently persisting booking_dates before
-    # booking legs exist.
-    if not state["planner_state"].get("frozen_plan"):
-        raise InvalidTripCommandError(
-            "Booking-date context can only be updated once the plan is frozen."
-        )
-    # PR review, TWM-207: frozen_plan alone doesn't guarantee Atlas has run —
-    # confirm_logistics guards on itinerary_state.current_version (TWM-155)
-    # for the same reason. Without it, an early call just stores a date
-    # before any transport leg exists to apply it to; low severity (harmless,
-    # self-correcting once Atlas completes) but this closes the gap for
-    # defense-in-depth.
+def _require_generated_itinerary(state: dict[str, Any]) -> None:
+    """booking_setup facts only mean something once Atlas has produced an
+    itinerary to hang dates and searches off. current_version existing also
+    implies the plan was frozen (Atlas only ever runs against a frozen
+    plan), so this one check covers both preconditions.
+    """
     if not state.get("itinerary_state", {}).get("current_version"):
         raise InvalidTripCommandError(
-            "Booking-date context can only be updated once Atlas has produced an itinerary."
+            "booking_setup can only be updated once Atlas has produced an itinerary."
         )
-    trip_context = state["trip_context"]
-    previous = trip_context.get(BOOKING_DATE_KEY)
-    previous_precision = previous.get("precision") if isinstance(previous, dict) else None
 
-    if update.departure_date is not None:
-        new_precision = "exact"
-        trip_context[BOOKING_DATE_KEY] = {
-            "precision": new_precision,
-            "departure_date": update.departure_date.isoformat(),
-            **(
-                {"return_date": update.return_date.isoformat()}
-                if update.return_date is not None
-                else {}
-            ),
-        }
-    else:
-        new_precision = "month"
-        trip_context[BOOKING_DATE_KEY] = {
-            "precision": new_precision,
-            "departure_month": update.departure_month,
-        }
 
-    # Booking-search precision only (TWM-201 MVP boundary) — this command
-    # never touches planner_state/itinerary_state, so the approved plan is
-    # never regenerated or re-planned by a date-only update.
+def _booking_setup(state: dict[str, Any]) -> dict[str, Any]:
+    branch = state.setdefault("booking_setup", {})
+    if not isinstance(branch, dict):
+        branch = {}
+        state["booking_setup"] = branch
+    return branch
+
+
+def apply_set_trip_start(
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    update: ScheduleDateInput,
+) -> dict[str, Any]:
+    _require_generated_itinerary(state)
+    branch = _booking_setup(state)
+    previous = branch.get("start")
+    branch["start"] = update.as_stored()
+
     logger.info(
-        "Updated booking-date context for a frozen trip.",
-        event="be.trip.booking_dates.updated",
+        "Updated the trip calendar anchor.",
+        event="be.trip.booking_setup.start.updated",
         source="application",
-        trip_id=trip_id,
-        previous_precision=previous_precision,
-        new_precision=new_precision,
-        source_surface="dashboard_bookings",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        previous_precision=previous.get("precision") if isinstance(previous, dict) else None,
+        new_precision=branch["start"]["precision"],
+        itinerary_regeneration_skipped=True,
+    )
+    return {"message": None, "agent_meta": None}
+
+
+def apply_set_party(
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    update: TravelerComposition,
+) -> dict[str, Any]:
+    _require_generated_itinerary(state)
+    branch = _booking_setup(state)
+    previous = branch.get("party")
+    branch["party"] = update.model_dump(mode="json")
+
+    logger.info(
+        "Updated the structured traveler party.",
+        event="be.trip.booking_setup.party.updated",
+        source="application",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        previous_total=(
+            previous.get("adults", 0) + previous.get("children", 0) + previous.get("infants", 0)
+            if isinstance(previous, dict)
+            else None
+        ),
+        new_total=update.total,
+    )
+    return {"message": None, "agent_meta": None}
+
+
+def apply_set_search_pref(
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    update: SearchPrefInput,
+) -> dict[str, Any]:
+    _require_generated_itinerary(state)
+    branch = _booking_setup(state)
+    prefs = branch.setdefault("search_prefs", {})
+    bucket = prefs.setdefault(f"{update.target_type}s", {})
+    previous = bucket.get(update.target_id)
+    bucket[update.target_id] = update.as_stored()
+
+    logger.info(
+        "Updated a booking-search date preference.",
+        event="be.trip.booking_setup.search_pref.updated",
+        source="application",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        target_type=update.target_type,
+        target_id=update.target_id,
+        previous_precision=previous.get("precision") if isinstance(previous, dict) else None,
+        new_precision=bucket[update.target_id]["precision"],
+        itinerary_regeneration_skipped=True,
+    )
+    return {"message": None, "agent_meta": None}
+
+
+def apply_clear_search_pref(
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    update: SearchPrefClearInput,
+) -> dict[str, Any]:
+    _require_generated_itinerary(state)
+    branch = _booking_setup(state)
+    bucket = branch.get("search_prefs", {}).get(f"{update.target_type}s", {})
+    removed = bucket.pop(update.target_id, None)
+
+    logger.info(
+        "Cleared a booking-search date preference.",
+        event="be.trip.booking_setup.search_pref.cleared",
+        source="application",
+        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+        target_type=update.target_type,
+        target_id=update.target_id,
+        was_set=removed is not None,
         itinerary_regeneration_skipped=True,
     )
     return {"message": None, "agent_meta": None}
