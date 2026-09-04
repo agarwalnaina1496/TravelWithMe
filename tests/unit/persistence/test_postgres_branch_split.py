@@ -139,14 +139,14 @@ def test_get_trip_composes_blob_branches_from_dedicated_tables():
     guest_id = uuid4()
     trip_id = _seed_trip(db, guest_id, core_state={"status": "free", "stage": "planning", "trip_context": {"destinations": ["Goa"]}})
     db.branch_tables["planner_state"][trip_id] = {"state": __import__("json").dumps({"places": ["Baga Beach"]})}
-    db.branch_tables["booking_setup"][trip_id] = {"state": __import__("json").dumps({"start": {"precision": "month", "month": "2026-05"}})}
+    db.branch_tables["booking_setup"][trip_id] = {"state": __import__("json").dumps({"party": {"adults": 2, "children": 0, "infants": 0}})}
 
     trip = asyncio.run(repository.get_trip(_owner(guest_id), trip_id))
 
     assert trip.trip_state["stage"] == "planning"
     assert trip.trip_state["trip_context"] == {"destinations": ["Goa"]}
     assert trip.trip_state["planner_state"] == {"places": ["Baga Beach"]}
-    assert trip.trip_state["booking_setup"] == {"start": {"precision": "month", "month": "2026-05"}}
+    assert trip.trip_state["booking_setup"] == {"party": {"adults": 2, "children": 0, "infants": 0}}
     assert "matcher_state" not in trip.trip_state
     assert "itinerary_state" not in trip.trip_state
 

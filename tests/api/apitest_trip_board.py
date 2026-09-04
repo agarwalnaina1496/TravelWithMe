@@ -199,30 +199,24 @@ def test_get_trip_board_composes_gateway_legs_with_real_feasibility(api_client: 
     assert inbound["is_gateway_leg"] is True
 
 
-def test_get_trip_board_resolves_every_entity_date_from_the_calendar_anchor(api_client: TestClient):
+def test_get_trip_board_has_no_trip_level_date_and_is_flexible_without_search_prefs(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_dependencies(repository)
-    trip_id = _create_trip(
-        api_client, repository,
-        _ready_trip_state(booking_setup={"start": {"precision": "exact", "date": "2026-05-01"}}),
-    )
+    trip_id = _create_trip(api_client, repository, _ready_trip_state())
 
     response = api_client.get(f"/trips/{trip_id}/board")
 
     assert response.status_code == 200
     board = response.json()
+    # No trip-level calendar anchor: days carry no date, and every bookable
+    # entity stays date-flexible until a per-entity search pref is set.
+    assert "date" not in board["days"][0]
     outbound = board["days"][0]["items"][0]
     inbound = board["days"][1]["items"][1]
-    assert board["days"][0]["date"] == "2026-05-01"
-    assert board["days"][1]["date"] == "2026-05-02"
-    assert board["days"][0]["items"][1]["kind"] == "ACTIVITY"
-    assert board["days"][1]["items"][0]["kind"] == "STAY"
-    assert outbound["date_precision"] == "exact"
-    assert outbound["departure_date"] == "2026-05-01"
-    assert outbound["date_source"] == "anchor"
-    assert inbound["date_precision"] == "exact"
-    assert inbound["departure_date"] == "2026-05-02"
-    assert inbound["date_source"] == "anchor"
+    assert outbound["date_precision"] == "flexible"
+    assert outbound["departure_date"] is None
+    assert outbound["date_source"] == "none"
+    assert inbound["date_source"] == "none"
     assert board["stay_segments"] == [
         {
             "id": f"{trip_id}:stay:2:2:chennai",
@@ -230,14 +224,35 @@ def test_get_trip_board_resolves_every_entity_date_from_the_calendar_anchor(api_
             "start_day_number": 2,
             "end_day_number": 2,
             "nights": 1,
-            "date_precision": "exact",
-            "checkin_date": "2026-05-02",
-            "checkout_date": "2026-05-03",
+            "date_precision": "flexible",
+            "checkin_date": None,
+            "checkout_date": None,
             "departure_month": None,
-            "date_source": "anchor",
+            "date_source": "none",
             "board_item_ids": [board["days"][1]["items"][0]["id"]],
         }
     ]
+
+
+def test_get_trip_board_applies_a_per_entity_search_pref(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_dependencies(repository)
+    trip_id = _create_trip(api_client, repository, _ready_trip_state())
+    segment_id = f"{trip_id}:stay:2:2:chennai"
+    trip_state = _ready_trip_state(
+        booking_setup={
+            "search_prefs": {"stays": {segment_id: {"precision": "exact", "date": "2026-06-10"}}}
+        }
+    )
+    from dataclasses import replace
+    repository.trips[UUID(trip_id)] = replace(repository.trips[UUID(trip_id)], trip_state=trip_state)
+
+    board = api_client.get(f"/trips/{trip_id}/board").json()
+    segment = board["stay_segments"][0]
+    assert segment["checkin_date"] == "2026-06-10"
+    assert segment["checkout_date"] == "2026-06-11"
+    assert segment["date_precision"] == "exact"
+    assert segment["date_source"] == "search_pref"
 
 
 def test_get_trip_board_returns_404_for_unknown_trip(api_client: TestClient):

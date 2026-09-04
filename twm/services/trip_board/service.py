@@ -6,16 +6,14 @@ legs are real itinerary content but never a bookable Trip Board row), and
 resolves one effective date + precision per bookable entity from a single
 uniform precedence:
 
-    booking_setup.search_prefs override
+    booking_setup.search_prefs entry for this exact entity
       -> Atlas's own per-item departure_date/month  (TRAVEL only)
-      -> derived from booking_setup.start + the item's day number
-      -> flexible
+      -> none  (the search stays date-flexible)
 
-booking_setup.start is the trip's calendar anchor: day ``K`` falls on
-``start.date + (K - 1)``, so every timeline item and stay segment gets its
-own real date once an exact start is known — no trip-wide/gateway-only
-special-casing. A search pref whose target id no longer matches a live
-Board entity is simply never applied (it is inert, not an error).
+There is no trip-level calendar anchor: each bookable entity's date is
+independent and a date set on one entity never propagates to another. A
+search pref whose target id no longer matches a live Board entity is
+simply never applied (it is inert, not an error).
 
 Presentation only: this module never parses Atlas prose, never guesses a
 mode, and never invents a date no source gave it.
@@ -72,9 +70,6 @@ class TripBoardService:
     ) -> TripBoardResponse:
         origin_city = trip_context.get("origin_city")
         booking_setup = booking_setup or {}
-        start = booking_setup.get("start") if isinstance(booking_setup, dict) else None
-        trip_start = self._exact_start_date(start)
-        start_month = start.get("month") if isinstance(start, dict) and start.get("precision") == "month" else None
         search_prefs = booking_setup.get("search_prefs") or {}
 
         days = final_itinerary.get("days", [])
@@ -98,46 +93,25 @@ class TripBoardService:
         board_days = []
         for day in days:
             day_number = day["day_number"]
-            calendar_date = (
-                (trip_start + timedelta(days=day_number - 1)).isoformat()
-                if trip_start is not None
-                else None
-            )
-            if calendar_date is not None:
-                logger.info(
-                    "Computed calendar date for trip-board day.",
-                    extra={
-                        "event": "be.trip_board.day_date.computed",
-                        "trip_id": str(trip_id),
-                        "day_number": day_number,
-                        "calendar_date": calendar_date,
-                    },
-                )
             board_items = [
                 self._build_item(
-                    item, index, day_number, calendar_date, start_month,
-                    outbound, inbound, search_prefs, trip_id,
+                    item, index, day_number, outbound, inbound, search_prefs, trip_id,
                 )
                 for index, item in enumerate(day.get("timeline", []))
             ]
             board_days.append(
-                TripBoardDay(
-                    day_number=day_number,
-                    date=calendar_date,
-                    items=board_items,
-                )
+                TripBoardDay(day_number=day_number, items=board_items)
             )
         return TripBoardResponse(
             version=version,
             days=board_days,
-            stay_segments=self._build_stay_segments(trip_id, board_days, start_month, search_prefs),
+            stay_segments=self._build_stay_segments(trip_id, board_days, search_prefs),
         )
 
     @staticmethod
     def _build_stay_segments(
         trip_id: UUID,
         board_days: list[TripBoardDay],
-        start_month: Optional[str],
         search_prefs: dict[str, Any],
     ) -> list[TripBoardStaySegment]:
         segments: list[TripBoardStaySegment] = []
@@ -147,7 +121,7 @@ class TripBoardService:
             nonlocal current
             if current:
                 segments.append(
-                    TripBoardService._finish_stay_segment(trip_id, current, board_days, start_month, search_prefs)
+                    TripBoardService._finish_stay_segment(trip_id, current, search_prefs)
                 )
                 current = None
 
@@ -179,16 +153,11 @@ class TripBoardService:
     def _finish_stay_segment(
         trip_id: UUID,
         segment: dict[str, Any],
-        board_days: list[TripBoardDay],
-        start_month: Optional[str],
         search_prefs: dict[str, Any],
     ) -> TripBoardStaySegment:
-        day_by_number = {day.day_number: day for day in board_days}
         start_day_number = segment["start_day_number"]
         end_day_number = segment["end_day_number"]
         nights = end_day_number - start_day_number + 1
-        anchored_start = day_by_number.get(start_day_number)
-        anchored_date = anchored_start.date if anchored_start else None
 
         slug = TripBoardService._segment_slug(segment["location"])
         segment_id = f"{trip_id}:stay:{start_day_number}:{end_day_number}:{slug}"
@@ -202,21 +171,11 @@ class TripBoardService:
             checkin_date = checkin.isoformat()
             checkout_date = (checkin + timedelta(days=nights)).isoformat()
             date_precision = "exact"
-            date_source = "override"
+            date_source = "search_pref"
         elif override and override.get("precision") == "month" and override.get("month"):
             departure_month = override["month"]
             date_precision = "month"
-            date_source = "override"
-        elif anchored_date:
-            checkin = date.fromisoformat(anchored_date)
-            checkin_date = checkin.isoformat()
-            checkout_date = (checkin + timedelta(days=nights)).isoformat()
-            date_precision = "exact"
-            date_source = "anchor"
-        elif start_month:
-            departure_month = start_month
-            date_precision = "month"
-            date_source = "anchor"
+            date_source = "search_pref"
         else:
             date_precision = "flexible"
             date_source = "none"
@@ -240,26 +199,11 @@ class TripBoardService:
         slug = "".join(char.lower() if char.isalnum() else "-" for char in value.strip())
         return "-".join(part for part in slug.split("-") if part) or "stay"
 
-    @staticmethod
-    def _exact_start_date(start: Optional[dict[str, Any]]) -> Optional[date]:
-        if not isinstance(start, dict) or start.get("precision") != "exact":
-            return None
-        value = start.get("date")
-        if not value:
-            return None
-        try:
-            return date.fromisoformat(value)
-        except (TypeError, ValueError):
-            logger.warning("Could not parse booking_setup.start date.")
-            return None
-
     def _build_item(
         self,
         item: dict[str, Any],
         index: int,
         day_number: int,
-        calendar_date: Optional[str],
-        start_month: Optional[str],
         outbound: Optional[dict[str, Any]],
         inbound: Optional[dict[str, Any]],
         search_prefs: dict[str, Any],
@@ -281,22 +225,16 @@ class TripBoardService:
             # Precedence (module docstring): an explicit per-leg search pref is
             # the most specific signal the traveler can give, so it wins over
             # Atlas's own per-item date. In the UI these never collide — the
-            # per-leg date editor is hidden once date_source is "itinerary" —
+            # per-leg date editor is hidden once date_source is "trip_dates" —
             # so this only orders a direct API caller.
             if override and override.get("precision") == "exact" and override.get("date"):
-                departure_date, date_precision, date_source = override["date"], "exact", "override"
+                departure_date, date_precision, date_source = override["date"], "exact", "search_pref"
             elif override and override.get("precision") == "month" and override.get("month"):
-                departure_month, date_precision, date_source = override["month"], "month", "override"
+                departure_month, date_precision, date_source = override["month"], "month", "search_pref"
             elif atlas_date:
-                departure_date, date_precision, date_source = atlas_date, "exact", "itinerary"
+                departure_date, date_precision, date_source = atlas_date, "exact", "trip_dates"
             elif atlas_month:
-                departure_month, date_precision, date_source = atlas_month, "month", "itinerary"
-            elif calendar_date is not None:
-                # Every leg happens on its own itinerary day, so the anchor
-                # gives it that day's real date — gateway or internal alike.
-                departure_date, date_precision, date_source = calendar_date, "exact", "anchor"
-            elif start_month:
-                departure_month, date_precision, date_source = start_month, "month", "anchor"
+                departure_month, date_precision, date_source = atlas_month, "month", "trip_dates"
             else:
                 date_precision, date_source = "flexible", "none"
 
