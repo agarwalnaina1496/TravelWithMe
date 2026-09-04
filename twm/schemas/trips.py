@@ -10,7 +10,6 @@ from .booking_setup import (
     SearchPrefClearInput,
     SearchPrefInput,
     TravelerComposition,
-    TripStartInput,
 )
 from .common import AgentMeta
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
@@ -210,7 +209,6 @@ TripCommandName = Literal[
     "reopen_destination_revisit",
     "reopen_destination_fresh",
     "start_itinerary",
-    "set_trip_start",
     "set_party",
     "set_search_pref",
     "clear_search_pref",
@@ -240,7 +238,6 @@ class TripCommandRequest(BaseModel):
     refinement: MeridianRefinement | None = None
     # booking_setup command payloads — all post-freeze, deterministic, and
     # never regenerate the itinerary (see twm/schemas/booking_setup.py).
-    trip_start_update: TripStartInput | None = None
     party_update: TravelerComposition | None = None
     search_pref_update: SearchPrefInput | None = None
     search_pref_clear: SearchPrefClearInput | None = None
@@ -256,7 +253,6 @@ class TripCommandRequest(BaseModel):
         if self.command == "more_like_this" and self.refinement is None:
             raise ValueError("more_like_this requires refinement")
         for command, field_name, value in (
-            ("set_trip_start", "trip_start_update", self.trip_start_update),
             ("set_party", "party_update", self.party_update),
             ("set_search_pref", "search_pref_update", self.search_pref_update),
             ("clear_search_pref", "search_pref_clear", self.search_pref_clear),

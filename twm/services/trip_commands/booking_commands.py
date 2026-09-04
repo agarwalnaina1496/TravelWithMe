@@ -1,10 +1,9 @@
 """``booking_setup`` command handlers (TWM-216).
 
-Four deterministic, Backend-owned writes to the ``booking_setup`` state
-branch — the calendar anchor, the structured party, and per-entity search
-dates. None regenerates or re-plans the itinerary; all require a frozen
-plan with an itinerary already generated (the surfaces that call them only
-exist post-generation).
+Three deterministic, Backend-owned writes to the ``booking_setup`` state
+branch — the structured party and per-entity search dates. None regenerates
+or re-plans the itinerary; all require a frozen plan with an itinerary
+already generated (the surfaces that call them only exist post-generation).
 """
 
 from typing import Any
@@ -13,7 +12,6 @@ from ...schemas.booking_setup import (
     SearchPrefClearInput,
     SearchPrefInput,
     TravelerComposition,
-    TripStartInput,
 )
 from ...telemetry import TelemetryLogger
 from .errors import InvalidTripCommandError
@@ -37,32 +35,6 @@ def _booking_setup(state: dict[str, Any]) -> dict[str, Any]:
         branch = {}
         state["booking_setup"] = branch
     return branch
-
-
-def apply_set_trip_start(
-    logger: TelemetryLogger,
-    state: dict[str, Any],
-    update: TripStartInput,
-) -> dict[str, Any]:
-    _require_generated_itinerary(state)
-    branch = _booking_setup(state)
-    previous = branch.get("start")
-    stored = update.as_stored()
-    if stored is None:
-        branch.pop("start", None)  # flexible — remove the anchor entirely
-    else:
-        branch["start"] = stored
-
-    logger.info(
-        "Updated the trip calendar anchor.",
-        event="be.trip.booking_setup.start.updated",
-        source="application",
-        trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
-        previous_precision=previous.get("precision") if isinstance(previous, dict) else None,
-        new_precision=update.precision,
-        itinerary_regeneration_skipped=True,
-    )
-    return {"message": None, "agent_meta": None}
 
 
 def apply_set_party(

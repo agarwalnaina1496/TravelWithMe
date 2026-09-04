@@ -210,8 +210,8 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
         "planner_state": {},
         "itinerary_state": {},
         # booking_setup (TWM-216): deterministic, UI-owned scheduling — the
-        # trip calendar anchor, structured party, and per-entity search-date
-        # preferences. Never written by an agent, never re-plans.
+        # structured party and per-entity search-date preferences. Never
+        # written by an agent, never re-plans; no trip-level date control.
         "booking_setup": {},
     }
     for name, default in object_branches.items():

@@ -2,11 +2,9 @@
 
 Never written by Scout/Meridian/Guide/Atlas and never constrains the itinerary.
 It is the single home for the facts a traveler sets to turn a frozen plan into
-concrete, prefilled provider searches. Three concerns:
+concrete, prefilled provider searches. There is no trip-level date control —
+each bookable entity's date is independent and never propagates. Two concerns:
 
-* ``start`` — the trip's calendar anchor. Turns Atlas day numbers into real
-  dates on the Trip Board (day ``K`` = ``start + (K - 1)``). Exact date XOR
-  month; absent means "no anchor yet" (the Board falls back to flexible).
 * ``party`` — the structured adult/child/infant composition booking surfaces
   send as ``traveler_count``. Replaces ``trip_context.traveler_composition``:
   the free-form ``trip_context.num_travelers`` stays a loose planning fact,
@@ -31,7 +29,6 @@ from .trip_context import TravelerComposition
 # though its canonical home moved out of trip_context with this change.
 __all__ = [
     "TravelerComposition",
-    "TripStartInput",
     "SearchPrefInput",
     "SearchPrefClearInput",
     "BOOKING_SETUP_BRANCH",
@@ -40,43 +37,6 @@ __all__ = [
 BOOKING_SETUP_BRANCH = "booking_setup"
 
 SearchPrefTarget = Literal["stay", "transport"]
-
-
-class TripStartInput(BaseModel):
-    """``set_trip_start`` payload — the trip calendar anchor. Three explicit
-    precisions: ``exact`` (a validated date), ``month`` (a validated YYYY-MM
-    window), or ``flexible`` (no date at all — the way to revert an anchor
-    the traveler previously set). Never free text; the UI must not guess a
-    year from a month label.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    precision: Literal["exact", "month", "flexible"]
-    date: Optional[_date] = None
-    month: Optional[DepartureMonth] = None
-
-    @model_validator(mode="after")
-    def validate_precision(self) -> "TripStartInput":
-        if self.precision == "exact" and self.date is None:
-            raise ValueError("exact precision requires date")
-        if self.precision == "month" and self.month is None:
-            raise ValueError("month precision requires month")
-        if self.precision != "exact" and self.date is not None:
-            raise ValueError("date is allowed only for exact precision")
-        if self.precision != "month" and self.month is not None:
-            raise ValueError("month is allowed only for month precision")
-        return self
-
-    def as_stored(self) -> Optional[dict[str, Any]]:
-        """The dict persisted to ``booking_setup.start``, or None for
-        ``flexible`` (which removes the anchor entirely — an absent anchor
-        and an explicit flexible one behave identically on the Trip Board)."""
-        if self.precision == "exact":
-            return {"precision": "exact", "date": self.date.isoformat()}
-        if self.precision == "month":
-            return {"precision": "month", "month": self.month}
-        return None
 
 
 class ScheduleDateInput(BaseModel):
