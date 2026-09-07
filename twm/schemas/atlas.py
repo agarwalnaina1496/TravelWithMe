@@ -1,8 +1,6 @@
 """Atlas input and rich final-itinerary contracts."""
 
-import re
-from datetime import date
-from typing import Annotated, Any, Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -14,19 +12,21 @@ from .trip_context import TripContext
 AtlasText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 VerificationStatus = Literal["VERIFIED", "GENERAL_GUIDANCE"]
 TimelineKind = Literal["TRAVEL", "STAY", "MEAL", "ACTIVITY", "FREE_TIME"]
+# TWM-217: `dates` and `traveler_count` are gone — a day-numbered plan is
+# always dateless (dates come from the composed trip dates / per-entity
+# search prefs, never an Atlas guess) and a free-form count is represented
+# by `summary.travelers.source` downstream, not an assumption.
 AtlasAssumptionCategory = Literal[
-    "dates",
     "arrival_departure_window",
     "stay_area",
     "budget",
-    "traveler_count",
     "other",
 ]
 # Atlas never sees a real reservation, so "confirmed" is deliberately absent —
-# TWM never holds or verifies a booking at all.
-AtlasBookingReadiness = Literal["suggested", "needs_advance_booking", "unresolved"]
-
-_MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+# TWM never holds or verifies a booking at all. TWM-217: `unresolved` is gone
+# — an item whose booking status is merely uncertain carries
+# `needs_verification: true` on its note instead.
+AtlasBookingReadiness = Literal["suggested", "needs_advance_booking"]
 
 
 class AtlasAssumption(BaseModel):
@@ -106,7 +106,6 @@ class AtlasTripSummary(BaseModel):
     destinations: list[AtlasText]
     trip_duration: int = Field(ge=1)
     num_travelers: Optional[int] = Field(default=None, ge=1)
-    date_range: Optional[AtlasText] = None
     overview: AtlasText
     route_rationale: AtlasText
 
@@ -123,8 +122,6 @@ class AtlasTimelineItem(BaseModel):
     movement_guidance: Optional[AtlasText] = None
     from_city: Optional[AtlasText] = None
     to_city: Optional[AtlasText] = None
-    departure_date: Optional[date] = None
-    departure_month: Optional[AtlasText] = None
     estimated_cost_low: Optional[int] = Field(default=None, ge=0)
     estimated_cost_high: Optional[int] = Field(default=None, ge=0)
     reference: AtlasReference
@@ -161,24 +158,6 @@ class AtlasTimelineItem(BaseModel):
             )
         return self
 
-    @model_validator(mode="after")
-    def validate_departure_precision(self) -> "AtlasTimelineItem":
-        if self.kind != "TRAVEL":
-            if self.departure_date is not None or self.departure_month is not None:
-                raise ValueError(
-                    "departure_date/departure_month are allowed only when kind is TRAVEL"
-                )
-            return self
-        if self.departure_date is not None and self.departure_month is not None:
-            raise ValueError(
-                "departure_date and departure_month are mutually exclusive"
-            )
-        if self.departure_month is not None and not _MONTH_PATTERN.match(
-            self.departure_month
-        ):
-            raise ValueError("departure_month must be a validated YYYY-MM value")
-        return self
-
 
 StayTier = Literal["budget", "mid_range", "premium"]
 _STAY_TIER_ORDER: tuple[StayTier, ...] = ("budget", "mid_range", "premium")
@@ -209,6 +188,9 @@ class AtlasDayNote(BaseModel):
     title: AtlasText
     detail: AtlasText
     reference: AtlasReference
+    # TWM-217: "worth checking closer to travel; no live source confirmed
+    # it." A day-specific verification gap lives here (not a separate list).
+    needs_verification: bool = False
 
 
 class AtlasDay(BaseModel):
@@ -267,7 +249,6 @@ class AtlasBudgetSummary(BaseModel):
     lines: list[AtlasBudgetLine] = Field(min_length=1)
     total_low: int = Field(default=0, ge=0)
     total_high: int = Field(default=0, ge=0)
-    budget_fit: AtlasText
 
     @model_validator(mode="after")
     def calculate_totals(self) -> "AtlasBudgetSummary":
@@ -283,6 +264,8 @@ class AtlasPracticalNote(BaseModel):
     title: AtlasText
     detail: AtlasText
     reference: AtlasReference
+    # TWM-217: a trip-wide verification gap lives here (not a separate list).
+    needs_verification: bool = False
 
 
 class AtlasSource(BaseModel):
@@ -291,13 +274,6 @@ class AtlasSource(BaseModel):
     title: AtlasText
     url: AtlasText
     supports: list[AtlasText] = Field(min_length=1)
-
-
-class AtlasUnresolvedItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    item: AtlasText
-    generic_guidance: AtlasText
 
 
 class AtlasFinalItinerary(BaseModel):
@@ -324,7 +300,6 @@ class AtlasAgentOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     final_itinerary: AtlasFinalItinerary
-    unresolved: list[AtlasUnresolvedItem]
 
 
 class AtlasResponse(AtlasAgentOutput):

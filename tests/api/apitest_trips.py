@@ -347,18 +347,16 @@ class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
                                 "note": "Estimated.",
                             }
                         ],
-                        "budget_fit": "Fits within a typical budget.",
                     },
                     "practical_notes": [],
                     "sources": [],
                     "assumptions": [
                         {
-                            "category": "dates",
-                            "detail": "Assumed a start date since none was confirmed.",
+                            "category": "stay_area",
+                            "detail": "Assumed a central stay area.",
                         }
                     ],
                 },
-                "unresolved": [],
             },
             prompt_release=PromptRelease("atlas", "1.0.0", "test"),
         )
@@ -1410,8 +1408,8 @@ def test_start_itinerary_invokes_atlas_from_frozen_plan(api_client: TestClient):
     assert current["result"]["final_itinerary"]["trip_summary"]["destinations"] == ["Rishikesh"]
     assert current["result"]["final_itinerary"]["assumptions"] == [
         {
-            "category": "dates",
-            "detail": "Assumed a start date since none was confirmed.",
+            "category": "stay_area",
+            "detail": "Assumed a central stay area.",
         }
     ]
 

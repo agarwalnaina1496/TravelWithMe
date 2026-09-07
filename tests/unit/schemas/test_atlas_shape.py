@@ -70,7 +70,6 @@ def test_day_specific_taj_closure_is_not_duplicated_in_trip_practical_notes():
                     "destinations": ["Agra"],
                     "trip_duration": 1,
                     "num_travelers": 2,
-                    "date_range": None,
                     "overview": "A short visit to Agra.",
                     "route_rationale": "One base keeps the weekend practical.",
                 },
@@ -85,7 +84,6 @@ def test_day_specific_taj_closure_is_not_duplicated_in_trip_practical_notes():
                             "note": "Allow for monument entry fees.",
                         }
                     ],
-                    "budget_fit": "Within the stated budget.",
                 },
                 "practical_notes": [
                     {
@@ -98,22 +96,16 @@ def test_day_specific_taj_closure_is_not_duplicated_in_trip_practical_notes():
                 "sources": [],
                 "assumptions": [],
             },
-            "unresolved": [],
         }
     )
     itinerary = output.final_itinerary
 
     day_note_titles = [note.title for note in itinerary.days[0].notes]
     practical_note_titles = [note.title for note in itinerary.practical_notes]
-    unresolved_items = [item.item for item in output.unresolved]
 
     assert day_note_titles == ["Taj Mahal Friday closure"]
     assert practical_note_titles == ["Keep trip-wide contacts available"]
     assert "Taj Mahal Friday closure" not in practical_note_titles
-    # Atlas 1.12.0: the same anti-duplication rule now also covers
-    # `unresolved` -- a fact already given a confident home in day.notes
-    # must not also be flagged as unresolved.
-    assert "Taj Mahal Friday closure" not in unresolved_items
 
 
 def test_day_specific_advance_booking_guidance_for_different_monuments_is_split_by_day():
@@ -155,7 +147,6 @@ def test_day_specific_advance_booking_guidance_for_different_monuments_is_split_
                 "destinations": ["Delhi", "Agra"],
                 "trip_duration": 2,
                 "num_travelers": 2,
-                "date_range": None,
                 "overview": "A short Delhi-Agra trip.",
                 "route_rationale": "Two bases keep travel practical.",
             },
@@ -170,7 +161,6 @@ def test_day_specific_advance_booking_guidance_for_different_monuments_is_split_
                         "note": "Allow for monument entry fees.",
                     }
                 ],
-                "budget_fit": "Within the stated budget.",
             },
             "practical_notes": [],
             "sources": [],

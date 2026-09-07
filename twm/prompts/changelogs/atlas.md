@@ -1,5 +1,39 @@
 # Atlas prompt changelog
 
+## Atlas 1.14.0 — 2026-09-07
+
+- **Output discipline pass (TWM-217).** A real payload review found the same
+  fact emitted in three places, mis-categorised assumptions, a `budget_fit`
+  narrative that contradicted the itinerary's own totals, and a missing STAY
+  item for a night the traveler actually spends. Fixed together:
+- Removes the `unresolved` list entirely (`AtlasAgentOutput.unresolved` /
+  `AtlasUnresolvedItem` deleted). A verification gap is now a `needs_verification: true`
+  flag on the day `note` or `practical_notes` entry it concerns — a fact on
+  the thing it's about, not a separate list.
+- Adds `needs_verification: bool` to `AtlasDayNote` / `AtlasPracticalNote`:
+  "worth checking closer to travel; no live source confirmed it."
+- **Atlas stops asserting dates.** Removes `AtlasTripSummary.date_range` and
+  `AtlasTimelineItem.departure_date` / `departure_month` from the schema and
+  prompt. Every date a traveler sees is composed downstream from their stated
+  travel dates or a per-entity search preference — never an Atlas guess.
+- `AtlasAssumptionCategory` loses `dates` and `traveler_count` (→ `stay_area` /
+  `budget` / `arrival_departure_window` / `other`). A day-numbered plan is
+  always dateless; an approximate free-form count is represented downstream by
+  `summary.travelers.source`, not treated as a planning gap. Atlas keeps the
+  best-effort `num_travelers` read but records no assumption for it.
+- `AtlasBookingReadiness` loses `unresolved` (→ `suggested` / `needs_advance_booking`).
+  An uncertain booking status picks the closer value and sets `needs_verification: true`
+  on its note.
+- Removes `AtlasBudgetSummary.budget_fit`. Atlas produces line items and
+  totals only; the fit judgment is composed downstream against the traveler's
+  stated ceiling.
+- **One home per fact.** A fact a timeline item already carries
+  (`requires_advance_booking` / `booking_readiness`) must not also appear as a
+  day `note` or `practical_notes` entry restating it.
+- **Stay completeness.** Every non-departure night away from home must have a
+  `STAY` timeline item — including a day-trip day that returns to the same
+  city for the night — unless an overnight `TRAVEL` leg covers that night.
+
 ## Atlas 1.13.0 — 2026-09-02
 
 - Removes the `confirmed_anchors` instruction block: the confirmed-logistics

@@ -27,7 +27,7 @@ def test_atlas_evaluation_corpus_covers_research_and_authority_boundaries() -> N
     assert cases_by_id["international-current-rules"]["invariants"] == {
         "no_live_search_available": True,
         "do_not_claim_verified": True,
-        "use_general_or_unresolved": True,
+        "use_general_or_needs_verification": True,
         "no_booking_claim": True,
     }
 
