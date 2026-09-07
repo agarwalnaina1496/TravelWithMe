@@ -16,11 +16,10 @@ DatePrecision = Literal["exact", "month", "flexible"]
 
 # Where a resolved date came from, so a consumer can label it honestly and
 # offer the right affordance (e.g. "from your itinerary" vs "custom · reset"):
-#   itinerary  — Atlas's own per-item departure_date/month (TRAVEL only)
-#   override   — a booking_setup.search_prefs entry for this exact entity
-#   anchor     — derived from booking_setup.start + the item's day number
-#   none       — nothing known; the search stays date-flexible
-DateSource = Literal["itinerary", "override", "anchor", "none"]
+#   trip_dates  — Atlas's own per-item departure_date/month (TRAVEL only)
+#   search_pref — a booking_setup.search_prefs entry for this exact entity
+#   none        — nothing known; the search stays date-flexible
+DateSource = Literal["trip_dates", "search_pref", "none"]
 
 
 class TripBoardItem(BaseModel):
@@ -56,12 +55,11 @@ class TripBoardItem(BaseModel):
     # The adapter never guesses one for the other.
     feasible_modes: Optional[list[ModeFeasibility]] = None
 
-    # Reconciles a booking_setup.search_prefs override, Atlas's own per-item
-    # departure_date/departure_month, the booking_setup.start calendar
-    # anchor, and "no date known at all" into one signal every consumer can
-    # trust, instead of each screen re-deriving precision from a different
-    # upstream shape. Always present for a TRAVEL item; None for every
-    # other kind. See date_source for which of those produced it.
+    # Reconciles a booking_setup.search_prefs entry, Atlas's own per-item
+    # departure_date/departure_month, and "no date known at all" into one
+    # signal every consumer can trust, instead of each screen re-deriving
+    # precision from a different upstream shape. Always present for a TRAVEL
+    # item; None for every other kind. See date_source for which produced it.
     date_precision: Optional[DatePrecision] = None
     departure_date: Optional[str] = None
     departure_month: Optional[str] = None
@@ -86,8 +84,8 @@ class TripBoardStaySegment(BaseModel):
     checkin_date: Optional[str] = None
     checkout_date: Optional[str] = None
     departure_month: Optional[str] = None
-    # "override" (a booking_setup search pref for this segment), "anchor"
-    # (derived from booking_setup.start), or "none" (flexible).
+    # "search_pref" (a booking_setup search pref for this segment) or "none"
+    # (flexible). "trip_dates" never applies to a stay segment today.
     date_source: DateSource
     board_item_ids: list[str]
 
@@ -96,7 +94,6 @@ class TripBoardDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     day_number: int
-    date: Optional[str] = None
     items: list[TripBoardItem]
 
 

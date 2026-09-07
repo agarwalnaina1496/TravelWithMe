@@ -8,9 +8,9 @@ Values stay untyped and verbatim for every fixed key, including
 ``num_travelers`` — same "loose conversational fact" role as ``travel_dates``,
 used only for early planning/affordability judgment, never trusted for an
 exact booking-time count. The structured, Backend-owned booking-precision
-counterparts (calendar anchor, adult/child/infant party) live in the
-``booking_setup`` state branch, never in trip_context — nothing an agent
-extracts belongs there.
+counterpart (the adult/child/infant party) lives in the ``booking_setup``
+state branch, never in trip_context — nothing an agent extracts belongs
+there.
 
 `destinations` is a second, separately-named field — not one of the five
 `FIXED_KEYS` — because it isn't genuinely 3-way shared the same way: only

@@ -16,7 +16,6 @@ from .booking_commands import (
     apply_clear_search_pref,
     apply_set_party,
     apply_set_search_pref,
-    apply_set_trip_start,
 )
 from .errors import IdempotencyConflictError, InvalidTripCommandError
 from .matcher_commands import apply_meridian, select_destination
@@ -37,7 +36,6 @@ from .state import (
 
 _POST_FREEZE_COMMANDS = {
     "start_itinerary",
-    "set_trip_start",
     "set_party",
     "set_search_pref",
     "clear_search_pref",
@@ -220,8 +218,6 @@ class TripCommandService:
             )
         if payload.command == "start_itinerary":
             return await apply_atlas(self.engine, self.logger, state)
-        if payload.command == "set_trip_start":
-            return apply_set_trip_start(self.logger, state, payload.trip_start_update)
         if payload.command == "set_party":
             return apply_set_party(self.logger, state, payload.party_update)
         if payload.command == "set_search_pref":
