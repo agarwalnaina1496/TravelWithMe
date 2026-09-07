@@ -12,7 +12,7 @@ class DatabaseSettings:
     guest_cookie_secure: bool = True
     guest_session_days: int = 180
     pool_min_size: int = 1
-    pool_max_size: int = 5
+    pool_max_size: int = 20
 
     @classmethod
     def load(cls) -> "DatabaseSettings":
@@ -26,5 +26,5 @@ class DatabaseSettings:
             ).lower() == "true",
             guest_session_days=int(os.getenv("GUEST_SESSION_DAYS", "180")),
             pool_min_size=int(os.getenv("APP_DATABASE_POOL_MIN_SIZE", "1")),
-            pool_max_size=int(os.getenv("APP_DATABASE_POOL_MAX_SIZE", "5")),
+            pool_max_size=int(os.getenv("APP_DATABASE_POOL_MAX_SIZE", "20")),
         )

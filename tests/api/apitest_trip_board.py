@@ -46,6 +46,11 @@ class MemoryTripRepository:
             return trip if trip.user_id == owner.user_id else None
         return trip if trip.guest_session_id == owner.guest_session_id and trip.user_id is None else None
 
+    async def get_trip_core(self, owner, trip_id):
+        # TWM-191: the /board route only reads trip_context + booking_setup
+        # off this, never the itinerary result.
+        return await self.get_trip(owner, trip_id)
+
     async def get_current_itinerary(self, owner, trip_id):
         trip = await self.get_trip(owner, trip_id)
         if not trip:

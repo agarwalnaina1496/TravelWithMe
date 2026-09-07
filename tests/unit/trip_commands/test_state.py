@@ -6,9 +6,44 @@ from twm.services.trip_commands.errors import InvalidTripCommandError
 from twm.services.trip_commands.state import (
     STAGE_TRANSITIONS,
     VALID_STAGES,
+    canonical_state,
     merge_trip_context,
     set_stage,
+    touched_branches,
 )
+
+
+# TWM-191: touched_branches is the single "which branch tables to write"
+# decision — create_trip / replace_trip / commit_command all call it.
+def test_touched_branches_empty_when_nothing_differs_from_canonical_empty() -> None:
+    empty = canonical_state({})
+    assert touched_branches(canonical_state({}), empty) == set()
+
+
+def test_touched_branches_reports_only_the_branch_that_changed() -> None:
+    before = canonical_state({})
+    after = canonical_state({})
+    after["matcher_state"]["conversation_context"]["awaiting"] = "trip_duration"
+    assert touched_branches(after, before) == {"matcher_state"}
+
+
+def test_touched_branches_reports_every_changed_branch() -> None:
+    before = canonical_state({})
+    after = canonical_state({})
+    after["matcher_state"]["conversation_context"]["awaiting"] = "x"
+    after["planner_state"]["places"] = ["Baga Beach"]
+    after["itinerary_state"] = {"status": "ready", "current_version": {"version": 1}}
+    after["booking_setup"] = {"party": {"adults": 2, "children": 0, "infants": 0}}
+    assert touched_branches(after, before) == {
+        "matcher_state", "planner_state", "itinerary_state", "booking_setup",
+    }
+
+
+def test_touched_branches_is_symmetric_in_its_arguments() -> None:
+    a = canonical_state({})
+    b = canonical_state({})
+    b["planner_state"]["day_plan"] = [{"day_number": 1}]
+    assert touched_branches(a, b) == touched_branches(b, a) == {"planner_state"}
 
 
 def test_merge_trip_context_overwrites_a_free_form_list_field() -> None:

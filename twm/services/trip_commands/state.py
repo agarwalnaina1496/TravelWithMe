@@ -3,6 +3,7 @@
 import copy
 from typing import Any, get_args
 
+from ...persistence.contracts import LIFECYCLE_COLUMN_FIELDS
 from ...schemas.scout import TripStage
 from ...telemetry import TelemetryLogger
 from .errors import InvalidTripCommandError
@@ -229,10 +230,11 @@ TOUCHABLE_BRANCHES = ("matcher_state", "planner_state", "itinerary_state", "book
 # Always-present fields a command response needs regardless of what a
 # command touched — everything resume/CTA logic and the next command's
 # routing decision (service.py's stage/active_agent dispatch) depends on.
-# selected_option is small like trip_context (not a large/variable branch),
-# and TripPreview.jsx's entry-path analytics needs it fresh after any
-# command, not only the one that happened to touch it.
-_CORE_FIELDS = ("trip_id", "status", "stage", "active_agent", "trip_context", "selected_option")
+# = trip_id (the row PK, injected by the service, never inside trip_state)
+# + the lifecycle columns + the two small blob fields a consumer reads back
+# (advisor_state is deliberately excluded — it never appears in a command
+# response). See persistence/contracts.py for the storage split.
+_CORE_FIELDS = ("trip_id", *LIFECYCLE_COLUMN_FIELDS, "trip_context", "selected_option")
 
 
 def snapshot_touchable_branches(state: dict[str, Any]) -> dict[str, Any]:

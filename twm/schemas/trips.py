@@ -164,25 +164,6 @@ class TripRecommendationsResponse(BaseModel):
     created_at: datetime
 
 
-class ItineraryVersionDaySummary(BaseModel):
-    day_number: int
-    title: NonEmptyString
-
-
-class TripItineraryVersionSummary(BaseModel):
-    """A lightweight summary of one archived itinerary version (TWM-155) —
-    day titles only, not the full nested AtlasFinalItinerary result."""
-
-    version: int
-    source_guide_revision: int
-    created_at: datetime
-    days: list[ItineraryVersionDaySummary]
-
-
-class TripItineraryVersionsResponse(BaseModel):
-    versions: list[TripItineraryVersionSummary]
-
-
 class TripItineraryResponse(BaseModel):
     """The active itinerary's full Atlas result (TWM-159) — moved out of
     GET /trips/{id} into its own endpoint since only the Trip Dashboard

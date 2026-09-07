@@ -74,7 +74,7 @@ class MemoryUserRepository:
                 claimed += 1
         return claimed
 
-    async def list_trips(self, owner):
+    async def list_trips(self, owner, limit=200):
         return [trip for trip in self.trips.values() if _owned_by(trip, owner)]
 
     async def trip_ids_with_recommendations(self, owner, trip_ids):
@@ -91,6 +91,8 @@ class MemoryUserRepository:
     async def get_trip(self, owner, trip_id):
         trip = self.trips.get(trip_id)
         return trip if trip and _owned_by(trip, owner) else None
+
+    get_trip_core = get_trip
 
 
 def _replace_owner(trip: TripRecord, user_id) -> TripRecord:

@@ -214,19 +214,13 @@ def _apply_plan_freeze(
 REOPEN_CHOICE_AWAITING = "destination_reopen_choice"
 
 
-def _supersede_planner_state(state: dict[str, Any]) -> None:
+def _clear_planner_for_reopen(state: dict[str, Any]) -> None:
     """Shared by both reopen paths (fresh discovery and revisiting an
-    existing list) — either way the current places/day_plan are being
-    abandoned in favor of a destination decision that hasn't happened yet,
-    so both retain the superseded snapshot rather than deleting it."""
+    existing list) — either way the current places/day_plan are abandoned
+    in favor of a destination decision that hasn't happened yet, so both
+    reset the planner conversation to empty. The pre-reset snapshot is not
+    retained: nothing (Backend or UI) ever read it back (TWM-191)."""
     planner = state["planner_state"]
-    superseded = planner.setdefault("superseded_planner_states", [])
-    superseded.append(
-        {
-            "planner_state": _guide_planner_snapshot(state),
-            "destination_context": state["trip_context"].get(DESTINATIONS_KEY),
-        }
-    )
     planner["conversation_context"] = {}
     planner["places"] = []
     planner["day_plan"] = []
@@ -295,7 +289,7 @@ async def apply_reopen_fresh(
     """The traveler wants a new Meridian conversation — either the
     immediate reversal (no prior recommendations existed) or their
     explicit choice after being prompted (reopen_destination_fresh)."""
-    _supersede_planner_state(state)
+    _clear_planner_for_reopen(state)
     set_stage(state, "matching", logger, context="reopen_destination_fresh")
     state["active_agent"] = "meridian"
     logger.info(
@@ -316,7 +310,7 @@ def apply_reopen_revisit(
     """The traveler chose to go back to their existing recommendation list
     instead of a fresh Meridian conversation — no new matcher round is
     triggered, the already-archived recommendations are still intact."""
-    _supersede_planner_state(state)
+    _clear_planner_for_reopen(state)
     set_stage(state, "recommended", logger, context="reopen_destination_revisit")
     state["active_agent"] = None
     logger.info(
