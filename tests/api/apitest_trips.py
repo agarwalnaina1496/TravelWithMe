@@ -526,17 +526,16 @@ def test_guest_trip_crud_without_delete_and_version_conflict(api_client: TestCli
 def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
     api_client: TestClient,
 ):
-    """TWM-159, extended TWM-182: My Trips/Landing only ever read stage,
-    itinerary_state.status, a small trip_context recap subset, and a cheap
-    planner-progress signal (awaiting/has_day_plan/has_places) — the list
-    response still never carries the full trip_state/ui_state blobs
-    (matcher/planner's own nested day_plan or history/itinerary result/
-    logistics state, or unrelated trip_context fields)."""
+    """TWM-217: the list returns a thin TripView subset — lifecycle, a
+    composed context_recap, and cheap planner-progress flags. Never the full
+    trip_state / ui_state / matcher / planner blobs."""
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
 
     state = {
         "stage": "matching",
+        "status": "free",
+        "active_agent": "meridian",
         "trip_context": {"origin_city": "Delhi", "budget": "₹1,00,000", "not_a_recap_field": "ignored"},
         "matcher_state": {"conversation_context": {"awaiting": None}},
     }
@@ -545,19 +544,20 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
 
     listed = api_client.get("/trips")
     assert listed.status_code == 200
-    [summary] = listed.json()["trips"]
-    assert summary["trip_state"] == {
-        "stage": "matching",
-        "itinerary_state": {"status": None},
-        "trip_context": {"origin_city": "Delhi", "budget": "₹1,00,000"},
-        "awaiting": None,
-        "has_day_plan": False,
-        "has_places": False,
-        "has_recommendation": False,
+    [item] = listed.json()["trips"]
+    assert item["title"] == "Rishikesh"
+    assert item["lifecycle"] == {
+        "stage": "matching", "status": "free", "active_agent": "meridian", "selected_option": None,
     }
-    assert "ui_state" not in summary
-    assert "matcher_state" not in summary["trip_state"]
-    assert "planner_state" not in summary["trip_state"]
+    assert {r["key"]: r["value"] for r in item["context_recap"]} == {
+        "origin_city": "Delhi", "budget": "₹1,00,000",
+    }
+    assert item["has_day_plan"] is False
+    assert item["has_places"] is False
+    assert item["awaiting"] is None
+    assert item["has_recommendation"] is False
+    assert "trip_state" not in item and "ui_state" not in item
+    assert "matcher_state" not in item and "planner_state" not in item
 
 
 def test_list_trips_has_recommendation_reflects_an_archived_matcher_round(api_client: TestClient):
@@ -581,7 +581,7 @@ def test_list_trips_has_recommendation_reflects_an_archived_matcher_round(api_cl
     ])
 
     listed = api_client.get("/trips").json()["trips"]
-    by_title = {trip["title"]: trip["trip_state"]["has_recommendation"] for trip in listed}
+    by_title = {trip["title"]: trip["has_recommendation"] for trip in listed}
     assert by_title["Has recs"] is True
     assert by_title["No recs"] is False
 
@@ -667,23 +667,22 @@ def test_list_trips_surfaces_awaiting_and_day_plan_presence_without_the_nested_p
 
     listed = api_client.get("/trips")
     assert listed.status_code == 200
-    summaries = {s["title"]: s["trip_state"] for s in listed.json()["trips"]}
+    items = {s["title"]: s for s in listed.json()["trips"]}
 
-    assert summaries["Udaipur"]["awaiting"] == "trip_duration"
-    assert summaries["Udaipur"]["has_day_plan"] is False
-    assert summaries["Udaipur"]["has_places"] is False
-    # Known-destination path (destinations, not selected_option) must still
-    # resolve on the list card — TWM-UI's Route track needs this to render
-    # correctly straight off the summary, before any full single-trip fetch.
-    assert summaries["Udaipur"]["trip_context"]["destinations"] == ["Udaipur"]
+    assert items["Udaipur"]["awaiting"] == "trip_duration"
+    assert items["Udaipur"]["has_day_plan"] is False
+    assert items["Udaipur"]["has_places"] is False
+    # Known-destination path (destinations, not selected_option) still
+    # resolves on the list card via the composed context_recap.
+    assert {r["key"] for r in items["Udaipur"]["context_recap"]} == {"destinations"}
+    assert items["Udaipur"]["context_recap"][0]["value"] == "Udaipur"
 
-    assert summaries["Coorg"]["awaiting"] is None
-    assert summaries["Coorg"]["has_day_plan"] is True
-    assert summaries["Coorg"]["has_places"] is True
+    assert items["Coorg"]["awaiting"] is None
+    assert items["Coorg"]["has_day_plan"] is True
+    assert items["Coorg"]["has_places"] is True
     # The nested plan itself never belongs on the list card.
-    assert "day_plan" not in summaries["Coorg"]
-    assert "places" not in summaries["Coorg"]
-    assert "planner_state" not in summaries["Coorg"]
+    assert "plan" not in items["Coorg"]
+    assert "planner_state" not in items["Coorg"]
 
 
 def test_guest_cannot_access_another_guests_trip():
@@ -776,15 +775,15 @@ def test_create_trip_with_trip_context_creates_one_populated_row(api_client: Tes
         "/trips", json={"title": "Trip", "trip_context": {"destination": "Goa"}}
     )
     assert response.status_code == 201
-    saved = response.json()
-    assert saved["trip_state"]["trip_context"] == {"destination": "Goa"}
     assert len(repository.trips) == 1
+    trip_id = UUID(response.json()["id"])
+    assert repository.trips[trip_id].trip_state["trip_context"] == {"destination": "Goa"}
 
 
 def test_ui_state_update_preserves_canonical_trip_state(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    canonical = {"stage": "matching", "trip_context": {"budget": "50k"}}
+    canonical = {"stage": "matching", "status": "free", "active_agent": "meridian", "trip_context": {"budget": "50k"}}
     created = _create_seeded_trip(api_client, repository, trip_state=canonical)
 
     updated = api_client.patch(
@@ -794,8 +793,11 @@ def test_ui_state_update_preserves_canonical_trip_state(api_client: TestClient):
 
     assert updated.status_code == 200
     assert updated.json()["version"] == 2
-    assert updated.json()["trip_state"] == canonical
     assert updated.json()["ui_state"] == {"last_screen": "chat"}
+    # Canonical state is untouched — lifecycle + recap still reflect it.
+    assert updated.json()["lifecycle"]["stage"] == "matching"
+    assert {r["key"] for r in updated.json()["context_recap"]} == {"budget"}
+    assert repository.trips[UUID(created["id"])].trip_state["trip_context"] == {"budget": "50k"}
     assert api_client.patch(
         f"/trips/{created['id']}/ui-state",
         json={"expected_version": 1, "ui_state": {"last_screen": "recos"}},
@@ -993,8 +995,8 @@ def test_select_destination_rejects_a_stray_reselection_when_already_matched(api
     assert response.status_code == 422
     saved = api_client.get(f"/trips/{trip['id']}").json()
     assert saved["version"] == 1
-    assert saved["trip_state"]["stage"] == "matched"
-    assert saved["trip_state"]["selected_option"]["id"] == "rishikesh"
+    assert saved["lifecycle"]["stage"] == "matched"
+    assert saved["lifecycle"]["selected_option"]["id"] == "rishikesh"
 
 
 def test_traveler_message_generates_places_and_day_plan_together(api_client: TestClient):
@@ -1077,7 +1079,7 @@ def test_guide_clearing_final_gate_without_a_plan_is_rejected(api_client: TestCl
     assert response.status_code == 422
     persisted = api_client.get(f"/trips/{trip['id']}").json()
     assert persisted["version"] == 1
-    assert persisted["trip_state"]["planner_state"]["conversation_context"]["awaiting"] == "anything_else"
+    assert persisted["plan"]["awaiting"] == "anything_else"
 
 
 def test_single_step_generation_logs_plan_generated_with_budget_and_preference_presence(
@@ -1436,20 +1438,21 @@ def test_start_itinerary_is_idempotent_and_does_not_rerun_atlas(api_client: Test
     assert first.status_code == 200
     assert second.status_code == 200
     assert len(engine.calls) == 1
-    first_itinerary = first.json()["trip"]["trip_state"]["itinerary_state"]
+    first_result = first.json()["trip"]["trip_state"]["itinerary_state"]["current_version"]["result"]
     # The second call is a genuine no-op (itinerary already ready, apply_atlas
-    # returns without touching itinerary_state) — the trimmed response
-    # correctly omits an untouched branch, so fetch the persisted state to
-    # confirm nothing changed instead of expecting it inline.
+    # returns without touching itinerary_state) — the trimmed command response
+    # correctly omits the untouched branch.
     assert "itinerary_state" not in second.json()["trip"]["trip_state"]
-    # GET /trips/{id} composes only the itinerary pointer now (TWM-191) —
-    # never a query against itinerary_versions — so current_version is the
-    # bare version number. The dedicated /itinerary endpoint is the source
-    # for the plan content.
-    persisted_trip_state = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]
-    assert persisted_trip_state["itinerary_state"]["current_version"] == 1
+    # TWM-217: GET /trips/{id} is TripView now — an itinerary exists iff
+    # summary is non-null; the enriched /itinerary is the source for content.
+    view = api_client.get(f"/trips/{trip['id']}").json()
+    assert view["summary"] is not None
     persisted_itinerary = api_client.get(f"/trips/{trip['id']}/itinerary").json()
-    assert first_itinerary["current_version"]["result"] == persisted_itinerary["result"]
+    assert persisted_itinerary["version"] == 1
+    assert (
+        persisted_itinerary["result"]["final_itinerary"]["trip_summary"]
+        == first_result["final_itinerary"]["trip_summary"]
+    )
 
 
 def test_start_itinerary_rejects_browser_supplied_plan_fields(api_client: TestClient):
@@ -1513,6 +1516,102 @@ def test_get_current_itinerary_returns_the_active_version_result(api_client: Tes
     assert body["version"] == 1
     assert body["source_guide_revision"] == 5
     assert body["result"]["final_itinerary"]["trip_summary"]["destinations"] == ["Rishikesh"]
+
+
+# ---------------------------------------------------------------------------
+# TWM-217: GET /trips/{id} is TripView; /board is gone; /itinerary is enriched.
+# ---------------------------------------------------------------------------
+
+def test_trip_board_route_is_removed(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    trip = api_client.post("/trips", json={"title": "Trip", "trip_context": {"destination": "Goa"}}).json()
+    assert api_client.get(f"/trips/{trip['id']}/board").status_code == 404
+
+
+def test_get_trip_returns_a_pre_itinerary_trip_view(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    created = _create_seeded_trip(api_client, repository, title="Kerala", trip_state={
+        "stage": "planning", "status": "free", "active_agent": "guide",
+        "trip_context": {"origin_city": "Delhi", "destinations": ["Kochi"]},
+        "planner_state": {"places": ["Fort Kochi"], "conversation_context": {"awaiting": "trip_duration"}},
+    })
+
+    view = api_client.get(f"/trips/{created['id']}").json()
+
+    assert view["title"] == "Kerala"
+    assert view["lifecycle"]["stage"] == "planning"
+    assert {r["key"] for r in view["context_recap"]} == {"origin_city", "destinations"}
+    assert view["plan"]["places"] == ["Fort Kochi"]
+    assert view["plan"]["awaiting"] == "trip_duration"
+    # The five itinerary-derived blocks are null until an itinerary exists.
+    assert view["summary"] is None
+    assert view["booking"] is None
+    assert view["budget_breakdown"] is None
+    assert view["open_gaps"] is None
+    assert view["before_you_go"] is None
+    # No raw trip_state dump, no prose.
+    assert "trip_state" not in view
+
+
+def test_get_trip_returns_a_post_itinerary_trip_view_with_no_prose(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
+
+    view = api_client.get(f"/trips/{trip['id']}").json()
+
+    assert view["summary"] is not None
+    assert view["summary"]["destinations"] == ["Rishikesh"]
+    assert view["budget_breakdown"]["lines"][0]["low"] == 1000  # rename of amount_low
+    assert view["open_gaps"][0]["resolution"] == "set_party"
+    assert view["before_you_go"] is not None
+    dumped = str(view)
+    assert "movement_guidance" not in dumped and "Detail." not in dumped  # no timeline prose
+
+
+def test_get_itinerary_is_enriched_with_item_ids_and_stay_segments(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
+
+    body = api_client.get(f"/trips/{trip['id']}/itinerary").json()
+
+    item = body["result"]["final_itinerary"]["days"][0]["timeline"][0]
+    assert item["id"] == f"{trip['id']}:1:0"
+    assert item["date_source"] in {"search_pref", "trip_dates", "none"}
+    assert "is_gateway_leg" in item
+    assert "feasible_modes" not in item
+    assert "stay_segments" in body["result"]
+
+
+def test_command_response_carries_the_matcher_round_when_a_turn_produced_one(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()  # meridian returns a terminal HARD_FAIL round
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = api_client.post(
+        "/trips/first-message",
+        json={"entry_intent": "discover", "message": "mountains", "title": "M"},
+    )
+    assert trip.status_code == 201
+
+    # A follow-up traveler_message that reprocesses omits the round unless it
+    # produced one; FakeHandoffEngine's terminal fail does produce one.
+    trip_id = trip.json()["trip"]["id"]
+    follow = api_client.post(
+        f"/trips/{trip_id}/commands",
+        json={"command": "traveler_message", "message": "somewhere green",
+              "expected_version": trip.json()["trip"]["version"], "idempotency_key": str(uuid4())},
+    )
+    assert follow.status_code == 200
+    assert follow.json()["recommendation"] is not None
+    assert follow.json()["recommendation"]["status"] == "HARD_FAIL"
 
 
 def test_get_current_itinerary_404_before_any_itinerary_generated(api_client: TestClient):
@@ -1741,8 +1840,8 @@ def test_approve_plan_rejects_wrong_phase_without_invoking_guide(api_client: Tes
     assert len(engine.calls) == 0
     persisted = api_client.get(f"/trips/{trip['id']}").json()
     assert persisted["version"] == 1
-    assert persisted["trip_state"]["planner_state"]["places"] == ["Triveni Ghat"]
-    assert persisted["trip_state"]["planner_state"]["day_plan"] == []
+    assert persisted["plan"]["places"] == ["Triveni Ghat"]
+    assert persisted["plan"]["day_plan"] == []
     rejection = next(
         event for event in sink.events
         if event["event"] == "be.trip.command.invalid_transition"
@@ -1929,7 +2028,7 @@ def test_traveler_message_rejects_day_plan_allocating_an_unapproved_place(
     assert response.status_code == 422
     persisted = api_client.get(f"/trips/{trip['id']}").json()
     assert persisted["version"] == 1
-    assert persisted["trip_state"]["planner_state"]["day_plan"] == []
+    assert persisted["plan"]["day_plan"] == []
 
 
 def test_start_planning_invokes_guide_from_backend_owned_destination(api_client: TestClient):
@@ -2004,7 +2103,7 @@ def test_start_planning_rejects_when_stage_is_not_new_or_matched(api_client: Tes
     assert engine.calls == []
     saved = api_client.get(f"/trips/{trip['id']}").json()
     assert saved["version"] == 1
-    assert saved["trip_state"]["stage"] == "recommended"
+    assert saved["lifecycle"]["stage"] == "recommended"
 
 
 

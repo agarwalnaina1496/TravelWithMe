@@ -13,8 +13,7 @@ from .booking_setup import (
 )
 from .common import AgentMeta
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
-from .scout import BoundedMessage, TripStage
-from .trip_context import DESTINATIONS_KEY, FIXED_KEYS
+from .scout import BoundedMessage
 
 
 class MeridianRefinementReference(BaseModel):
@@ -90,63 +89,6 @@ class TripResponse(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime
-
-
-class TripSummaryItineraryState(BaseModel):
-    status: str | None = None
-
-
-# trip_context is otherwise free-form (Scout extracts whatever semantic
-# key fits the conversation for anything outside FIXED_KEYS/destinations),
-# so this is deliberately just the addressable, canonically-named subset —
-# the same recap TWM-UI's tripLifecycle.js/dashboardTracks.js/discoverChat.js
-# render, all three keyed off this exact same field list (TWM-159, TWM-182).
-# selected_option is intentionally excluded: it's the Discover-path-only
-# "which exact recommendation option" identity used for re-selection
-# matching in Destinations.jsx, never a "destination is known" display
-# signal — that job belongs to `destinations` alone, for both entry paths.
-SUMMARY_TRIP_CONTEXT_FIELDS = (*FIXED_KEYS, DESTINATIONS_KEY)
-
-
-class TripSummaryState(BaseModel):
-    stage: TripStage = "new"
-    itinerary_state: TripSummaryItineraryState = Field(default_factory=TripSummaryItineraryState)
-    trip_context: dict[str, Any] = Field(default_factory=dict)
-    # TWM-182: a cheap derived planning-progress signal — never the full
-    # planner_state (day_plan/frozen_plan/superseded_planner_states are
-    # unbounded and stay off the list card by design). Lets My Trips/Landing
-    # tell "mid-conversation" from "draft ready" without a second fetch.
-    awaiting: str | None = None
-    has_day_plan: bool = False
-    has_places: bool = False
-    # TWM-190: mirrors has_day_plan's role for the Discover side — whether a
-    # matcher round has ever been archived for this trip, regardless of
-    # current stage. Lets a "matching"-stage resume distinguish a genuinely
-    # fresh Meridian conversation from a refinement round awaiting
-    # clarification (stage stays "matching" but a prior recommendation
-    # already exists), without a second fetch.
-    has_recommendation: bool = False
-
-
-class TripSummary(BaseModel):
-    """My Trips / Landing list item (TWM-159, extended TWM-182) — a small
-    recap, not the full trip_state. The Atlas itinerary result and
-    matcher/booking_setup state never belong on a card the list screen never
-    reads them from; planner_state contributes only the three cheap derived
-    fields on TripSummaryState above, never its own nested day_plan/
-    frozen_plan/history."""
-
-    id: UUID
-    title: str
-    product_mode: Literal["self_led", "twm_led"]
-    trip_state: TripSummaryState
-    version: int
-    created_at: datetime
-    updated_at: datetime
-
-
-class TripListResponse(BaseModel):
-    trips: list[TripSummary]
 
 
 class TripRecommendationsResponse(BaseModel):
@@ -257,3 +199,6 @@ class TripCommandResponse(BaseModel):
     trip: TripResponse
     message: str | None = None
     agent_meta: AgentMeta | None = None
+    # TWM-217: the matcher round this turn produced, when it produced one
+    # (the UI consumes it in TWM-220); omitted otherwise.
+    recommendation: TripRecommendationsResponse | None = None

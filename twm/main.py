@@ -30,6 +30,7 @@ from .services import (
     get_agent_engine,
 )
 from .services.flight_search import FlightSearchSettings, AviasalesAdapter
+from .services.trip_view import TripViewService
 from .services.trusted_action import TrustedActionSettings
 from .telemetry import (
     CORRELATION_HEADERS,
@@ -68,6 +69,7 @@ async def application_lifespan(app: FastAPI):
         app.state.trusted_action_settings = TrustedActionSettings.load(
             travelpayouts_marker=flight_search_settings.partner_id
         )
+        app.state.trip_view_service = TripViewService()
         if database_settings.url:
             pool = await asyncpg.create_pool(
                 database_settings.url,
