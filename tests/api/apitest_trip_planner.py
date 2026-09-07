@@ -58,7 +58,6 @@ def atlas_output() -> dict:
                 "destinations": ["Rishikesh"],
                 "trip_duration": 1,
                 "num_travelers": 3,
-                "date_range": None,
                 "overview": "A calm day around the approved riverside places.",
                 "route_rationale": "The day keeps nearby places together.",
             },
@@ -119,18 +118,16 @@ def atlas_output() -> dict:
                 ],
                 "total_low": 999,
                 "total_high": 999,
-                "budget_fit": "Within the stated ceiling.",
             },
             "practical_notes": [],
             "sources": [],
             "assumptions": [
                 {
-                    "category": "dates",
-                    "detail": "Assumed a start date since none was confirmed.",
+                    "category": "stay_area",
+                    "detail": "Assumed a central riverside stay area.",
                 }
             ],
         },
-        "unresolved": [],
     }
 
 
@@ -438,6 +435,74 @@ def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
     assert adapter.invoke.await_count == 1
 
 
+def test_atlas_rejects_output_carrying_a_removed_field(
+    api_client: TestClient,
+) -> None:
+    """TWM-217: Atlas no longer asserts dates, judges budget fit, or emits a
+    separate unresolved list. An output carrying any of the removed fields is
+    rejected at the contract boundary."""
+    removals = [
+        (lambda o: o["final_itinerary"]["trip_summary"].__setitem__("date_range", "October")),
+        (lambda o: o["final_itinerary"]["budget_summary"].__setitem__("budget_fit", "Comfortable.")),
+        (lambda o: o.__setitem__("unresolved", [{"item": "x", "generic_guidance": "y"}])),
+        (lambda o: o["final_itinerary"]["days"][0]["timeline"][0].__setitem__("booking_readiness", "unresolved")),
+    ]
+    for mutate in removals:
+        output = atlas_output()
+        mutate(output)
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(
+            return_value=AgentInvocationResult(raw_output=json.dumps(output))
+        )
+        set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine"))
+
+        response = api_client.post(
+            "/atlas",
+            json={
+                "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+                "working_plan": {
+                    "destinations": ["Rishikesh"],
+                    "trip_duration": 1,
+                    "approved_places": ["Ram Jhula"],
+                    "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+                },
+            },
+        )
+
+        assert response.status_code == 502
+
+
+def test_atlas_api_note_carries_needs_verification_flag(
+    api_client: TestClient,
+) -> None:
+    """TWM-217: a day note (or practical_notes entry) can carry
+    needs_verification — the replacement for the removed `unresolved` list."""
+    output = atlas_output()
+    output["final_itinerary"]["days"][0]["notes"][0]["needs_verification"] = True
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(output))
+    )
+    set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine"))
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    note = response.json()["final_itinerary"]["days"][0]["notes"][0]
+    assert note["needs_verification"] is True
+
+
 def test_atlas_api_returns_odisha_route_with_canonical_movement_endpoints(
     api_client: TestClient,
 ) -> None:
@@ -616,187 +681,42 @@ def test_atlas_rejects_movement_endpoints_on_a_non_travel_timeline_item(
     assert adapter.invoke.await_count == 1
 
 
-def test_atlas_api_returns_structured_exact_departure_date(
+def test_atlas_timeline_items_reject_any_structured_date_field(
     api_client: TestClient,
 ) -> None:
-    """Regression for TWM-200: a TRAVEL item with a confirmed exact date
-    must pass its structured departure_date through unfabricated."""
-    output = atlas_output()
-    timeline_item = output["final_itinerary"]["days"][0]["timeline"][0]
-    timeline_item["kind"] = "TRAVEL"
-    timeline_item["from_city"] = "Delhi"
-    timeline_item["to_city"] = "Rishikesh"
-    timeline_item["departure_date"] = "2026-10-05"
-    adapter = AsyncMock()
-    adapter.invoke = AsyncMock(
-        return_value=AgentInvocationResult(raw_output=json.dumps(output))
-    )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
-    set_engine(api_client, engine)
+    """TWM-217: Atlas no longer asserts dates. A timeline item carrying
+    departure_date or departure_month (on any kind) is rejected outright."""
+    for field, value in (
+        ("departure_date", "2026-10-05"),
+        ("departure_month", "2026-10"),
+    ):
+        output = atlas_output()
+        item = output["final_itinerary"]["days"][0]["timeline"][0]
+        item["kind"] = "TRAVEL"
+        item["from_city"] = "Delhi"
+        item["to_city"] = "Rishikesh"
+        item[field] = value
+        adapter = AsyncMock()
+        adapter.invoke = AsyncMock(
+            return_value=AgentInvocationResult(raw_output=json.dumps(output))
+        )
+        set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine"))
 
-    response = api_client.post(
-        "/atlas",
-        json={
-            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
-            "working_plan": {
-                "destinations": ["Rishikesh"],
-                "trip_duration": 1,
-                "approved_places": ["Ram Jhula"],
-                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+        response = api_client.post(
+            "/atlas",
+            json={
+                "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+                "working_plan": {
+                    "destinations": ["Rishikesh"],
+                    "trip_duration": 1,
+                    "approved_places": ["Ram Jhula"],
+                    "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+                },
             },
-        },
-    )
+        )
 
-    assert response.status_code == 200
-    body = response.json()
-    returned_item = body["final_itinerary"]["days"][0]["timeline"][0]
-    assert returned_item["departure_date"] == "2026-10-05"
-    assert returned_item["departure_month"] is None
-
-
-def test_atlas_api_returns_structured_departure_month(
-    api_client: TestClient,
-) -> None:
-    """Regression for TWM-200: a TRAVEL item with only a confirmed
-    year+month must pass its structured departure_month through, never a
-    guessed exact date."""
-    output = atlas_output()
-    timeline_item = output["final_itinerary"]["days"][0]["timeline"][0]
-    timeline_item["kind"] = "TRAVEL"
-    timeline_item["from_city"] = "Delhi"
-    timeline_item["to_city"] = "Rishikesh"
-    timeline_item["departure_month"] = "2026-10"
-    adapter = AsyncMock()
-    adapter.invoke = AsyncMock(
-        return_value=AgentInvocationResult(raw_output=json.dumps(output))
-    )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
-    set_engine(api_client, engine)
-
-    response = api_client.post(
-        "/atlas",
-        json={
-            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
-            "working_plan": {
-                "destinations": ["Rishikesh"],
-                "trip_duration": 1,
-                "approved_places": ["Ram Jhula"],
-                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
-            },
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    returned_item = body["final_itinerary"]["days"][0]["timeline"][0]
-    assert returned_item["departure_month"] == "2026-10"
-    assert returned_item["departure_date"] is None
-
-
-def test_atlas_rejects_travel_item_with_both_departure_date_and_month(
-    api_client: TestClient,
-) -> None:
-    """Fail-closed regression for TWM-200: departure_date and
-    departure_month are mutually exclusive precision levels."""
-    output = atlas_output()
-    timeline_item = output["final_itinerary"]["days"][0]["timeline"][0]
-    timeline_item["kind"] = "TRAVEL"
-    timeline_item["from_city"] = "Delhi"
-    timeline_item["to_city"] = "Rishikesh"
-    timeline_item["departure_date"] = "2026-10-05"
-    timeline_item["departure_month"] = "2026-10"
-    adapter = AsyncMock()
-    adapter.invoke = AsyncMock(
-        return_value=AgentInvocationResult(raw_output=json.dumps(output))
-    )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
-    set_engine(api_client, engine)
-
-    response = api_client.post(
-        "/atlas",
-        json={
-            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
-            "working_plan": {
-                "destinations": ["Rishikesh"],
-                "trip_duration": 1,
-                "approved_places": ["Ram Jhula"],
-                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
-            },
-        },
-    )
-
-    assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
-
-
-def test_atlas_rejects_unvalidated_free_text_departure_month(
-    api_client: TestClient,
-) -> None:
-    """Fail-closed regression for TWM-200: a bare month label such as
-    "October" must never pass as a structured departure_month — Atlas
-    must never guess a year to satisfy the YYYY-MM shape."""
-    output = atlas_output()
-    timeline_item = output["final_itinerary"]["days"][0]["timeline"][0]
-    timeline_item["kind"] = "TRAVEL"
-    timeline_item["from_city"] = "Delhi"
-    timeline_item["to_city"] = "Rishikesh"
-    timeline_item["departure_month"] = "October"
-    adapter = AsyncMock()
-    adapter.invoke = AsyncMock(
-        return_value=AgentInvocationResult(raw_output=json.dumps(output))
-    )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
-    set_engine(api_client, engine)
-
-    response = api_client.post(
-        "/atlas",
-        json={
-            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
-            "working_plan": {
-                "destinations": ["Rishikesh"],
-                "trip_duration": 1,
-                "approved_places": ["Ram Jhula"],
-                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
-            },
-        },
-    )
-
-    assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
-
-
-def test_atlas_rejects_departure_date_on_a_non_travel_timeline_item(
-    api_client: TestClient,
-) -> None:
-    """Fail-closed regression for TWM-200: only TRAVEL items may carry
-    structured departure-date precision — an ACTIVITY item must not
-    smuggle a fabricated exact date in."""
-    invalid_output = atlas_output()
-    invalid_output["final_itinerary"]["days"][0]["timeline"][0]["departure_date"] = (
-        "2026-10-05"
-    )
-    adapter = AsyncMock()
-    adapter.invoke = AsyncMock(
-        return_value=AgentInvocationResult(raw_output=json.dumps(invalid_output))
-    )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
-    set_engine(api_client, engine)
-
-    response = api_client.post(
-        "/atlas",
-        json={
-            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
-            "working_plan": {
-                "destinations": ["Rishikesh"],
-                "trip_duration": 1,
-                "approved_places": ["Ram Jhula"],
-                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
-            },
-        },
-    )
-
-    assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
+        assert response.status_code == 502, field
+        assert adapter.invoke.await_count == 1
 
 
 def test_atlas_rejects_plan_that_does_not_allocate_approved_places(

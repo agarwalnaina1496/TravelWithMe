@@ -39,7 +39,6 @@ def _normalize_atlas_response(execution: AgentExecution) -> AtlasResponse:
     response = execution.response
     return AtlasResponse(
         final_itinerary=response.get("final_itinerary") or {},
-        unresolved=response.get("unresolved") or [],
         agent_meta=_agent_meta(execution),
     )
 

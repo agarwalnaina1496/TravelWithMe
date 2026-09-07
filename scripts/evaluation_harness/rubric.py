@@ -538,13 +538,26 @@ def _atlas_do_not_claim_verified(
         raise RubricFailure("expected no reference to claim VERIFIED status")
 
 
-def _atlas_use_general_or_unresolved(
+def _atlas_notes(response: dict[str, Any]) -> list[dict[str, Any]]:
+    itinerary = response.get("final_itinerary", {})
+    notes = list(itinerary.get("practical_notes", []))
+    for day in itinerary.get("days", []):
+        notes.extend(day.get("notes", []))
+    return notes
+
+
+def _atlas_has_needs_verification_note(response: dict[str, Any]) -> bool:
+    return any(note.get("needs_verification") for note in _atlas_notes(response))
+
+
+def _atlas_use_general_or_needs_verification(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
+    # TWM-217: a verification gap is a needs_verification flag on the note it
+    # concerns now, not a separate `unresolved` list.
     has_general = _atlas_has_general_reference(response)
-    has_unresolved = bool(response.get("unresolved"))
-    if expected and not (has_general or has_unresolved):
-        raise RubricFailure("expected general guidance or an unresolved item")
+    if expected and not (has_general or _atlas_has_needs_verification_note(response)):
+        raise RubricFailure("expected general guidance or a needs_verification note")
 
 
 def _atlas_no_booking_claim(
@@ -568,11 +581,14 @@ def _atlas_allow_general_guidance(
         raise RubricFailure("expected at least one GENERAL_GUIDANCE reference")
 
 
-def _atlas_record_unresolved(
+def _atlas_record_needs_verification(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
-    if expected and not response.get("unresolved"):
-        raise RubricFailure("expected a non-empty unresolved list")
+    # TWM-217: an unconfirmed specific (a property that can't be identified, a
+    # rule that can't be checked) is flagged with needs_verification on the
+    # note it concerns.
+    if expected and not _atlas_has_needs_verification_note(response):
+        raise RubricFailure("expected at least one needs_verification note")
 
 
 def _atlas_no_deep_link(
@@ -820,11 +836,11 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "do_not_add_destinations": _atlas_do_not_add_destinations,
         "no_live_search_available": _atlas_no_live_search_available,
         "do_not_claim_verified": _atlas_do_not_claim_verified,
-        "use_general_or_unresolved": _atlas_use_general_or_unresolved,
+        "use_general_or_needs_verification": _atlas_use_general_or_needs_verification,
         "no_booking_claim": _atlas_no_booking_claim,
         "do_not_invent_url": _atlas_do_not_invent_url,
         "allow_general_guidance": _atlas_allow_general_guidance,
-        "record_unresolved": _atlas_record_unresolved,
+        "record_needs_verification": _atlas_record_needs_verification,
         "no_deep_link": _atlas_no_deep_link,
         "backend_recalculates_totals": _atlas_backend_recalculates_totals,
         "non_negative_ranges": _atlas_non_negative_ranges,

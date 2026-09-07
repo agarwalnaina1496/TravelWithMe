@@ -156,11 +156,9 @@ def _ready_trip_state(*, origin_city="Delhi", booking_setup=None):
                         "budget_summary": {
                             "currency": "INR",
                             "lines": [{"category": "Travel", "amount_low": 1000, "amount_high": 2000, "note": "Estimated transit cost."}],
-                            "budget_fit": "Fits within a typical budget.",
                         },
                         "practical_notes": [], "sources": [], "assumptions": [],
                     },
-                    "unresolved": [],
                     "agent_meta": {"agent": "atlas", "prompt_version": "1.0.0"},
                 },
             },
