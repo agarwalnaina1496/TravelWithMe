@@ -1,5 +1,6 @@
 """Async Postgres implementation of owned trip persistence."""
 
+import copy
 import json
 import re
 from dataclasses import replace
@@ -8,18 +9,50 @@ from uuid import UUID
 
 import asyncpg
 
-from .contracts import DuplicateEmailError, GuestSession, ItineraryVersionRecord, RecommendationRecord, TripCommandRecord, TripOwner, TripRecord, User, VersionConflictError
+from .contracts import (
+    BLOB_STATE_FIELDS,
+    LIFECYCLE_COLUMN_FIELDS,
+    DuplicateEmailError,
+    GuestSession,
+    ItineraryVersionRecord,
+    RecommendationRecord,
+    TripCommandRecord,
+    TripOwner,
+    TripRecord,
+    User,
+    VersionConflictError,
+)
 
 # Branches split out of trips.trip_state into dedicated tables (TWM-158).
 # itinerary_state is handled separately below — it is pointer-only
 # (status, current_version) with the full result composed from
-# itinerary_versions.
+# itinerary_versions only on the full read path (never for commands).
 _BLOB_BRANCHES = ("matcher_state", "planner_state", "booking_setup")
 _ITINERARY_BRANCH = "itinerary_state"
 
-# trips.trip_state now holds only these non-touchable fields; everything
-# else lives in the dedicated branch tables above.
-_CORE_STATE_FIELDS = ("status", "stage", "active_agent", "trip_context", "advisor_state", "selected_option")
+# GET /trips has no cursor yet (the UI shows every trip); this is a generous
+# safety bound, not a real page size. A request above it is clamped, not
+# rejected.
+_TRIP_LIST_LIMIT_DEFAULT = 200
+_TRIP_LIST_LIMIT_MAX = 200
+
+# TWM-158/TWM-191: one round trip for every branch-table read, instead of a
+# SELECT per branch. Anchored on a literal so the row always exists and each
+# branch LEFT JOINs in (or stays NULL when that trip has no such row).
+_BRANCH_COMPOSE_SQL = """
+    SELECT
+        m.state AS matcher_state,
+        p.state AS planner_state,
+        b.state AS booking_setup,
+        i.trip_id AS itinerary_present,
+        i.status AS itinerary_status,
+        i.current_version AS itinerary_current_version
+    FROM (SELECT $1::uuid AS tid) x
+    LEFT JOIN {schema}.matcher_state m ON m.trip_id = x.tid
+    LEFT JOIN {schema}.planner_state p ON p.trip_id = x.tid
+    LEFT JOIN {schema}.booking_setup b ON b.trip_id = x.tid
+    LEFT JOIN {schema}.itinerary_state i ON i.trip_id = x.tid
+"""
 
 
 def _owner_clause(owner: TripOwner, index: int, *, alias: str = "") -> str:
@@ -50,14 +83,40 @@ def _json_value(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
 
-def _core_state(trip_state: dict[str, Any]) -> dict[str, Any]:
-    return {key: trip_state[key] for key in _CORE_STATE_FIELDS if key in trip_state}
+def _blob_state(trip_state: dict[str, Any]) -> dict[str, Any]:
+    """The subset of trip_state persisted to the trips.trip_state jsonb blob
+    (TWM-191) — everything that is neither a lifecycle column nor a dedicated
+    branch table."""
+    return {key: trip_state[key] for key in BLOB_STATE_FIELDS if key in trip_state}
+
+
+def _lifecycle_values(trip_state: dict[str, Any]) -> tuple[str, str, str | None]:
+    """(stage, status, active_agent) for the trips columns. stage/status fall
+    back to their NOT-NULL defaults for a bare `POST /trips` create that
+    never ran canonical_state(); active_agent is genuinely nullable (None
+    once the plan is frozen)."""
+    return (
+        trip_state.get("stage") or "new",
+        trip_state.get("status") or "free",
+        trip_state.get("active_agent"),
+    )
+
+
+def _with_lifecycle(trip_state: dict[str, Any], row: asyncpg.Record) -> dict[str, Any]:
+    """Recompose the lifecycle columns back into the in-memory trip_state
+    dict so command handlers, TripResponse and TripSummary are unaffected by
+    the column move (TWM-191)."""
+    for field in LIFECYCLE_COLUMN_FIELDS:
+        trip_state[field] = row[field]
+    return trip_state
 
 
 def _record(row: asyncpg.Record) -> TripRecord:
     return TripRecord(
         id=row["id"], guest_session_id=row["guest_session_id"], user_id=row["user_id"], title=row["title"],
-        product_mode=row["product_mode"], trip_state=_json_object(row["trip_state"]), ui_state=_json_object(row["ui_state"]),
+        product_mode=row["product_mode"],
+        trip_state=_with_lifecycle(_json_object(row["trip_state"]), row),
+        ui_state=_json_object(row["ui_state"]),
         version=row["version"], created_at=row["created_at"], updated_at=row["updated_at"],
     )
 
@@ -137,20 +196,21 @@ class PostgresTripRepository:
                     guest_session_id, user_id)
         return _row_count(result)
 
-    async def list_trips(self, owner: TripOwner) -> list[TripRecord]:
+    async def list_trips(self, owner: TripOwner, limit: int = _TRIP_LIST_LIMIT_DEFAULT) -> list[TripRecord]:
         """GET /trips (TWM-182): batched, summary-scoped composition — the
-        generic per-trip _compose_trip_state (matcher/planner/booking_setup
-        branch reads plus full itinerary-result composition) previously ran
-        once per trip here, an N+1 pattern whose output the router's
-        _summary() then discarded almost entirely. The list endpoint's
-        TripSummary only ever needs itinerary status and a cheap
-        planner_state-derived signal (awaiting/has_day_plan/has_places), so
-        this fetches just those two branches, batched across every trip id
-        in two queries total regardless of trip count."""
+        generic per-trip compose (matcher/planner/booking_setup branch reads
+        plus full itinerary-result composition) previously ran once per trip
+        here, an N+1 pattern whose output the router's _summary() then
+        discarded almost entirely. TripSummary only needs itinerary status
+        and a cheap planner_state-derived signal, so this fetches just those
+        two branches, batched across every trip id in two queries total. The
+        `limit` (TWM-191) is a generous safety bound — the UI shows all
+        trips and has no cursor yet."""
+        limit = max(1, min(limit, _TRIP_LIST_LIMIT_MAX))
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
-                f"SELECT * FROM {self.schema}.trips WHERE {_owner_clause(owner, 1)} ORDER BY updated_at DESC",
-                _owner_value(owner))
+                f"SELECT * FROM {self.schema}.trips WHERE {_owner_clause(owner, 1)} ORDER BY updated_at DESC LIMIT $2",
+                _owner_value(owner), limit)
             trip_ids = [row["id"] for row in rows]
             planner_by_id, itinerary_status_by_id = await self._batch_list_summary_branches(connection, trip_ids)
             records = []
@@ -180,18 +240,28 @@ class PostgresTripRepository:
         return planner_by_id, itinerary_status_by_id
 
     async def create_trip(self, guest_id: UUID, user_id: UUID | None, title: str, product_mode: str, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord:
+        from ..services.trip_commands.state import canonical_state, touched_branches
+
+        stage, status, active_agent = _lifecycle_values(trip_state)
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
-                    f"""INSERT INTO {self.schema}.trips (guest_session_id,user_id,title,product_mode,trip_state,ui_state)
-                    VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb) RETURNING *""",
-                    guest_id, user_id, title, product_mode, json.dumps(_core_state(trip_state)), json.dumps(ui_state))
-                present = frozenset(key for key in _BLOB_BRANCHES + (_ITINERARY_BRANCH,) if key in trip_state)
-                await self._write_branch_tables(connection, row["id"], trip_state, present)
-                composed = await self._compose_trip_state(connection, row["id"], _core_state(trip_state))
+                    f"""INSERT INTO {self.schema}.trips
+                    (guest_session_id,user_id,title,product_mode,trip_state,ui_state,stage,status,active_agent)
+                    VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9) RETURNING *""",
+                    guest_id, user_id, title, product_mode,
+                    json.dumps(_blob_state(trip_state)), json.dumps(ui_state), stage, status, active_agent)
+                touched = touched_branches(trip_state, canonical_state({}))
+                await self._write_branch_tables(connection, row["id"], trip_state, frozenset(touched))
+                composed = await self._compose_trip_state(
+                    connection, row["id"], _record(row).trip_state, with_itinerary_result=True
+                )
                 return replace(_record(row), trip_state=composed)
 
     async def get_trip(self, owner: TripOwner, trip_id: UUID) -> TripRecord | None:
+        """Full compose — includes the itinerary result blob. Used where the
+        caller actually needs the plan content (flight-search / trusted-action
+        payload derivation); the trips.py routes use get_trip_core."""
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow(
                 f"SELECT * FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
@@ -199,7 +269,28 @@ class PostgresTripRepository:
             if not row:
                 return None
             record = _record(row)
-            composed = await self._compose_trip_state(connection, trip_id, record.trip_state)
+            composed = await self._compose_trip_state(
+                connection, trip_id, record.trip_state, with_itinerary_result=True
+            )
+            return replace(record, trip_state=composed)
+
+    async def get_trip_core(self, owner: TripOwner, trip_id: UUID) -> TripRecord | None:
+        """Lean compose (TWM-191) — the branch tables plus the itinerary
+        *pointer* (status + current_version number), never a query against
+        itinerary_versions. Used by POST .../commands, /recommendations,
+        /board and the /itinerary existence check: none of them render the
+        composed itinerary_state.current_version to the client, and command
+        handlers only test current_version for truthiness."""
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                f"SELECT * FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
+                trip_id, _owner_value(owner))
+            if not row:
+                return None
+            record = _record(row)
+            composed = await self._compose_trip_state(
+                connection, trip_id, record.trip_state, with_itinerary_result=False
+            )
             return replace(record, trip_state=composed)
 
     async def _mutate(self, query: str, owner: TripOwner, trip_id: UUID, expected_version: int, *values: Any) -> TripRecord | None:
@@ -208,7 +299,9 @@ class PostgresTripRepository:
                 row = await connection.fetchrow(query, trip_id, _owner_value(owner), expected_version, *values)
                 if row:
                     record = _record(row)
-                    composed = await self._compose_trip_state(connection, trip_id, record.trip_state)
+                    composed = await self._compose_trip_state(
+                        connection, trip_id, record.trip_state, with_itinerary_result=False
+                    )
                     return replace(record, trip_state=composed)
                 current = await connection.fetchval(
                     f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
@@ -218,12 +311,18 @@ class PostgresTripRepository:
                 raise VersionConflictError(current)
 
     async def replace_trip(self, owner: TripOwner, trip_id: UUID, expected_version: int, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord | None:
+        from ..services.trip_commands.state import canonical_state, touched_branches
+
+        stage, status, active_agent = _lifecycle_values(trip_state)
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
-                    f"""UPDATE {self.schema}.trips SET trip_state=$4::jsonb,ui_state=$5::jsonb,version=version+1,updated_at=now()
+                    f"""UPDATE {self.schema}.trips
+                    SET trip_state=$4::jsonb,ui_state=$5::jsonb,stage=$6,status=$7,active_agent=$8,
+                        version=version+1,updated_at=now()
                     WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
-                    trip_id, _owner_value(owner), expected_version, json.dumps(_core_state(trip_state)), json.dumps(ui_state))
+                    trip_id, _owner_value(owner), expected_version,
+                    json.dumps(_blob_state(trip_state)), json.dumps(ui_state), stage, status, active_agent)
                 if not row:
                     current = await connection.fetchval(
                         f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
@@ -231,9 +330,11 @@ class PostgresTripRepository:
                     if current is None:
                         return None
                     raise VersionConflictError(current)
-                present = frozenset(key for key in _BLOB_BRANCHES + (_ITINERARY_BRANCH,) if key in trip_state)
-                await self._write_branch_tables(connection, trip_id, trip_state, present)
-                composed = await self._compose_trip_state(connection, trip_id, _core_state(trip_state))
+                touched = touched_branches(trip_state, canonical_state({}))
+                await self._write_branch_tables(connection, trip_id, trip_state, frozenset(touched))
+                composed = await self._compose_trip_state(
+                    connection, trip_id, _record(row).trip_state, with_itinerary_result=False
+                )
                 return replace(_record(row), trip_state=composed)
 
     async def rename_trip(self, owner: TripOwner, trip_id: UUID, expected_version: int, title: str) -> TripRecord | None:
@@ -254,7 +355,10 @@ class PostgresTripRepository:
             WHERE {_owner_clause(owner, 1)} AND trip_id=$2 AND idempotency_key=$3""",
             _owner_value(owner), trip_id, idempotency_key,
         )
-        return TripCommandRecord(row["request_hash"], _json_object(row["response"])) if row else None
+        if not row:
+            return None
+        response = await self._hydrate_command_response(self.pool, trip_id, _json_object(row["response"]))
+        return TripCommandRecord(row["request_hash"], response)
 
     async def get_latest_recommendation(self, owner: TripOwner, trip_id: UUID) -> RecommendationRecord | None:
         row = await self.pool.fetchrow(
@@ -281,16 +385,6 @@ class PostgresTripRepository:
         )
         return {row["trip_id"] for row in rows}
 
-    async def list_itinerary_versions(self, owner: TripOwner, trip_id: UUID) -> list[ItineraryVersionRecord]:
-        rows = await self.pool.fetch(
-            f"""SELECT r.* FROM {self.schema}.itinerary_versions r
-            JOIN {self.schema}.trips t ON t.id = r.trip_id
-            WHERE r.trip_id=$1 AND {_owner_clause(owner, 2, alias="t")}
-            ORDER BY r.version ASC""",
-            trip_id, _owner_value(owner),
-        )
-        return [_itinerary_version_record(row) for row in rows]
-
     async def get_current_itinerary(self, owner: TripOwner, trip_id: UUID) -> ItineraryVersionRecord | None:
         row = await self.pool.fetchrow(
             f"""SELECT v.* FROM {self.schema}.itinerary_versions v
@@ -308,6 +402,7 @@ class PostgresTripRepository:
         touched_branches: frozenset[str],
         new_recommendation: dict[str, Any] | None = None,
     ) -> TripRecord | TripCommandRecord | None:
+        stage, status, active_agent = _lifecycle_values(trip_state)
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 prior = await connection.fetchrow(
@@ -316,11 +411,16 @@ class PostgresTripRepository:
                     _owner_value(owner), trip_id, idempotency_key,
                 )
                 if prior:
-                    return TripCommandRecord(prior["request_hash"], _json_object(prior["response"]))
+                    return TripCommandRecord(
+                        prior["request_hash"],
+                        await self._hydrate_command_response(connection, trip_id, _json_object(prior["response"])),
+                    )
                 row = await connection.fetchrow(
-                    f"""UPDATE {self.schema}.trips SET trip_state=$4::jsonb,version=version+1,updated_at=now()
+                    f"""UPDATE {self.schema}.trips
+                    SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7,version=version+1,updated_at=now()
                     WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
-                    trip_id, _owner_value(owner), expected_version, json.dumps(_core_state(trip_state)),
+                    trip_id, _owner_value(owner), expected_version,
+                    json.dumps(_blob_state(trip_state)), stage, status, active_agent,
                 )
                 if not row:
                     prior = await connection.fetchrow(
@@ -330,7 +430,8 @@ class PostgresTripRepository:
                     )
                     if prior:
                         return TripCommandRecord(
-                            prior["request_hash"], _json_object(prior["response"])
+                            prior["request_hash"],
+                            await self._hydrate_command_response(connection, trip_id, _json_object(prior["response"])),
                         )
                     current = await connection.fetchval(
                         f"SELECT version FROM {self.schema}.trips WHERE id=$1 AND {_owner_clause(owner, 2)}",
@@ -354,7 +455,11 @@ class PostgresTripRepository:
                     )
                 stored_response = dict(response)
                 response_record = _record(row).__dict__.copy()
-                response_record["trip_state"] = response_trip_state
+                # TWM-191: the archived idempotency response carries the
+                # shaped trip_state minus the (immutable, re-derivable)
+                # itinerary result blob — recomposed from itinerary_versions
+                # on replay so the response is still byte-identical.
+                response_record["trip_state"] = _strip_itinerary_result(response_trip_state)
                 stored_response["trip"] = response_record
                 await connection.execute(
                     f"""INSERT INTO {self.schema}.trip_commands
@@ -364,6 +469,29 @@ class PostgresTripRepository:
                     json.dumps(stored_response, default=str),
                 )
                 return _record(row)
+
+    async def _hydrate_command_response(
+        self, executor: Any, trip_id: UUID, response: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Re-inline the itinerary result stripped by commit_command, so an
+        idempotency replay returns the exact original TripCommandResponse."""
+        trip = response.get("trip")
+        itinerary = (trip or {}).get("trip_state", {}).get("itinerary_state")
+        current_version = itinerary.get("current_version") if isinstance(itinerary, dict) else None
+        if not (isinstance(current_version, dict) and "result" not in current_version and current_version.get("version")):
+            return response
+        row = await executor.fetchrow(
+            f"""SELECT version, source_guide_revision, result FROM {self.schema}.itinerary_versions
+            WHERE trip_id=$1 AND version=$2""",
+            trip_id, current_version["version"],
+        )
+        if row:
+            itinerary["current_version"] = {
+                "version": row["version"],
+                "source_guide_revision": row["source_guide_revision"],
+                "result": _json_object(row["result"]),
+            }
+        return response
 
     async def _write_branch_tables(
         self, connection: asyncpg.Connection, trip_id: UUID, trip_state: dict[str, Any], touched_branches: frozenset[str]
@@ -397,32 +525,57 @@ class PostgresTripRepository:
                 json.dumps(current_version["result"]),
             )
 
-    async def _compose_trip_state(self, connection: asyncpg.Connection, trip_id: UUID, core_state: dict[str, Any]) -> dict[str, Any]:
-        state = dict(core_state)
+    async def _compose_trip_state(
+        self, connection: asyncpg.Connection, trip_id: UUID, base_state: dict[str, Any], *, with_itinerary_result: bool
+    ) -> dict[str, Any]:
+        state = dict(base_state)
+        row = await connection.fetchrow(_BRANCH_COMPOSE_SQL.format(schema=self.schema), trip_id)
         for branch in _BLOB_BRANCHES:
-            row = await connection.fetchrow(f"SELECT state FROM {self.schema}.{branch} WHERE trip_id=$1", trip_id)
-            if row:
-                state[branch] = _json_object(row["state"])
-        itinerary = await self._compose_itinerary_branch(connection, trip_id)
-        if itinerary is not None:
-            state[_ITINERARY_BRANCH] = itinerary
+            if row[branch] is not None:
+                state[branch] = _json_object(row[branch])
+        if row["itinerary_present"] is not None:
+            state[_ITINERARY_BRANCH] = await self._compose_itinerary_branch(
+                connection, trip_id, row["itinerary_status"], row["itinerary_current_version"],
+                with_result=with_itinerary_result,
+            )
         return state
 
-    async def _compose_itinerary_branch(self, connection: asyncpg.Connection, trip_id: UUID) -> dict[str, Any] | None:
-        pointer = await connection.fetchrow(f"SELECT status, current_version FROM {self.schema}.itinerary_state WHERE trip_id=$1", trip_id)
-        if pointer is None:
-            return None
-        itinerary: dict[str, Any] = {"status": pointer["status"], "current_version": None}
-        if pointer["current_version"] is not None:
-            version_row = await connection.fetchrow(
-                f"""SELECT version, source_guide_revision, result FROM {self.schema}.itinerary_versions
-                WHERE trip_id=$1 AND version=$2""",
-                trip_id, pointer["current_version"],
-            )
-            if version_row:
-                itinerary["current_version"] = {
-                    "version": version_row["version"],
-                    "source_guide_revision": version_row["source_guide_revision"],
-                    "result": _json_object(version_row["result"]),
-                }
-        return itinerary
+    async def _compose_itinerary_branch(
+        self, connection: asyncpg.Connection, trip_id: UUID,
+        status: str | None, current_version: int | None, *, with_result: bool,
+    ) -> dict[str, Any]:
+        if current_version is None:
+            return {"status": status, "current_version": None}
+        if not with_result:
+            # Pointer only — the number, no itinerary_versions query. Command
+            # handlers only test this for truthiness and the routes that use
+            # the lean path never render it to the client (TWM-191).
+            return {"status": status, "current_version": current_version}
+        version_row = await connection.fetchrow(
+            f"""SELECT version, source_guide_revision, result FROM {self.schema}.itinerary_versions
+            WHERE trip_id=$1 AND version=$2""",
+            trip_id, current_version,
+        )
+        if not version_row:
+            return {"status": status, "current_version": None}
+        return {
+            "status": status,
+            "current_version": {
+                "version": version_row["version"],
+                "source_guide_revision": version_row["source_guide_revision"],
+                "result": _json_object(version_row["result"]),
+            },
+        }
+
+
+def _strip_itinerary_result(trip_state: dict[str, Any]) -> dict[str, Any]:
+    """A deep copy of the shaped trip_state with the itinerary result blob
+    reduced to its version pointer — the caller keeps using the original for
+    the live response, so this must not mutate it."""
+    itinerary = trip_state.get("itinerary_state")
+    current_version = itinerary.get("current_version") if isinstance(itinerary, dict) else None
+    if not (isinstance(current_version, dict) and "result" in current_version):
+        return trip_state
+    stripped = copy.deepcopy(trip_state)
+    stripped["itinerary_state"]["current_version"] = {"version": current_version["version"]}
+    return stripped

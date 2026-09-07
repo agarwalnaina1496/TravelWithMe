@@ -23,8 +23,11 @@ async def apply_atlas(
 
     itinerary = state["itinerary_state"]
     if itinerary.get("status") == "ready":
-        result = itinerary["current_version"]["result"]
-        return {"message": None, "agent_meta": result["agent_meta"]}
+        # Already generated — a genuine no-op. The command compose carries
+        # only the itinerary pointer, not the result (TWM-191), and the
+        # response omits the untouched itinerary_state branch anyway, so
+        # there is nothing to report and no agent ran.
+        return {"message": None, "agent_meta": None}
 
     working_plan = build_working_plan(frozen_plan["guide_state"])
     request = AtlasRequest.model_validate(

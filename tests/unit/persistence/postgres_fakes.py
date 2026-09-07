@@ -108,23 +108,23 @@ class FakeDatabase:
             return None
 
         # --- trips ---
-        if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,version=version+1"):
-            trip_id, owner_value, expected_version, trip_state = args
+        # TWM-191: commit_command writes trip_state + the lifecycle columns.
+        if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7,version=version+1"):
+            trip_id, owner_value, expected_version, trip_state, stage, status, active_agent = args
             trip = self.trips.get(trip_id)
             if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
-            trip["trip_state"] = trip_state
+            trip.update(trip_state=trip_state, stage=stage, status=status, active_agent=active_agent)
             trip["version"] += 1
             trip["updated_at"] = datetime.now(timezone.utc)
             self.written_tables.add("trips")
             return dict(trip)
-        if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,ui_state=$5::jsonb"):
-            trip_id, owner_value, expected_version, trip_state, ui_state = args
+        if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,ui_state=$5::jsonb,stage=$6,status=$7,active_agent=$8"):
+            trip_id, owner_value, expected_version, trip_state, ui_state, stage, status, active_agent = args
             trip = self.trips.get(trip_id)
             if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
-            trip["trip_state"] = trip_state
-            trip["ui_state"] = ui_state
+            trip.update(trip_state=trip_state, ui_state=ui_state, stage=stage, status=status, active_agent=active_agent)
             trip["version"] += 1
             trip["updated_at"] = datetime.now(timezone.utc)
             self.written_tables.add("trips")
@@ -167,12 +167,14 @@ class FakeDatabase:
                 return None
             return {"version": trip["version"]}
         if q.startswith(f"INSERT INTO {self.q('trips')}"):
-            guest_id, user_id, title, product_mode, trip_state, ui_state = args
+            guest_id, user_id, title, product_mode, trip_state, ui_state, stage, status, active_agent = args
             trip_id = uuid4()
             now = datetime.now(timezone.utc)
             trip = {
                 "id": trip_id, "guest_session_id": guest_id, "user_id": user_id, "title": title, "product_mode": product_mode,
-                "trip_state": trip_state, "ui_state": ui_state, "version": 1, "created_at": now, "updated_at": now,
+                "trip_state": trip_state, "ui_state": ui_state,
+                "stage": stage, "status": status, "active_agent": active_agent,
+                "version": 1, "created_at": now, "updated_at": now,
             }
             self.trips[trip_id] = trip
             self.written_tables.add("trips")
@@ -184,8 +186,24 @@ class FakeDatabase:
                 return None
             return dict(trip)
         if q.startswith(f"SELECT * FROM {self.q('trips')} WHERE "):
-            (owner_value,) = args
-            return [dict(t) for t in self.trips.values() if _owned_by(t, owner_value)]
+            owner_value = args[0]
+            limit = args[1] if len(args) > 1 else len(self.trips)
+            owned = [dict(t) for t in self.trips.values() if _owned_by(t, owner_value)]
+            owned.sort(key=lambda t: t["updated_at"], reverse=True)
+            return owned[:limit]
+
+        # --- TWM-191: one-round-trip branch compose (LEFT JOINs) ---
+        if q.startswith("SELECT m.state AS matcher_state, p.state AS planner_state, b.state AS booking_setup,"):
+            (trip_id,) = args
+            pointer = self.itinerary_state.get(trip_id)
+            return {
+                "matcher_state": (self.branch_tables["matcher_state"].get(trip_id) or {}).get("state"),
+                "planner_state": (self.branch_tables["planner_state"].get(trip_id) or {}).get("state"),
+                "booking_setup": (self.branch_tables["booking_setup"].get(trip_id) or {}).get("state"),
+                "itinerary_present": trip_id if pointer is not None else None,
+                "itinerary_status": pointer["status"] if pointer else None,
+                "itinerary_current_version": pointer["current_version"] if pointer else None,
+            }
 
         # --- blob branch tables (matcher_state/planner_state/booking_setup) ---
         for branch in self.branch_tables:
@@ -232,13 +250,6 @@ class FakeDatabase:
             trip_id, version = args
             row = self.itinerary_versions.get((trip_id, version))
             return dict(row) if row else None
-        if q.startswith(f"SELECT r.* FROM {self.q('itinerary_versions')}"):
-            trip_id, owner_value = args
-            trip = self.trips.get(trip_id)
-            if not trip or not _owned_by(trip, owner_value):
-                return []
-            rows = [v for (t, _v), v in self.itinerary_versions.items() if t == trip_id]
-            return sorted(rows, key=lambda r: r["version"])
         if q.startswith(f"SELECT v.* FROM {self.q('itinerary_versions')} v"):
             trip_id, owner_value = args
             trip = self.trips.get(trip_id)

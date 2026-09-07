@@ -26,9 +26,18 @@ def _owner(guest_id) -> TripOwner:
 def _seed_trip(db: FakeDatabase, guest_id, *, core_state=None, version=1):
     trip_id = uuid4()
     now = datetime.now(timezone.utc)
+    core_state = dict(core_state or {})
+    # TWM-191: stage/status/active_agent are columns on the trips row now,
+    # not blob keys.
     db.trips[trip_id] = {
         "id": trip_id, "guest_session_id": guest_id, "user_id": None, "title": "Trip", "product_mode": "self_led",
-        "trip_state": __import__("json").dumps(core_state or {}), "ui_state": "{}",
+        "trip_state": __import__("json").dumps(
+            {k: v for k, v in core_state.items() if k not in ("stage", "status", "active_agent")}
+        ),
+        "ui_state": "{}",
+        "stage": core_state.get("stage", "new"),
+        "status": core_state.get("status", "free"),
+        "active_agent": core_state.get("active_agent"),
         "version": version, "created_at": now, "updated_at": now,
     }
     return trip_id
@@ -102,10 +111,10 @@ def test_commit_command_raises_version_conflict_on_stale_expected_version():
 
 
 def test_selected_option_survives_a_commit_and_reload_round_trip():
-    """Regression test: selected_option is a core trip_state field (small,
-    always-present, alongside stage/active_agent/trip_context) — not one
-    of the dedicated branch tables — so it must round-trip through
-    _CORE_STATE_FIELDS the same way trip_context already does. Forgetting
+    """Regression test: selected_option is a blob trip_state field (small,
+    always-present, alongside trip_context) — not one of the dedicated
+    branch tables and not a lifecycle column — so it must round-trip through
+    BLOB_STATE_FIELDS the same way trip_context already does. Forgetting
     to list it there would let it compute correctly in memory and appear
     in that one command's response, but never actually persist — a
     silent, hard-to-notice data loss this test exists to catch."""
@@ -281,3 +290,156 @@ def test_get_current_itinerary_none_before_any_itinerary_generated():
     trip_id = _seed_trip(db, guest_id)
 
     assert asyncio.run(repository.get_current_itinerary(_owner(guest_id), trip_id)) is None
+
+
+# ---------------------------------------------------------------------------
+# TWM-191: lifecycle columns, uniform branch-write, lean reads.
+# ---------------------------------------------------------------------------
+import json  # noqa: E402
+
+
+def test_commit_writes_lifecycle_columns_and_the_blob_drops_those_keys():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_id = _seed_trip(db, guest_id, core_state={"stage": "new", "trip_context": {}})
+
+    asyncio.run(repository.commit_command(
+        _owner(guest_id), trip_id, expected_version=1, idempotency_key=uuid4(), request_hash="hash",
+        trip_state={
+            "status": "committed", "stage": "planning", "active_agent": "guide",
+            "trip_context": {"destinations": ["Goa"]},
+        },
+        response_trip_state={}, response={"message": None, "agent_meta": None},
+        touched_branches=frozenset(),
+    ))
+
+    row = db.trips[trip_id]
+    assert (row["stage"], row["status"], row["active_agent"]) == ("planning", "committed", "guide")
+    blob = json.loads(row["trip_state"])
+    assert "stage" not in blob and "status" not in blob and "active_agent" not in blob
+    assert blob["trip_context"] == {"destinations": ["Goa"]}
+
+    # ...and they recompose transparently on read.
+    trip = asyncio.run(repository.get_trip(_owner(guest_id), trip_id))
+    assert trip.trip_state["stage"] == "planning"
+    assert trip.trip_state["status"] == "committed"
+    assert trip.trip_state["active_agent"] == "guide"
+
+
+def test_create_trip_writes_a_branch_row_only_for_a_touched_branch():
+    """A Meridian-only first-message trip must not leave empty planner_state /
+    itinerary_state / booking_setup rows behind — create_trip and
+    commit_command share the one touched_branches decision now."""
+    from twm.services.trip_commands.state import canonical_state
+
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+
+    state = canonical_state({"trip_context": {"destinations": ["Goa"]}})
+    state["matcher_state"]["conversation_context"]["awaiting"] = "trip_duration"
+
+    asyncio.run(repository.create_trip(guest_id, None, "Trip", "self_led", state, {}))
+
+    assert "matcher_state" in db.written_tables
+    assert "planner_state" not in db.written_tables
+    assert "itinerary_state" not in db.written_tables
+    assert "booking_setup" not in db.written_tables
+
+
+def test_get_trip_core_composes_only_the_itinerary_pointer_never_itinerary_versions():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_id = _seed_trip(db, guest_id, core_state={"stage": "planned"})
+    db.itinerary_state[trip_id] = {"status": "ready", "current_version": 1}
+    db.itinerary_versions[(trip_id, 1)] = {
+        "trip_id": trip_id, "version": 1, "source_guide_revision": 5,
+        "result": json.dumps({"final_itinerary": {"days": []}}), "created_at": datetime.now(timezone.utc),
+    }
+
+    db.query_log.clear()
+    trip = asyncio.run(repository.get_trip_core(_owner(guest_id), trip_id))
+
+    assert trip.trip_state["itinerary_state"] == {"status": "ready", "current_version": 1}
+    assert not any("itinerary_versions" in q for q in db.query_log)
+
+
+def test_commit_command_never_reads_itinerary_versions():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_id = _seed_trip(db, guest_id, core_state={"stage": "planned"})
+    db.itinerary_state[trip_id] = {"status": "ready", "current_version": 1}
+    db.itinerary_versions[(trip_id, 1)] = {
+        "trip_id": trip_id, "version": 1, "source_guide_revision": 5,
+        "result": json.dumps({"final_itinerary": {"days": []}}), "created_at": datetime.now(timezone.utc),
+    }
+
+    db.query_log.clear()
+    asyncio.run(repository.commit_command(
+        _owner(guest_id), trip_id, expected_version=1, idempotency_key=uuid4(), request_hash="hash",
+        trip_state={
+            "status": "free", "stage": "planned", "active_agent": None, "trip_context": {},
+            "booking_setup": {"party": {"adults": 2, "children": 0, "infants": 0}},
+        },
+        response_trip_state={}, response={"message": None, "agent_meta": None},
+        touched_branches=frozenset({"booking_setup"}),
+    ))
+
+    assert not any("SELECT" in q and "itinerary_versions" in q for q in db.query_log)
+
+
+def test_branch_compose_is_one_query_not_one_per_branch():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_id = _seed_trip(db, guest_id, core_state={"stage": "planning"})
+    db.branch_tables["planner_state"][trip_id] = {"state": json.dumps({"places": ["Baga Beach"]})}
+    db.branch_tables["booking_setup"][trip_id] = {"state": json.dumps({"party": {"adults": 1, "children": 0, "infants": 0}})}
+
+    db.query_log.clear()
+    trip = asyncio.run(repository.get_trip_core(_owner(guest_id), trip_id))
+
+    compose_queries = [q for q in db.query_log if q.startswith("SELECT m.state AS matcher_state")]
+    assert len(compose_queries) == 1
+    assert trip.trip_state["planner_state"] == {"places": ["Baga Beach"]}
+    assert trip.trip_state["booking_setup"] == {"party": {"adults": 1, "children": 0, "infants": 0}}
+
+
+def test_idempotency_replay_recomposes_the_stripped_itinerary_result():
+    db = FakeDatabase(SCHEMA)
+    repository = _repository(db)
+    guest_id = uuid4()
+    trip_id = _seed_trip(db, guest_id, core_state={"stage": "plan_ready"})
+    key = uuid4()
+    full_result = {"final_itinerary": {"days": ["day-1"]}, "agent_meta": {"agent": "atlas", "prompt_version": "1.0.0"}}
+    shaped = {
+        "trip_id": str(trip_id), "stage": "planned", "status": "free", "active_agent": None,
+        "trip_context": {},
+        "itinerary_state": {
+            "status": "ready",
+            "current_version": {"version": 1, "source_guide_revision": 5, "result": full_result},
+        },
+    }
+
+    asyncio.run(repository.commit_command(
+        _owner(guest_id), trip_id, expected_version=1, idempotency_key=key, request_hash="hash",
+        trip_state={
+            "status": "free", "stage": "planned", "active_agent": None, "trip_context": {},
+            "itinerary_state": shaped["itinerary_state"],
+        },
+        response_trip_state=shaped, response={"message": None, "agent_meta": None},
+        touched_branches=frozenset({"itinerary_state"}),
+    ))
+
+    # What actually got persisted in trip_commands has no result blob...
+    stored = json.loads(db.trip_commands[(trip_id, key)]["response"])
+    assert stored["trip"]["trip_state"]["itinerary_state"]["current_version"] == {"version": 1}
+
+    # ...but the replay recomposes it byte-for-byte from itinerary_versions.
+    replay = asyncio.run(repository.get_command(_owner(guest_id), trip_id, key))
+    assert replay.response["trip"]["trip_state"]["itinerary_state"]["current_version"] == {
+        "version": 1, "source_guide_revision": 5, "result": full_result,
+    }

@@ -31,7 +31,6 @@ class MemoryTripRepository:
         self.trips = {}
         self.commands = {}
         self.recommendations = {}  # trip_id -> list[RecommendationRecord], latest last
-        self.itinerary_versions = {}  # trip_id -> list[ItineraryVersionRecord], ordered
 
     async def resolve_guest(self, token_hash, lifetime_days):
         guest = self.guests.get(token_hash)
@@ -65,8 +64,10 @@ class MemoryTripRepository:
                 claimed += 1
         return claimed
 
-    async def list_trips(self, owner):
-        return [trip for trip in self.trips.values() if _owned_by(trip, owner)]
+    async def list_trips(self, owner, limit=200):
+        owned = [trip for trip in self.trips.values() if _owned_by(trip, owner)]
+        owned.sort(key=lambda t: t.updated_at, reverse=True)
+        return owned[: max(1, min(limit, 200))]
 
     async def create_trip(self, guest_id, user_id, title, product_mode, trip_state, ui_state):
         now = datetime.now(timezone.utc)
@@ -77,6 +78,22 @@ class MemoryTripRepository:
     async def get_trip(self, owner, trip_id):
         trip = self.trips.get(trip_id)
         return trip if trip and _owned_by(trip, owner) else None
+
+    async def get_trip_core(self, owner, trip_id):
+        # TWM-191: mirrors the real lean compose — the itinerary pointer is
+        # reduced to its version number, no itinerary_versions read.
+        trip = await self.get_trip(owner, trip_id)
+        if trip is None:
+            return None
+        itinerary = trip.trip_state.get("itinerary_state")
+        current = itinerary.get("current_version") if isinstance(itinerary, dict) else None
+        if not isinstance(current, dict):
+            return trip
+        pointer_state = {
+            **trip.trip_state,
+            "itinerary_state": {**itinerary, "current_version": current.get("version")},
+        }
+        return replace(trip, trip_state=pointer_state)
 
     async def replace_trip(self, owner, trip_id, expected_version, trip_state, ui_state):
         trip = await self.get_trip(owner, trip_id)
@@ -138,12 +155,6 @@ class MemoryTripRepository:
             if trip_id in owned and self.recommendations.get(trip_id)
         }
 
-    async def list_itinerary_versions(self, owner, trip_id):
-        trip = await self.get_trip(owner, trip_id)
-        if not trip:
-            return []
-        return list(self.itinerary_versions.get(trip_id) or [])
-
     async def commit_command(self, owner, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches=frozenset(), new_recommendation=None):
         key = (owner.user_id or owner.guest_session_id, trip_id, idempotency_key)
         if key in self.commands:
@@ -153,7 +164,18 @@ class MemoryTripRepository:
             return None
         if trip.version != expected_version:
             raise VersionConflictError(trip.version)
-        updated = replace(trip, trip_state=trip_state, version=trip.version + 1, updated_at=datetime.now(timezone.utc))
+        # TWM-154/TWM-191: real postgres persists the lifecycle/blob core
+        # every commit but only rewrites a branch table when it is touched —
+        # an untouched branch keeps its persisted value. Mirror that here so
+        # the command path's lean itinerary pointer (an int, from
+        # get_trip_core) is never written back over the stored full pointer.
+        _BRANCHES = ("matcher_state", "planner_state", "itinerary_state", "booking_setup")
+        merged = dict(trip.trip_state)
+        for state_key, state_value in trip_state.items():
+            if state_key in _BRANCHES and state_key not in touched_branches:
+                continue
+            merged[state_key] = state_value
+        updated = replace(trip, trip_state=merged, version=trip.version + 1, updated_at=datetime.now(timezone.utc))
         self.trips[trip_id] = updated
         if new_recommendation is not None:
             self.recommendations.setdefault(trip_id, []).append(RecommendationRecord(
@@ -601,6 +623,21 @@ def test_list_trips_still_returns_trips_with_non_empty_trip_context(
     assert listed.status_code == 200
     assert len(listed.json()["trips"]) == 1
     assert listed.json()["trips"][0]["title"] == "Goa"
+
+
+# TWM-191: GET /trips takes a generous `limit` safety bound (no cursor yet).
+def test_list_trips_limit_is_honoured_defaulted_and_clamped(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    for i in range(5):
+        _create_seeded_trip(api_client, repository, title=f"Trip {i}", trip_state={"trip_context": {"origin": "Delhi"}})
+
+    assert len(api_client.get("/trips").json()["trips"]) == 5  # default applied
+    assert len(api_client.get("/trips?limit=2").json()["trips"]) == 2  # honoured
+    above_max = api_client.get("/trips?limit=999999")  # clamped, never 422
+    assert above_max.status_code == 200
+    assert len(above_max.json()["trips"]) == 5
+    assert api_client.get("/trips?limit=0").status_code == 422  # ge=1 at the schema
 
 
 # TWM-182: added alongside the openTrip fetch-timing fix in TWM-UI —
@@ -1407,10 +1444,12 @@ def test_start_itinerary_is_idempotent_and_does_not_rerun_atlas(api_client: Test
     # correctly omits an untouched branch, so fetch the persisted state to
     # confirm nothing changed instead of expecting it inline.
     assert "itinerary_state" not in second.json()["trip"]["trip_state"]
-    # GET /trips/{id} no longer inlines the itinerary result (TWM-159) — the
-    # dedicated endpoint is the source for it now.
+    # GET /trips/{id} composes only the itinerary pointer now (TWM-191) —
+    # never a query against itinerary_versions — so current_version is the
+    # bare version number. The dedicated /itinerary endpoint is the source
+    # for the plan content.
     persisted_trip_state = api_client.get(f"/trips/{trip['id']}").json()["trip_state"]
-    assert "result" not in persisted_trip_state["itinerary_state"]["current_version"]
+    assert persisted_trip_state["itinerary_state"]["current_version"] == 1
     persisted_itinerary = api_client.get(f"/trips/{trip['id']}/itinerary").json()
     assert first_itinerary["current_version"]["result"] == persisted_itinerary["result"]
 
@@ -1449,26 +1488,17 @@ def _seed_ready_itinerary(api_client, repository, engine, *, guide_revision=5, t
     return response.json()["trip"]
 
 
-def test_itinerary_versions_empty_before_any_accepted_revision(api_client: TestClient):
+def test_itinerary_versions_route_is_removed(api_client: TestClient):
+    """TWM-191: the version-history endpoint is gone — post-TWM-216
+    `itinerary_versions` holds one row per trip, so it served nothing and
+    had zero UI callers."""
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: engine
     trip = _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
 
-    response = api_client.get(f"/trips/{trip['id']}/itinerary-versions")
-
-    assert response.status_code == 200
-    assert response.json() == {"versions": []}
-
-
-def test_itinerary_versions_404_for_unknown_trip(api_client: TestClient):
-    repository = MemoryTripRepository()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-
-    response = api_client.get(f"/trips/{uuid4()}/itinerary-versions")
-
-    assert response.status_code == 404
+    assert api_client.get(f"/trips/{trip['id']}/itinerary-versions").status_code == 404
 
 
 def test_get_current_itinerary_returns_the_active_version_result(api_client: TestClient):
@@ -2638,10 +2668,8 @@ def test_guide_reversal_reopens_destination_discovery_in_same_command(api_client
     assert trip_state["active_agent"] == "meridian"
     assert "destination" not in trip_state["trip_context"]
     assert "destinations" not in trip_state["trip_context"]
-    superseded = trip_state["planner_state"]["superseded_planner_states"]
-    assert len(superseded) == 1
-    assert superseded[0]["destination_context"] == ["Goa"]
-    assert superseded[0]["planner_state"]["places"] == ["Baga Beach"]
+    # TWM-191: the pre-reset planner snapshot is no longer retained.
+    assert "superseded_planner_states" not in trip_state["planner_state"]
     assert trip_state["planner_state"]["places"] == []
 
 
