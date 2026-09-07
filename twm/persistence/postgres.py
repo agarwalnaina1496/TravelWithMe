@@ -104,8 +104,8 @@ def _lifecycle_values(trip_state: dict[str, Any]) -> tuple[str, str, str | None]
 
 def _with_lifecycle(trip_state: dict[str, Any], row: asyncpg.Record) -> dict[str, Any]:
     """Recompose the lifecycle columns back into the in-memory trip_state
-    dict so command handlers, TripResponse and TripSummary are unaffected by
-    the column move (TWM-191)."""
+    dict so command handlers and every TripView composition are unaffected
+    by the column move (TWM-191)."""
     for field in LIFECYCLE_COLUMN_FIELDS:
         trip_state[field] = row[field]
     return trip_state
@@ -200,10 +200,10 @@ class PostgresTripRepository:
         """GET /trips (TWM-182): batched, summary-scoped composition — the
         generic per-trip compose (matcher/planner/booking_setup branch reads
         plus full itinerary-result composition) previously ran once per trip
-        here, an N+1 pattern whose output the router's _summary() then
-        discarded almost entirely. TripSummary only needs itinerary status
-        and a cheap planner_state-derived signal, so this fetches just those
-        two branches, batched across every trip id in two queries total. The
+        here, an N+1 pattern whose output the thin list view then discarded
+        almost entirely. The list only needs itinerary status and a cheap
+        planner_state-derived signal, so this fetches just those two branches,
+        batched across every trip id in two queries total. The
         `limit` (TWM-191) is a generous safety bound — the UI shows all
         trips and has no cursor yet."""
         limit = max(1, min(limit, _TRIP_LIST_LIMIT_MAX))

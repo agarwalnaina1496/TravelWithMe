@@ -3,12 +3,19 @@
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from ...persistence.contracts import RecommendationRecord, TripCommandRecord, TripOwner, TripRecord, TripRepository
 from ...schemas.trip_context import DESTINATIONS_KEY
-from ...schemas.trips import TripCommandRequest, TripCommandResponse, TripFirstMessageRequest, TripResponse
+from ...schemas.trips import (
+    TripCommandRequest,
+    TripCommandResponse,
+    TripFirstMessageRequest,
+    TripRecommendationsResponse,
+    TripResponse,
+)
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from .atlas_commands import apply_atlas
@@ -70,9 +77,20 @@ class TripCommandService:
         touched = touched_branches(state, before)
         shaped_trip_state = shape_command_trip_state(state, touched)
         new_recommendation = result.pop("new_recommendation", None)
+        recommendation = None
+        if new_recommendation is not None:
+            # TWM-217: the turn produced a matcher round — return it inline
+            # (the UI consumes this in TWM-220, saving a second fetch) and
+            # store it so an idempotency replay returns it identically. The
+            # round is immutable once archived; created_at is stamped now,
+            # matching the row's own DEFAULT now().
+            recommendation = TripRecommendationsResponse.model_validate(
+                {**new_recommendation, "created_at": datetime.now(timezone.utc)}
+            )
         response_without_trip = {
             "message": result["message"],
             "agent_meta": result["agent_meta"],
+            "recommendation": recommendation.model_dump(mode="json") if recommendation else None,
         }
         committed = await self.repository.commit_command(
             owner,
@@ -103,6 +121,7 @@ class TripCommandService:
             ),
             message=result["message"],
             agent_meta=result["agent_meta"],
+            recommendation=recommendation,
         )
         self.logger.info(
             "Committed Backend-owned trip command.",

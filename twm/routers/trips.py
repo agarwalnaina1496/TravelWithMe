@@ -5,29 +5,24 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
-from ..dependencies import get_current_user, get_engine, get_logger, get_trip_board_service, get_trip_persistence
+from ..dependencies import get_current_user, get_engine, get_logger, get_trip_persistence, get_trip_view_service
 from ..persistence.contracts import TripOwner, TripRecord, User, VersionConflictError
 from ..persistence.service import TripPersistenceService
 from ..schemas.trips import (
-    SUMMARY_TRIP_CONTEXT_FIELDS,
     TripCommandRequest,
     TripCommandResponse,
     TripCreateRequest,
     TripFirstMessageRequest,
     TripItineraryResponse,
-    TripListResponse,
     TripRecommendationsResponse,
     TripRenameRequest,
     TripResponse,
-    TripSummary,
-    TripSummaryItineraryState,
-    TripSummaryState,
     TripUiStateRequest,
 )
-from ..schemas.trip_board import TripBoardResponse
+from ..schemas.trip_view import TripListItem, TripListResponse, TripView
 from ..services import AgentEngine
-from ..services.trip_board import TripBoardService
 from ..services.trip_commands import IdempotencyConflictError, InvalidTripCommandError, TripCommandService
+from ..services.trip_view import TripViewService, compose_trip_dates, enrich_itinerary
 from ..telemetry import TelemetryLogger
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
@@ -35,7 +30,7 @@ Persistence = Annotated[TripPersistenceService, Depends(get_trip_persistence)]
 Logger = Annotated[TelemetryLogger, Depends(get_logger)]
 Engine = Annotated[AgentEngine, Depends(get_engine)]
 CurrentUser = Annotated[User | None, Depends(get_current_user)]
-TripBoard = Annotated[TripBoardService, Depends(get_trip_board_service)]
+TripViewDep = Annotated[TripViewService, Depends(get_trip_view_service)]
 
 
 async def _resolve_owner(request: Request, response: Response, persistence: TripPersistenceService, current_user: User | None) -> TripOwner:
@@ -47,58 +42,36 @@ async def _resolve_owner(request: Request, response: Response, persistence: Trip
     return TripOwner(guest_session_id=guest.id, user_id=current_user.id if current_user else None)
 
 
-def _response(record: TripRecord) -> TripResponse:
-    """GET /trips/{id} (TWM-159): matcher/planner/booking_setup stay inline
-    (small, one shared resume call every screen relies on) — only the
-    Atlas itinerary result is dropped, since only the Trip Dashboard
-    screen reads it (via the dedicated /itinerary endpoint instead)."""
-    trip_state = record.trip_state
-    itinerary = trip_state.get("itinerary_state")
-    current_version = itinerary.get("current_version") if isinstance(itinerary, dict) else None
-    if isinstance(current_version, dict) and "result" in current_version:
-        trip_state = {
-            **trip_state,
-            "itinerary_state": {
-                **itinerary,
-                "current_version": {key: value for key, value in current_version.items() if key != "result"},
-            },
-        }
-    return TripResponse(
-        id=record.id, title=record.title, product_mode=record.product_mode,
-        trip_state=trip_state, ui_state=record.ui_state, version=record.version,
-        created_at=record.created_at, updated_at=record.updated_at,
+async def _compose_trip_view(
+    owner: TripOwner,
+    trip_id: UUID,
+    persistence: TripPersistenceService,
+    view_service: TripViewService,
+) -> TripView | None:
+    """GET / PATCH /trips/{id} (TWM-217): the one composed read model. Uses
+    the blob-free get_trip_core; reads itinerary_versions once, and only when
+    an itinerary pointer exists, to compose summary / budget_breakdown /
+    before_you_go."""
+    trip = await persistence.repository.get_trip_core(owner, trip_id)
+    if trip is None:
+        return None
+    pointer = (trip.trip_state.get("itinerary_state") or {}).get("current_version")
+    itinerary_result = None
+    if pointer:
+        current = await persistence.repository.get_current_itinerary(owner, trip_id)
+        itinerary_result = current.result if current else None
+    has_recommendation = bool(
+        await persistence.repository.trip_ids_with_recommendations(owner, [trip_id])
     )
-
-
-def _summary(record: TripRecord, has_recommendation: bool) -> TripSummary:
-    """GET /trips (TWM-159, extended TWM-182, TWM-190): a small My Trips/Landing
-    recap, not the full trip_state — the list screen never reads matcher/
-    booking_setup state or the itinerary result, so none of it belongs on a
-    list card. planner_state contributes only a cheap derived
-    awaiting/has_day_plan/has_places signal (never the nested day_plan/
-    frozen_plan/history) — enough for the traveler-facing card to tell
-    "mid-conversation" from "draft ready" without a second fetch.
-    has_recommendation is looked up separately (matcher_recommendations
-    lives in its own table, never embedded in trip_state) — see list_trips's
-    batched trip_ids_with_recommendations call."""
-    trip_state = record.trip_state
-    trip_context = trip_state.get("trip_context") or {}
-    recap = {key: trip_context[key] for key in SUMMARY_TRIP_CONTEXT_FIELDS if key in trip_context}
-    itinerary_status = (trip_state.get("itinerary_state") or {}).get("status")
-    planner_state = trip_state.get("planner_state") or {}
-    conversation_context = planner_state.get("conversation_context") or {}
-    return TripSummary(
-        id=record.id, title=record.title, product_mode=record.product_mode,
-        trip_state=TripSummaryState(
-            stage=trip_state.get("stage", "new"),
-            itinerary_state=TripSummaryItineraryState(status=itinerary_status),
-            trip_context=recap,
-            awaiting=conversation_context.get("awaiting"),
-            has_day_plan=bool(planner_state.get("day_plan")),
-            has_places=bool(planner_state.get("places")),
-            has_recommendation=has_recommendation,
-        ),
-        version=record.version, created_at=record.created_at, updated_at=record.updated_at,
+    return view_service.build(
+        trip_id=trip_id,
+        title=trip.title,
+        product_mode=trip.product_mode,
+        version=trip.version,
+        trip_state=trip.trip_state,
+        ui_state=trip.ui_state,
+        itinerary_result=itinerary_result,
+        has_recommendation=has_recommendation,
     )
 
 
@@ -114,6 +87,7 @@ def _has_trip_context(record: TripRecord) -> bool:
 @router.get("", response_model=TripListResponse)
 async def list_trips(
     request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser,
+    trip_view: TripViewDep,
     limit: int = Query(default=200, ge=1),
 ):
     # TWM-191: `limit` is a generous safety bound (a value above the
@@ -135,18 +109,29 @@ async def list_trips(
         empty_excluded=len(trips) - len(populated_trips),
     )
     return TripListResponse(trips=[
-        _summary(t, has_recommendation=t.id in recommendation_ids) for t in populated_trips
+        trip_view.build_list_item(
+            trip_id=t.id, title=t.title, product_mode=t.product_mode, version=t.version,
+            created_at=t.created_at, updated_at=t.updated_at, trip_state=t.trip_state,
+            has_recommendation=t.id in recommendation_ids,
+        )
+        for t in populated_trips
     ])
 
 
-@router.post("", response_model=TripResponse, status_code=201)
-async def create_trip(payload: TripCreateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+@router.post("", response_model=TripView, status_code=201)
+async def create_trip(
+    payload: TripCreateRequest, request: Request, response: Response,
+    persistence: Persistence, logger: Logger, current_user: CurrentUser, trip_view: TripViewDep,
+):
     owner = await _resolve_owner(request, response, persistence, current_user)
     trip = await persistence.repository.create_trip(
         owner.guest_session_id, owner.user_id, payload.title, payload.product_mode, {"trip_context": payload.trip_context}, {}
     )
     logger.info("Created guest trip.", event="be.trip.created", source="http", trip_id=str(trip.id), version=trip.version)
-    return _response(trip)
+    return trip_view.build(
+        trip_id=trip.id, title=trip.title, product_mode=trip.product_mode, version=trip.version,
+        trip_state=trip.trip_state, ui_state=trip.ui_state, itinerary_result=None, has_recommendation=False,
+    )
 
 
 @router.post("/first-message", response_model=TripCommandResponse, status_code=201)
@@ -184,15 +169,22 @@ async def start_trip_from_first_message(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
-@router.get("/{trip_id}", response_model=TripResponse)
-async def get_trip(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+@router.get("/{trip_id}", response_model=TripView)
+async def get_trip(
+    trip_id: UUID, request: Request, response: Response,
+    persistence: Persistence, logger: Logger, current_user: CurrentUser, trip_view: TripViewDep,
+):
     owner = await _resolve_owner(request, response, persistence, current_user)
-    trip = await persistence.repository.get_trip_core(owner, trip_id)
-    if trip is None:
+    view = await _compose_trip_view(owner, trip_id, persistence, trip_view)
+    if view is None:
         logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
         raise HTTPException(status_code=404, detail="Trip not found.")
-    logger.info("Fetched guest trip.", event="be.trip.fetched", source="http", trip_id=str(trip_id), version=trip.version)
-    return _response(trip)
+    logger.info(
+        "Fetched guest trip.", event="be.trip.fetched", source="http",
+        trip_id=str(trip_id), version=view.version, stage=view.lifecycle.stage,
+        has_summary=view.summary is not None,
+    )
+    return view
 
 
 @router.get("/{trip_id}/recommendations", response_model=TripRecommendationsResponse)
@@ -225,6 +217,11 @@ async def get_latest_recommendations(trip_id: UUID, request: Request, response: 
 
 @router.get("/{trip_id}/itinerary", response_model=TripItineraryResponse)
 async def get_current_itinerary(trip_id: UUID, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+    """TWM-217: the enriched Atlas document — every timeline item gains a
+    stable `id`, `is_gateway_leg`, and a resolved date (`resolved_date` /
+    `date_precision` / `date_source`); top-level `stay_segments[]`. The
+    identity / date / stay-grouping logic is the former TripBoardService,
+    relocated. No `feasible_modes` — that is a per-leg feasibility call."""
     owner = await _resolve_owner(request, response, persistence, current_user)
     trip = await persistence.repository.get_trip_core(owner, trip_id)
     if trip is None:
@@ -240,6 +237,18 @@ async def get_current_itinerary(trip_id: UUID, request: Request, response: Respo
             found=False,
         )
         raise HTTPException(status_code=404, detail="No itinerary yet.")
+    final_itinerary = current.result["final_itinerary"]
+    trip_dates = compose_trip_dates(
+        trip.trip_state.get("trip_context") or {}, len(final_itinerary.get("days") or [])
+    )
+    enriched = enrich_itinerary(
+        trip_id,
+        final_itinerary,
+        trip.trip_state.get("trip_context") or {},
+        trip.trip_state.get("booking_setup") or {},
+        trip_dates,
+    )
+    stay_segments = enriched.pop("stay_segments")
     logger.info(
         "Fetched active itinerary.",
         event="be.trip.itinerary.fetched",
@@ -247,64 +256,25 @@ async def get_current_itinerary(trip_id: UUID, request: Request, response: Respo
         trip_id=str(trip_id),
         found=True,
         version=current.version,
+        enriched=True,
     )
-    return TripItineraryResponse.model_validate(current, from_attributes=True)
-
-
-@router.get("/{trip_id}/board", response_model=TripBoardResponse)
-async def get_trip_board(
-    trip_id: UUID,
-    request: Request,
-    response: Response,
-    persistence: Persistence,
-    logger: Logger,
-    current_user: CurrentUser,
-    trip_board: TripBoard,
-):
-    """TWM-202: one composed itinerary/booking item list — Atlas content
-    merged with Trusted Actions feasibility for the itinerary's two gateway
-    legs, computed once and shared by Overview and Itinerary instead of
-    each screen deriving its own view."""
-    owner = await _resolve_owner(request, response, persistence, current_user)
-    trip = await persistence.repository.get_trip_core(owner, trip_id)
-    if trip is None:
-        logger.warning("Trip not found for guest.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
-        raise HTTPException(status_code=404, detail="Trip not found.")
-    current = await persistence.repository.get_current_itinerary(owner, trip_id)
-    if current is None:
-        logger.info(
-            "No active itinerary yet for trip board.",
-            event="be.trip.board.fetched",
-            source="http",
-            trip_id=str(trip_id),
-            found=False,
-        )
-        raise HTTPException(status_code=404, detail="No itinerary yet.")
-    board = trip_board.build(
-        trip_id=trip_id,
+    return TripItineraryResponse(
         version=current.version,
-        final_itinerary=current.result["final_itinerary"],
-        trip_context=trip.trip_state.get("trip_context") or {},
-        booking_setup=trip.trip_state.get("booking_setup") or {},
+        source_guide_revision=current.source_guide_revision,
+        result={**current.result, "final_itinerary": enriched, "stay_segments": stay_segments},
+        created_at=current.created_at,
     )
-    logger.info(
-        "Composed Trip Board.",
-        event="be.trip.board.fetched",
-        source="http",
-        trip_id=str(trip_id),
-        found=True,
-        version=current.version,
-        day_count=len(board.days),
-    )
-    return board
 
 
 def _conflict(error: VersionConflictError) -> HTTPException:
     return HTTPException(status_code=409, detail={"message": "Trip has a newer version.", "current_version": error.current_version})
 
 
-@router.patch("/{trip_id}", response_model=TripResponse)
-async def rename_trip(trip_id: UUID, payload: TripRenameRequest, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+@router.patch("/{trip_id}", response_model=TripView)
+async def rename_trip(
+    trip_id: UUID, payload: TripRenameRequest, request: Request, response: Response,
+    persistence: Persistence, logger: Logger, current_user: CurrentUser, trip_view: TripViewDep,
+):
     owner = await _resolve_owner(request, response, persistence, current_user)
     try:
         trip = await persistence.repository.rename_trip(owner, trip_id, payload.expected_version, payload.title)
@@ -315,11 +285,14 @@ async def rename_trip(trip_id: UUID, payload: TripRenameRequest, request: Reques
         logger.warning("Trip not found for guest rename.", event="be.trip.not_found", source="http", trip_id=str(trip_id))
         raise HTTPException(status_code=404, detail="Trip not found.")
     logger.info("Renamed guest trip.", event="be.trip.renamed", source="http", trip_id=str(trip_id), version=trip.version)
-    return _response(trip)
+    return await _compose_trip_view(owner, trip_id, persistence, trip_view)
 
 
-@router.patch("/{trip_id}/ui-state", response_model=TripResponse)
-async def update_ui_state(trip_id: UUID, payload: TripUiStateRequest, request: Request, response: Response, persistence: Persistence, logger: Logger, current_user: CurrentUser):
+@router.patch("/{trip_id}/ui-state", response_model=TripView)
+async def update_ui_state(
+    trip_id: UUID, payload: TripUiStateRequest, request: Request, response: Response,
+    persistence: Persistence, logger: Logger, current_user: CurrentUser, trip_view: TripViewDep,
+):
     owner = await _resolve_owner(request, response, persistence, current_user)
     try:
         trip = await persistence.repository.update_ui_state(
@@ -343,7 +316,7 @@ async def update_ui_state(trip_id: UUID, payload: TripUiStateRequest, request: R
         trip_id=str(trip_id),
         version=trip.version,
     )
-    return _response(trip)
+    return await _compose_trip_view(owner, trip_id, persistence, trip_view)
 
 
 @router.post("/{trip_id}/commands", response_model=TripCommandResponse)
