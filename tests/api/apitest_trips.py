@@ -554,10 +554,36 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
     }
     assert item["has_day_plan"] is False
     assert item["has_places"] is False
+    assert item["has_itinerary"] is False
     assert item["awaiting"] is None
     assert item["has_recommendation"] is False
+    assert item["travel_window"] is None
     assert "trip_state" not in item and "ui_state" not in item
     assert "matcher_state" not in item and "planner_state" not in item
+
+
+def test_list_trips_travel_window_is_composed_from_travel_dates(api_client: TestClient):
+    """TWM-220: the list item carries a structured date hint so DashboardHome
+    ranks a hero trip by when it happens without parsing the loose
+    conversational string client-side. None unless it parsed to a real
+    calendar precision."""
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+
+    _create_seeded_trip(
+        api_client, repository, title="March trip",
+        trip_state={"stage": "matching", "status": "free", "active_agent": "meridian",
+                    "trip_context": {"origin_city": "Delhi", "travel_dates": "March 2026"}},
+    )
+    _create_seeded_trip(
+        api_client, repository, title="Someday trip",
+        trip_state={"stage": "matching", "status": "free", "active_agent": "meridian",
+                    "trip_context": {"origin_city": "Delhi", "travel_dates": "sometime next spring"}},
+    )
+
+    by_title = {t["title"]: t["travel_window"] for t in api_client.get("/trips").json()["trips"]}
+    assert by_title["March trip"] == {"precision": "month", "departure": None, "month": "2026-03"}
+    assert by_title["Someday trip"] is None
 
 
 def test_list_trips_has_recommendation_reflects_an_archived_matcher_round(api_client: TestClient):
@@ -1305,6 +1331,8 @@ def test_approve_plan_freezes_one_immutable_atlas_handoff(api_client: TestClient
 
     assert first.status_code == 200
     assert replay.json() == first.json()
+    # TWM-220: a turn that produced no matcher round omits `recommendation`.
+    assert first.json()["recommendation"] is None
     # approve_plan is a deterministic Backend transition — Guide is never
     # invoked for it, since preserving the day plan unchanged needs no
     # judgment.
@@ -1487,6 +1515,20 @@ def _seed_ready_itinerary(api_client, repository, engine, *, guide_revision=5, t
     )
     assert response.status_code == 200
     return response.json()["trip"]
+
+
+def test_list_trips_has_itinerary_is_true_once_an_itinerary_is_generated(api_client: TestClient):
+    """TWM-220: the list card needs an itinerary-ready signal (badge / CTA /
+    hero ranking) without the full TripView."""
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    _seed_ready_itinerary(api_client, repository, engine, guide_revision=5, trip_duration=2)
+
+    [item] = api_client.get("/trips").json()["trips"]
+    assert item["has_itinerary"] is True
+    assert item["has_day_plan"] is True
 
 
 def test_itinerary_versions_route_is_removed(api_client: TestClient):

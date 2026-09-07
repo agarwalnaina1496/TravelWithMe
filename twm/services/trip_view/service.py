@@ -27,6 +27,7 @@ from ...schemas.trip_view import (
     BudgetLine,
     ContextRecapItem,
     OpenGap,
+    TravelWindow,
     TripListItem,
     SummaryBudget,
     SummaryDates,
@@ -124,8 +125,10 @@ class TripViewService:
             updated_at=updated_at,
             lifecycle=self._compose_lifecycle(trip_state),
             context_recap=self._compose_context_recap(trip_state.get("trip_context") or {}),
+            travel_window=self._compose_travel_window(trip_state.get("trip_context") or {}),
             has_places=bool(planner_state.get("places")),
             has_day_plan=bool(planner_state.get("day_plan")),
+            has_itinerary=(trip_state.get("itinerary_state") or {}).get("status") == "ready",
             awaiting=(planner_state.get("conversation_context") or {}).get("awaiting"),
             has_recommendation=has_recommendation,
         )
@@ -224,6 +227,19 @@ class TripViewService:
         if parsed is not None:
             return SummaryTravelers(value=f"~{parsed}", exact=None, source="conversational")
         return SummaryTravelers(value=None, exact=None, source="unknown")
+
+    def _compose_travel_window(self, trip_context: dict[str, Any]) -> Optional[TravelWindow]:
+        """`GET /trips` list hint — the structured half of the composed trip
+        dates (no itinerary in hand, so no day count and no computed return).
+        `None` unless `travel_dates` parsed to a real calendar precision."""
+        composed = compose_trip_dates(trip_context, 0)
+        if composed.precision == "none":
+            return None
+        return TravelWindow(
+            precision=composed.precision,
+            departure=composed.departure,
+            month=composed.month,
+        )
 
     def _compose_dates(self, trip_context: dict[str, Any], day_count: int) -> SummaryDates:
         composed = compose_trip_dates(trip_context, day_count)

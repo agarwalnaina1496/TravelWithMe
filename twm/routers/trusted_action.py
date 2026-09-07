@@ -4,7 +4,7 @@ Trip-owned, read/query-only — resolves the same owner model as
 twm/routers/flight_search.py and never mutates trip lifecycle, plan, or
 itinerary state.
 
-Two endpoints, deliberately separate (see
+Three endpoints, deliberately separate (see
 twm/services/trusted_action/service.py's module docstring for why):
 
 - ``POST /trips/{trip_id}/trusted-action``: resolves a single trusted
@@ -14,6 +14,9 @@ twm/services/trusted_action/service.py's module docstring for why):
   feasibility assessment (flight/train/bus/drive), which has no field on
   ``TrustedActionResult`` to attach to and answers a structurally different
   question than resolving one action.
+- ``POST /trips/{trip_id}/booking-options`` (TWM-220): a pure server-side
+  fan-out of the single-action resolve over one open drawer's targets, so a
+  drawer opens with one request instead of 3-4.
 """
 
 from typing import Annotated
@@ -29,9 +32,10 @@ from ..dependencies import (
 )
 from ..persistence.contracts import User
 from ..persistence.service import TripPersistenceService
+from ..schemas.booking_options import BookingOptionsRequest, BookingOptionsResponse
 from ..schemas.trusted_action import TrustedActionRequest, TrustedActionResult, TripFeasibilityAssessment
 from ..schemas.trusted_action_feasibility import TripFeasibilityRequest
-from ..services.trusted_action import TrustedActionService
+from ..services.trusted_action import TrustedActionService, resolve_booking_options
 from ..telemetry import TelemetryLogger
 from .trips import _resolve_owner
 
@@ -71,6 +75,21 @@ async def assess_trip_feasibility(
 ):
     await _get_owned_trip(trip_id, request, response, persistence, current_user, logger, "trusted_action_feasibility")
     return trusted_action.assess_feasibility(trip_id, payload.origin, payload.destination)
+
+
+@router.post("/{trip_id}/booking-options", response_model=BookingOptionsResponse)
+async def resolve_booking_options_batch(
+    trip_id: UUID,
+    payload: BookingOptionsRequest,
+    request: Request,
+    response: Response,
+    persistence: Persistence,
+    logger: Logger,
+    current_user: CurrentUser,
+    trusted_action: TrustedAction,
+):
+    await _get_owned_trip(trip_id, request, response, persistence, current_user, logger, "booking_options")
+    return resolve_booking_options(trusted_action, trip_id, payload)
 
 
 async def _get_owned_trip(trip_id, request, response, persistence, current_user, logger, log_prefix):
