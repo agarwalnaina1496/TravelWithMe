@@ -10,9 +10,11 @@ each bookable entity's date is independent and never propagates. Two concerns:
   the free-form ``trip_context.num_travelers`` stays a loose planning fact,
   this is the booking-precision value.
 * ``search_prefs`` — per-entity date prefill for provider redirect links,
-  keyed by the stable Trip Board id of the stay segment or transport item.
-  Pure search convenience; a stale entry whose target no longer resolves to a
-  live Board entity is simply never applied (inert, not an error).
+  keyed by the stable id of the enriched ``GET /itinerary`` entity: a stay
+  segment (``{trip_id}:stay:{start}:{end}:{slug}``) or a transport timeline
+  item (``{trip_id}:{day_number}:{index}``). Pure search convenience; a stale
+  entry whose target no longer resolves to a live itinerary entity is simply
+  never applied (inert, not an error).
 
 Nothing here regenerates or re-plans the itinerary.
 """
@@ -70,10 +72,11 @@ class ScheduleDateInput(BaseModel):
 
 
 class SearchPrefInput(ScheduleDateInput):
-    """``set_search_pref`` payload — a search-date override for one Trip Board
-    entity, identified by its stable Board id (``TripBoardStaySegment.id`` or
-    ``TripBoardItem.id``). For a stay the date is the check-in; checkout stays
-    derived from the segment's night count.
+    """``set_search_pref`` payload — a search-date override for one enriched
+    ``GET /itinerary`` entity, identified by its stable id (a ``stay_segments``
+    entry id or a transport timeline item's ``id``). For a stay the date is the
+    check-in; checkout defaults to the segment's night count (editable in the
+    drawer).
     """
 
     target_type: SearchPrefTarget
@@ -82,7 +85,8 @@ class SearchPrefInput(ScheduleDateInput):
 
 class SearchPrefClearInput(BaseModel):
     """``clear_search_pref`` payload — drop one entity's search-date override
-    and revert it to the Board-derived date.
+    and revert it to the itinerary-day date (or none, if the trip dates are
+    not exact).
     """
 
     model_config = ConfigDict(extra="forbid")
