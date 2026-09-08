@@ -43,6 +43,9 @@ jobs:
       - name: Enforce module size cap
         run: python scripts/check_module_size.py
 
+      - name: Enforce provider-SDK boundary
+        run: python scripts/check_provider_sdk_boundary.py
+
       - name: Run backend tests with coverage
         run: python -m pytest -v --cov=twm --cov-report=term-missing --cov-fail-under=85
 

@@ -55,13 +55,21 @@ def test_router_persistence_internals_are_forbidden(config):
     assert "twm.persistence.postgres" in forbidden[0]["forbidden_modules"]
 
 
-def test_provider_sdks_are_forbidden_outside_the_engine(config):
+def test_the_only_ratcheted_layer_exception_is_the_known_postgres_debt(config):
     contracts = config["tool"]["importlinter"]["contracts"]
-    sdk_contract = next(
-        c
-        for c in contracts
-        if c["type"] == "forbidden" and "langgraph" in c["forbidden_modules"]
-    )
-    sources = set(sdk_contract["source_modules"])
-    assert {"twm.routers", "twm.schemas", "twm.services.trip_commands"} <= sources
-    assert "twm.services.agent_engine" not in sources
+    layers = next(c for c in contracts if c["type"] == "layers")
+    assert layers.get("ignore_imports", []) == [
+        "twm.persistence.postgres -> twm.services.trip_commands.state"
+    ]
+
+
+def test_provider_sdk_boundary_check_covers_every_sdk(config):
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "check_provider_sdk_boundary.py"
+    ).read_text(encoding="utf-8")
+    for sdk in ("langchain", "langchain_groq", "langgraph", "groq"):
+        assert sdk in script
+    assert "twm/services/agent_engine/" in script
+    assert "twm/services/langgraph/" in script
