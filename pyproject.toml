@@ -1,0 +1,66 @@
+# TWM-223: architecture fitness config. There is no packaging here — this
+# file exists only to hold the ruff and import-linter contracts that CI
+# enforces (see .github/workflows/ci-runner.yaml and the "Architecture
+# rules (enforced)" section of AGENTS.md).
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["venv", "migrations", "n8n", "tests"]
+
+[tool.ruff.lint]
+# Deliberately narrow: this is a *caps* config, not a style pass. Only the
+# rules that catch scattered logic / god functions / "pass an object"
+# signals — the tree has never been style-linted and turning on E/W here
+# would be noise, not signal.
+select = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+# Cyclomatic complexity. Target ~10; starting at 12 so the first CI run is
+# green, then ratchet down. Never raise this.
+max-complexity = 12
+
+[tool.ruff.lint.pylint]
+max-args = 6         # PLR0913 — a 7th positional arg is a "pass an object" signal
+max-branches = 15    # PLR0912
+max-statements = 60  # PLR0915 — a function-size proxy
+
+[tool.importlinter]
+root_package = "twm"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture (routers -> services -> persistence -> schemas)"
+type = "layers"
+layers = [
+    "twm.routers",
+    "twm.services",
+    "twm.persistence",
+    "twm.schemas",
+]
+# telemetry, trust_boundary, shared, dependencies, middleware, auth, prompts
+# are cross-cutting and unconstrained by the stack.
+
+[[tool.importlinter.contracts]]
+name = "Routers touch only the persistence service surface, not its internals"
+type = "forbidden"
+source_modules = ["twm.routers"]
+forbidden_modules = [
+    "twm.persistence.postgres",
+    "twm.persistence.settings",
+]
+
+[[tool.importlinter.contracts]]
+name = "Provider SDKs stay behind the agent-engine boundary"
+type = "forbidden"
+source_modules = [
+    "twm.routers",
+    "twm.schemas",
+    "twm.persistence",
+    "twm.services.trip_commands",
+    "twm.services.trip_view",
+    "twm.services.trusted_action",
+    "twm.services.flight_search",
+    "twm.services.airport_resolution",
+]
+forbidden_modules = ["langchain", "langgraph", "langchain_groq", "groq"]

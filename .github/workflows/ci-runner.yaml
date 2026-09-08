@@ -34,6 +34,15 @@ jobs:
       - name: Enforce prompt release metadata
         run: python scripts/check_prompt_version_changes.py "origin/${{ github.base_ref }}"
 
+      - name: Enforce architecture layer graph (import-linter)
+        run: lint-imports
+
+      - name: Enforce complexity + arity caps (ruff)
+        run: python -m ruff check twm scripts
+
+      - name: Enforce module size cap
+        run: python scripts/check_module_size.py
+
       - name: Run backend tests with coverage
         run: python -m pytest -v --cov=twm --cov-report=term-missing --cov-fail-under=85
 
