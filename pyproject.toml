@@ -46,14 +46,6 @@ layers = [
 ]
 # telemetry, trust_boundary, shared, dependencies, middleware, auth, prompts
 # are cross-cutting and unconstrained by the stack.
-ignore_imports = [
-    # PRE-EXISTING DEBT (TWM-223 ratchet, not a new allowance):
-    # persistence.postgres lazy-imports canonical_state / touched_branches
-    # from the service layer to compute touched branches on a fresh-trip
-    # write. Push that computation down (or into the service) in a
-    # follow-up, then delete this line.
-    "twm.persistence.postgres -> twm.services.trip_commands.state",
-]
 
 [[tool.importlinter.contracts]]
 name = "Routers touch only the persistence service surface, not its internals"

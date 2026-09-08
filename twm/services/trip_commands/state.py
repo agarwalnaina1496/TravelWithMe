@@ -5,8 +5,13 @@ from typing import Any, get_args
 
 from ...persistence.contracts import LIFECYCLE_COLUMN_FIELDS
 from ...schemas.scout import TripStage
+from ...shared.trip_state_branches import TOUCHABLE_BRANCHES, empty_branch
 from ...telemetry import TelemetryLogger
 from .errors import InvalidTripCommandError
+
+# TOUCHABLE_BRANCHES / empty_branch are imported (not defined) here from the
+# shared bottom-layer module and re-exported for the command handlers and
+# `canonical_state` that use them.
 
 # The canonical stage set (TWM-188) — `TripStage` is the single source of
 # truth for valid values; this frozenset exists only for O(1) membership
@@ -205,27 +210,19 @@ def canonical_state(value: dict[str, Any]) -> dict[str, Any]:
         # Meridian's own prompts read conversation_context) — no artifacts
         # log; nothing reads it back and it grew unbounded for no reason.
         "advisor_state": {"conversation_context": {}},
-        # recommendations live in twm_app.matcher_recommendations now
-        # (TWM-153) — matcher_state carries only conversation continuity.
-        "matcher_state": {"conversation_context": {}},
-        "planner_state": {},
-        "itinerary_state": {},
-        # booking_setup (TWM-216): deterministic, UI-owned scheduling — the
-        # structured party and per-entity search-date preferences. Never
-        # written by an agent, never re-plans; no trip-level date control.
-        "booking_setup": {},
+        # matcher_state / planner_state / itinerary_state / booking_setup:
+        # canonical-empty shapes owned by shared.trip_state_branches so
+        # persistence agrees on "empty" without importing this module.
+        # (matcher_state carries only conversation continuity — recommendations
+        # live in twm_app.matcher_recommendations, TWM-153. booking_setup is
+        # deterministic UI-owned scheduling, TWM-216.)
+        **{name: empty_branch(name) for name in TOUCHABLE_BRANCHES},
     }
     for name, default in object_branches.items():
         if not isinstance(state.get(name), dict):
             state[name] = copy.deepcopy(default)
     return state
 
-
-# Sub-state branches large/variable enough to matter for command-response
-# size; response shaping includes a branch only when a command actually
-# touched it. advisor_state is deliberately excluded from this set — it
-# never appears in a command response at all (see shape_command_trip_state).
-TOUCHABLE_BRANCHES = ("matcher_state", "planner_state", "itinerary_state", "booking_setup")
 
 # Always-present fields a command response needs regardless of what a
 # command touched — everything resume/CTA logic and the next command's

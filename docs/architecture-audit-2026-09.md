@@ -30,13 +30,12 @@ change. Not worth its own story. `# noqa: C901` list is at 3/5 — healthy.
   (`canonical_state` / `touched_branches`, lazy-imported in `create_trip` /
   `replace_trip`).
 
-**Decision:** the one real architectural debt. Persistence reaches up into
-the service layer. Fix = push the touched-branch computation into the
-service (persistence gets a pre-computed `touched: frozenset[str]`), or move
-`canonical_state` / `touched_branches` to a lower-layer module both can
-import. → **candidate for its own `[BE]` story.** Not urgent (the lazy
-import keeps runtime import order safe); recorded here and in the
-`ignore_imports` comment.
+**Decision:** the one real architectural debt — persistence reached up into
+the service layer. **Fixed in this PR (TWM-225):** `TOUCHABLE_BRANCHES` +
+the canonical-empty branch shapes + a `populated_touchable_branches(state)`
+helper moved to `twm/shared/trip_state_branches.py`; both layers import
+down from there. `create_trip` / `replace_trip` now call the shared helper;
+the `ignore_imports` line is gone.
 
 ## `if x == "literal"` dispatch chains
 
