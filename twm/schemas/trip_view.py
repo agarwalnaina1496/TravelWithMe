@@ -161,6 +161,19 @@ class TripView(BaseModel):
     before_you_go: Optional[list[BeforeYouGoItem]]
 
 
+class TravelWindow(BaseModel):
+    """A list-item date hint composed from ``trip_context.travel_dates`` — the
+    structured half of what ``TripViewSummary.dates`` carries, enough for
+    ``DashboardHome`` to rank a hero trip by when it happens without the
+    client parsing the loose conversational string. ``None`` when nothing
+    confidently interpretable was said."""
+
+    model_config = _forbid
+    precision: Literal["exact", "month"]
+    departure: Optional[str] = None
+    month: Optional[str] = None
+
+
 class TripListItem(BaseModel):
     """``GET /trips`` — a thin ``TripView`` subset (no ``TripSummaryState``)."""
 
@@ -174,8 +187,10 @@ class TripListItem(BaseModel):
     updated_at: datetime
     lifecycle: TripViewLifecycle
     context_recap: list[ContextRecapItem]
+    travel_window: Optional[TravelWindow]
     has_places: bool
     has_day_plan: bool
+    has_itinerary: bool
     awaiting: Optional[str]
     has_recommendation: bool
 
