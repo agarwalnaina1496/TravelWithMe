@@ -49,7 +49,7 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
         "matching",  # a matched trip's traveler_message/continue with no
         # genuine ambiguity to classify (the destination is already
         # chosen, planning hasn't started) — service.py's
-        # _reopen_matching_from_matched routes straight back to Meridian,
+        # reopen_matching_from_matched (handlers.py) routes straight back to Meridian,
         # clearing the obsolete selected_option deterministically.
     }),
     "planning": frozenset({
@@ -121,7 +121,7 @@ def merge_operational_state(target: dict[str, Any], source: dict[str, Any]) -> N
 # refinement -> "matching") already agreed with the table. "matched"
 # needed one table correction first — a matched trip's traveler_message/
 # continue routes straight back to Meridian (matched -> matching, clearing
-# the obsolete selection via service.py's _reopen_matching_from_matched);
+# the obsolete selection via handlers.py's reopen_matching_from_matched);
 # this is a real, tested flow, not a bug, so it's now a documented edge
 # rather than an omission. As a side effect,
 # enforcing "matched" also closes select_destination's own missing

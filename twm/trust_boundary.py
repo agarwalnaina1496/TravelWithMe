@@ -70,3 +70,49 @@ def _raise_container_error() -> None:
 def frame_untrusted_payload(trip_state: dict[str, Any], message: str | None) -> str:
     payload = {"trip_state": trip_state, "message": message}
     return UNTRUSTED_DATA_PREAMBLE + json.dumps(payload, ensure_ascii=False)
+
+
+# TWM-223 agent write-boundary. An agent's ``state_delta`` may carry only the
+# traveler-context and operational-memory branches it owns. These keys are
+# Backend-owned deterministic lifecycle / selection / booking / itinerary
+# state — no agent may write them, on any branch. This is the single source
+# the per-agent ``reject_ui_owned_state`` validators enforce.
+UI_OWNED_STATE_KEYS = frozenset(
+    {
+        "stage",
+        "active_agent",
+        "selected_option",
+        "booking_setup",
+        "itinerary_state",
+        "recommendations",
+    }
+)
+
+
+def assert_agent_delta_within_boundary(delta: Any) -> None:
+    """Raise if an agent ``state_delta`` model carries any UI-owned key on
+    its ``trip_context`` extras or on any free-form dict branch it declares.
+
+    ``delta`` is a validated Pydantic delta model (``ScoutStateDelta`` /
+    ``MeridianStateDelta`` / ``GuideStateDelta``); its typed operational
+    branches already reject unknown fields via ``extra="forbid"``, so only
+    the extension points (``trip_context`` extras, a ``dict`` branch such as
+    ``matcher_state``) need the explicit check.
+    """
+
+    trip_context = getattr(delta, "trip_context", None)
+    _reject_ui_owned(
+        (getattr(trip_context, "model_extra", None) or {}).keys(), branch="trip_context"
+    )
+    for name, value in vars(delta).items():
+        if name != "trip_context" and isinstance(value, dict):
+            _reject_ui_owned(value.keys(), branch=name)
+
+
+def _reject_ui_owned(keys: Any, *, branch: str) -> None:
+    bad = sorted(UI_OWNED_STATE_KEYS & set(keys))
+    if bad:
+        raise ValueError(
+            f"agent state_delta.{branch} carries Backend-owned key(s) {bad}; "
+            "agents never write lifecycle / selection / booking / itinerary state"
+        )

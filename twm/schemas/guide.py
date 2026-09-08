@@ -10,7 +10,7 @@ from pydantic import (
     model_validator,
 )
 
-from ..trust_boundary import validate_phase_state
+from ..trust_boundary import assert_agent_delta_within_boundary, validate_phase_state
 from .common import AgentMeta
 from .scout import BoundedMessage
 from .trip_context import FIXED_KEYS, TripContext
@@ -119,8 +119,7 @@ class GuideStateDelta(BaseModel):
 
     @model_validator(mode="after")
     def reject_ui_owned_state(self) -> "GuideStateDelta":
-        if "selected_option" in (self.trip_context.model_extra or {}):
-            raise ValueError("selected_option is UI-owned")
+        assert_agent_delta_within_boundary(self)
         return self
 
 
