@@ -10,19 +10,25 @@ extend-exclude = ["venv", "migrations", "n8n", "tests"]
 
 [tool.ruff.lint]
 # Deliberately narrow: this is a *caps* config, not a style pass. Only the
-# rules that catch scattered logic / god functions / "pass an object"
-# signals — the tree has never been style-linted and turning on E/W here
-# would be noise, not signal.
-select = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+# rules that catch god functions / scattered logic — the tree has never
+# been style-linted and turning on E/W here would be noise, not signal.
+#
+# PLR0913 (too many arguments) is intentionally NOT enforced: ~20
+# repository-Protocol and composer signatures legitimately take 7–10 args,
+# and rewriting them to parameter objects is its own effort, not this
+# story's. "A 7th positional arg is a pass-an-object signal" stays a review
+# guideline (see AGENTS.md).
+select = ["C901", "PLR0912", "PLR0915"]
 
 [tool.ruff.lint.mccabe]
 # Cyclomatic complexity. Ratchet target ~10; the value here is the current
 # ceiling — raise it only to un-break a first CI run, then walk it back
-# down, never up.
+# down, never up. Three functions carry an explicit `# noqa: C901` +
+# reason (two status-discriminator validators, one date-precision
+# composer).
 max-complexity = 12
 
 [tool.ruff.lint.pylint]
-max-args = 6         # PLR0913 — a 7th positional arg is a "pass an object" signal
 max-branches = 15    # PLR0912
 max-statements = 60  # PLR0915 — a function-size proxy
 

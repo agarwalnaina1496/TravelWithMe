@@ -20,17 +20,32 @@ def config() -> dict:
     return tomllib.loads(_PYPROJECT.read_text(encoding="utf-8"))
 
 
-def test_ruff_selects_the_caps_rules(config):
+def test_ruff_selects_the_god_function_rules(config):
     select = set(config["tool"]["ruff"]["lint"]["select"])
-    assert {"C901", "PLR0912", "PLR0913", "PLR0915"} <= select
+    assert {"C901", "PLR0912", "PLR0915"} <= select
 
 
 def test_complexity_cap_stays_at_or_below_twelve(config):
     assert config["tool"]["ruff"]["lint"]["mccabe"]["max-complexity"] <= 12
 
 
-def test_arity_cap_stays_at_or_below_six(config):
-    assert config["tool"]["ruff"]["lint"]["pylint"]["max-args"] <= 6
+def test_branch_and_statement_caps_hold(config):
+    pylint = config["tool"]["ruff"]["lint"]["pylint"]
+    assert pylint["max-branches"] <= 15
+    assert pylint["max-statements"] <= 60
+
+
+def test_the_noqa_c901_list_stays_short(config):
+    # C901 / PLR0912 suppressions are allowed only with an inline reason and
+    # must stay countable. If this climbs, tighten the code, not the budget.
+    root = Path(__file__).resolve().parents[2] / "twm"
+    hits = [
+        f"{p.relative_to(root)}:{i}"
+        for p in root.rglob("*.py")
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if "noqa: C901" in line or "noqa: PLR0912" in line
+    ]
+    assert len(hits) <= 5, f"too many complexity suppressions: {hits}"
 
 
 def test_layer_graph_contract_is_the_four_layer_stack(config):

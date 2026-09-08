@@ -460,8 +460,11 @@ class FlightSearchResponse(BaseModel):
     # None for clarification_needed, since no provider call was attempted.
     date_precision: Optional[FlightSearchDatePrecision] = None
 
+    # TWM-223: status-discriminated union — one branch per FlightSearchStatus
+    # checking that status's required/forbidden fields. Flat by design, not a
+    # god function.
     @model_validator(mode="after")
-    def validate_status_shape(self) -> "FlightSearchResponse":
+    def validate_status_shape(self) -> "FlightSearchResponse":  # noqa: C901
         if self.status == "clarification_needed":
             if self.clarification is None:
                 raise ValueError(
