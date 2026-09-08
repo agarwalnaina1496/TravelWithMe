@@ -6,3 +6,8 @@ __pycache__/
 *.py[cod]
 n8n.env
 .idea
+
+# Local-only reference copies of superseded prompt revisions — kept on disk
+# for diffing against the live prompt, never tracked (git history is the
+# real record).
+twm/prompts/*_old.md
