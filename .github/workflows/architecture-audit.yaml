@@ -1,0 +1,52 @@
+name: Architecture Audit
+
+# TWM-225: the quarterly deep re-check. The per-PR ci-runner enforces the
+# rules; this catches *drift* — the tree creeping toward a break, or a
+# fitness function's assumptions going stale. It never blocks anything; it
+# produces a findings report a human triages (see AGENTS.md → "Architecture
+# audit (quarterly)").
+
+on:
+  schedule:
+    - cron: "0 9 1 1,4,7,10 *"   # 09:00 UTC on the 1st of Jan / Apr / Jul / Oct
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Architecture Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Re-run the enforced fitness functions
+        run: |
+          lint-imports
+          python -m ruff check twm scripts
+          python scripts/check_module_size.py
+          python scripts/check_provider_sdk_boundary.py
+          python -m pytest tests/architecture -q
+
+      - name: Drift audit
+        run: python scripts/architecture_audit.py | tee architecture-audit-report.md
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-audit-report
+          path: architecture-audit-report.md
+          retention-days: 400
+
+      - name: Summary
+        if: always()
+        run: cat architecture-audit-report.md >> "$GITHUB_STEP_SUMMARY"

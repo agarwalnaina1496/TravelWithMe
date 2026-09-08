@@ -11,8 +11,7 @@ from uuid import UUID
 # — it is the row PK, injected into the in-memory dict by the command
 # service and never persisted inside `trip_state`. The dedicated branch
 # tables (matcher_state / planner_state / itinerary_state / booking_setup)
-# are enumerated separately as `TOUCHABLE_BRANCHES` in
-# `services/trip_commands/state.py`.
+# are enumerated as `TOUCHABLE_BRANCHES` in `shared/trip_state_branches.py`.
 LIFECYCLE_COLUMN_FIELDS = ("stage", "status", "active_agent")
 BLOB_STATE_FIELDS = ("trip_context", "advisor_state", "selected_option")
 

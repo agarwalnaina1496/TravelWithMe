@@ -22,6 +22,7 @@ from .contracts import (
     User,
     VersionConflictError,
 )
+from ..shared.trip_state_branches import populated_touchable_branches
 
 # Branches split out of trips.trip_state into dedicated tables (TWM-158).
 # itinerary_state is handled separately below — it is pointer-only
@@ -240,8 +241,6 @@ class PostgresTripRepository:
         return planner_by_id, itinerary_status_by_id
 
     async def create_trip(self, guest_id: UUID, user_id: UUID | None, title: str, product_mode: str, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord:
-        from ..services.trip_commands.state import canonical_state, touched_branches
-
         stage, status, active_agent = _lifecycle_values(trip_state)
         async with self.pool.acquire() as connection:
             async with connection.transaction():
@@ -251,8 +250,8 @@ class PostgresTripRepository:
                     VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9) RETURNING *""",
                     guest_id, user_id, title, product_mode,
                     json.dumps(_blob_state(trip_state)), json.dumps(ui_state), stage, status, active_agent)
-                touched = touched_branches(trip_state, canonical_state({}))
-                await self._write_branch_tables(connection, row["id"], trip_state, frozenset(touched))
+                touched = populated_touchable_branches(trip_state)
+                await self._write_branch_tables(connection, row["id"], trip_state, touched)
                 composed = await self._compose_trip_state(
                     connection, row["id"], _record(row).trip_state, with_itinerary_result=True
                 )
@@ -311,8 +310,6 @@ class PostgresTripRepository:
                 raise VersionConflictError(current)
 
     async def replace_trip(self, owner: TripOwner, trip_id: UUID, expected_version: int, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord | None:
-        from ..services.trip_commands.state import canonical_state, touched_branches
-
         stage, status, active_agent = _lifecycle_values(trip_state)
         async with self.pool.acquire() as connection:
             async with connection.transaction():
@@ -330,8 +327,8 @@ class PostgresTripRepository:
                     if current is None:
                         return None
                     raise VersionConflictError(current)
-                touched = touched_branches(trip_state, canonical_state({}))
-                await self._write_branch_tables(connection, trip_id, trip_state, frozenset(touched))
+                touched = populated_touchable_branches(trip_state)
+                await self._write_branch_tables(connection, trip_id, trip_state, touched)
                 composed = await self._compose_trip_state(
                     connection, trip_id, _record(row).trip_state, with_itinerary_result=False
                 )

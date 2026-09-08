@@ -70,12 +70,13 @@ def test_router_persistence_internals_are_forbidden(config):
     assert "twm.persistence.postgres" in forbidden[0]["forbidden_modules"]
 
 
-def test_the_only_ratcheted_layer_exception_is_the_known_postgres_debt(config):
+def test_the_layers_contract_has_no_ratcheted_exceptions(config):
+    # The one pre-existing exception (persistence.postgres -> trip_commands
+    # .state) was removed in TWM-225 by moving TOUCHABLE_BRANCHES /
+    # populated_touchable_branches to twm.shared. Keep this at zero.
     contracts = config["tool"]["importlinter"]["contracts"]
     layers = next(c for c in contracts if c["type"] == "layers")
-    assert layers.get("ignore_imports", []) == [
-        "twm.persistence.postgres -> twm.services.trip_commands.state"
-    ]
+    assert layers.get("ignore_imports", []) == []
 
 
 def test_provider_sdk_boundary_check_covers_every_sdk(config):
