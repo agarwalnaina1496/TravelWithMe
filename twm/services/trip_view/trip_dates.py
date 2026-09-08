@@ -112,7 +112,10 @@ def _from_departure(departure: date, day_count: int) -> TripDates:
     )
 
 
-def compose_trip_dates(trip_context: dict[str, Any], day_count: int) -> TripDates:
+# TWM-223: one branch per (date-precision x day-count-known) combination —
+# the composed dates surface is genuinely a small decision table, not a
+# god function. Split further only if a real new axis appears.
+def compose_trip_dates(trip_context: dict[str, Any], day_count: int) -> TripDates:  # noqa: C901, PLR0912
     raw = trip_context.get("travel_dates") if isinstance(trip_context, dict) else None
     if not isinstance(raw, str):
         return _NONE

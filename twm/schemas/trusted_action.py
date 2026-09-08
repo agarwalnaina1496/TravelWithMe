@@ -512,8 +512,11 @@ class TrustedActionResult(BaseModel):
     unsupported_partner: Optional[TrustedActionUnsupportedPartnerDetail] = None
     disabled: Optional[TrustedActionDisabledDetail] = None
 
+    # TWM-223: status-discriminated union — one branch per TrustedActionStatus
+    # checking that status's required/forbidden fields. Flat by design, not a
+    # god function.
     @model_validator(mode="after")
-    def validate_status_shape(self) -> "TrustedActionResult":
+    def validate_status_shape(self) -> "TrustedActionResult":  # noqa: C901
         if self.status == "resolved":
             if self.action is None:
                 raise ValueError("action is required when status is resolved")
