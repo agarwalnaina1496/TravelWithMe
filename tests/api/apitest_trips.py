@@ -2200,7 +2200,7 @@ def test_matched_traveler_message_reopens_matching_and_clears_obsolete_selection
     """A matched trip reconsidering its destination goes straight to
     Meridian now — no genuine ambiguity to classify at this point in the
     flow (destination is already chosen, planning hasn't started), so
-    there is no Scout hop first (service.py's _reopen_matching_from_matched
+    there is no Scout hop first (handlers.py's reopen_matching_from_matched
     replaces the old apply_scout matcher-intent handoff)."""
     repository = MemoryTripRepository()
     engine = FakeHandoffEngine()

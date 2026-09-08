@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 from .common import AgentMeta
 from .trip_context import TripContext
-from ..trust_boundary import MAX_MESSAGE_CHARACTERS, validate_phase_state
+from ..trust_boundary import MAX_MESSAGE_CHARACTERS, assert_agent_delta_within_boundary, validate_phase_state
 
 
 BoundedMessage = Annotated[str, StringConstraints(max_length=MAX_MESSAGE_CHARACTERS)]
@@ -69,8 +69,7 @@ class ScoutStateDelta(BaseModel):
 
     @model_validator(mode="after")
     def reject_ui_owned_state(self) -> "ScoutStateDelta":
-        if "selected_option" in (self.trip_context.model_extra or {}):
-            raise ValueError("selected_option is UI-owned")
+        assert_agent_delta_within_boundary(self)
         return self
 
 

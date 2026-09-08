@@ -26,6 +26,18 @@ This repository owns backend APIs, agent prompts and workflows, request/response
 - Preserve approved API behavior during structural refactors unless the active Linear scope explicitly changes the contract.
 - Include maintainability refactoring needed to implement the approved change within that implementation story. Do not create separate Linear work for routine code organization, and do not use this default to broaden a change into unrelated cleanup.
 
+## Architecture rules (enforced) (TWM-223)
+
+Every rule here ships with the check that enforces it, or — for a review-only rule — a reference implementation. Adding a rule without its check or reference is not allowed.
+
+| Rule | Check / reference |
+|---|---|
+| **Single-source composition** — every non-structural field of a composed response model is produced by a `<composer>._compose_<field>` method that the composer's build method calls; a field can't be wired straight from a router or a repository read. | `tests/architecture/composed_fields.py` `assert_all_fields_composed` (applied to `TripView` in `tests/unit/trip_view/test_composer_owns_every_field.py`) |
+| **Agent write-boundary** — an agent `state_delta` carries only the traveler-context and operational-memory branches it owns; no agent writes Backend-owned deterministic state (`stage`, `active_agent`, `selected_option`, `booking_setup`, `itinerary_state`, stored `recommendations` history) on any branch. | `twm.trust_boundary.assert_agent_delta_within_boundary` (the one function every `<Agent>StateDelta.reject_ui_owned_state` validator delegates to); `tests/architecture/test_agent_write_boundary.py` |
+| **Dispatch is a registry, not an if-chain** — a command / action dispatcher is a `{name: Handler}` map; each handler owns its precondition and its application; the dispatch method never changes when a command is added. | *reference implementation:* `twm/services/trip_commands/handlers.py` `COMMAND_HANDLERS` + `TripCommandService._apply`; `tests/unit/trip_commands/test_command_registry.py` guards registry completeness |
+| **Layer graph** — `routers → services → persistence → schemas` (+ `telemetry` from any layer); top imports down, never up. `routers/` see only `persistence.service` / `persistence.contracts`, not `persistence` internals; `schemas/` import no `services`/`persistence`; no provider SDK outside `services/agent_engine/`. | *(TWM-223 PR B)* `import-linter` contract in `.importlinter`, run in `ci-runner.yaml` |
+| **Size / complexity / arity caps** — cyclomatic complexity, module size, and function argument count. | *(TWM-223 PR B)* `ruff` (`mccabe`, size lint, `PLR0913`) configured in `pyproject.toml`, run in `ci-runner.yaml`; documented `# noqa` list |
+
 ## Agent prompts and workflows
 
 - Treat `twm/prompts/scout.md` and `twm/prompts/meridian.md` as independently evolving runtime prompts.

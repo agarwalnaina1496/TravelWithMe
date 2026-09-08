@@ -8,7 +8,6 @@ from typing import Any
 from uuid import uuid4
 
 from ...persistence.contracts import RecommendationRecord, TripCommandRecord, TripOwner, TripRecord, TripRepository
-from ...schemas.trip_context import DESTINATIONS_KEY
 from ...schemas.trips import (
     TripCommandRequest,
     TripCommandResponse,
@@ -18,35 +17,14 @@ from ...schemas.trips import (
 )
 from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
-from .atlas_commands import apply_atlas
-from .booking_commands import (
-    apply_clear_search_pref,
-    apply_set_party,
-    apply_set_search_pref,
-)
 from .errors import IdempotencyConflictError, InvalidTripCommandError
-from .matcher_commands import apply_meridian, select_destination
-from .planner_commands import (
-    apply_guide,
-    apply_reopen_fresh,
-    apply_reopen_revisit,
-    guide_has_started,
-    has_pending_reopen_choice,
-)
+from .handlers import COMMAND_HANDLERS, CommandContext
 from .state import (
     canonical_state,
-    set_stage,
     shape_command_trip_state,
     snapshot_touchable_branches,
     touched_branches,
 )
-
-_POST_FREEZE_COMMANDS = {
-    "start_itinerary",
-    "set_party",
-    "set_search_pref",
-    "clear_search_pref",
-}
 
 
 @dataclass
@@ -228,123 +206,20 @@ class TripCommandService:
         payload: TripCommandRequest,
         latest_recommendation: RecommendationRecord | None,
     ) -> dict[str, Any]:
-        if (
-            state["planner_state"].get("frozen_plan")
-            and payload.command not in _POST_FREEZE_COMMANDS
-        ):
+        # TWM-223: dispatch is a registry lookup, not an if-chain. Each
+        # handler owns its precondition and its application; this method
+        # never changes when a command is added. See handlers.py.
+        handler = COMMAND_HANDLERS[payload.command]
+        if state["planner_state"].get("frozen_plan") and not handler.post_freeze_ok:
             raise InvalidTripCommandError(
                 "The approved plan is frozen and cannot be changed."
             )
-        if payload.command == "start_itinerary":
-            return await apply_atlas(self.engine, self.logger, state)
-        if payload.command == "set_party":
-            return apply_set_party(self.logger, state, payload.party_update)
-        if payload.command == "set_search_pref":
-            return apply_set_search_pref(self.logger, state, payload.search_pref_update)
-        if payload.command == "clear_search_pref":
-            return apply_clear_search_pref(self.logger, state, payload.search_pref_clear)
-        if payload.command == "continue":
-            if state.get("stage") == "planning" or state.get("active_agent") == "guide":
-                if guide_has_started(state):
-                    raise InvalidTripCommandError(
-                        "Send a traveler message to continue an existing Guide session."
-                    )
-                return await apply_guide(self.engine, self.logger, state, "MESSAGE", None, latest_recommendation)
-            if state.get("stage") == "matched":
-                self._reopen_matching_from_matched(state, context="continue_from_matched")
-            if state.get("active_agent") == "meridian" or state.get("stage") in {
-                "matching", "recommended"
-            }:
-                return await apply_meridian(self.engine, self.logger, state, None, latest_recommendation)
-            raise InvalidTripCommandError(
-                "No agent can continue this trip from its current state."
-            )
-        if payload.command == "select_destination":
-            return select_destination(self.logger, state, payload.option_id or "", latest_recommendation)
-        if payload.command == "start_planning":
-            if not self._has_planning_destination(state["trip_context"]):
-                raise InvalidTripCommandError(
-                    "Select or provide a destination before starting planning."
-                )
-            if state.get("stage") not in {"new", "matched"}:
-                raise InvalidTripCommandError(
-                    "Planning can only be started from the new or matched stage."
-                )
-            set_stage(state, "planning", self.logger, context="start_planning")
-            state["active_agent"] = "guide"
-            return await apply_guide(self.engine, self.logger, state, "MESSAGE", None, latest_recommendation)
-        if payload.command == "approve_plan":
-            return await apply_guide(self.engine, self.logger, state, "APPROVE_PLAN", None, latest_recommendation)
-        if payload.command in {"reopen_destination_revisit", "reopen_destination_fresh"}:
-            if not has_pending_reopen_choice(state):
-                raise InvalidTripCommandError(
-                    "No pending destination-reopen choice to resolve."
-                )
-            if payload.command == "reopen_destination_revisit":
-                return apply_reopen_revisit(self.logger, state)
-            return await apply_reopen_fresh(self.engine, self.logger, state, None, latest_recommendation)
-        if payload.command == "more_like_this":
-            refinement = payload.refinement
-            if state.get("stage") == "recommended":
-                set_stage(state, "matching", self.logger, context="more_like_this")
-            return await apply_meridian(
-                self.engine,
-                self.logger,
-                state,
-                refinement.instructions if refinement else None,
-                latest_recommendation,
-                refinement=refinement.model_dump(mode="json", exclude_none=True)
-                if refinement
-                else None,
-            )
-        message = payload.message or ""
-        # Turn zero: no agent owns this trip yet, and the traveler's own
-        # Discover-vs-Plan-a-Trip choice decides who gets it — not Scout's
-        # intent detection (there's no ambiguity to classify; the UI button
-        # already answered the question). The raw message goes to that
-        # agent exactly like every later turn's does, so extraction is
-        # never a command-handler's job — only the owning agent's.
-        if payload.entry_intent == "discover":
-            set_stage(state, "matching", self.logger, context="discover_entry")
-            state["active_agent"] = "meridian"
-            return await apply_meridian(self.engine, self.logger, state, message, latest_recommendation)
-        if payload.entry_intent == "known_destination":
-            set_stage(state, "planning", self.logger, context="known_destination_entry")
-            state["active_agent"] = "guide"
-            return await apply_guide(self.engine, self.logger, state, "MESSAGE", message, latest_recommendation)
-        if state.get("stage") == "planning" or state.get("active_agent") == "guide":
-            return await apply_guide(self.engine, self.logger, state, "MESSAGE", message, latest_recommendation)
-        if state.get("stage") == "recommended":
-            set_stage(state, "matching", self.logger, context="refinement_traveler_message")
-        elif state.get("stage") == "matched":
-            self._reopen_matching_from_matched(state, context="matched_reconsider_traveler_message")
-        if state.get("active_agent") == "meridian" or state.get("stage") in {
-            "matching", "recommended"
-        }:
-            return await apply_meridian(self.engine, self.logger, state, message, latest_recommendation)
-        raise InvalidTripCommandError(
-            "No agent can receive this message from the trip's current state."
+        ctx = CommandContext(
+            state=state,
+            payload=payload,
+            engine=self.engine,
+            logger=self.logger,
+            latest_recommendation=latest_recommendation,
         )
-
-    def _reopen_matching_from_matched(self, state: dict[str, Any], *, context: str) -> None:
-        """A matched trip reconsidering its destination goes straight back
-        to Meridian — this used to route through apply_scout's own matcher-
-        intent handoff (scout_commands.py), which is no longer reachable
-        now that scout_entry is gone; this reproduces its two effects
-        (clear the now-obsolete selection, flip stage) deterministically
-        instead, since there's no genuine ambiguity left to classify at
-        this exact point in the flow."""
-        state["selected_option"] = None
-        state["trip_context"].pop(DESTINATIONS_KEY, None)
-        set_stage(state, "matching", self.logger, context=context)
-
-    @staticmethod
-    def _has_planning_destination(trip_context: dict[str, Any]) -> bool:
-        # destinations (twm/schemas/trip_context.py) is the one canonical
-        # "what's the destination" signal for both entry paths — written
-        # directly by select_destination for Discover, extracted by Guide
-        # itself for known-destination. No other key means this any more.
-        destinations = trip_context.get(DESTINATIONS_KEY)
-        return bool(destinations) and any(
-            isinstance(item, str) and item.strip() for item in destinations
-        )
+        handler.precondition(ctx)
+        return await handler.apply(ctx)
