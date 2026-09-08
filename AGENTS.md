@@ -41,6 +41,20 @@ Every rule here ships with the check that enforces it, or — for a review-only 
 | **Many-argument functions** *(review-only)* — a function taking a 7th positional arg is usually a "pass a parameter object" signal. `PLR0913` is not enforced yet — ~20 repository-Protocol and composer signatures predate the rule; convert them to parameter objects opportunistically. | review |
 | **Module size** — no `twm/` module over 600 lines; a legitimately-large one needs an explicit `EXEMPT` entry with a reason (currently `persistence/postgres.py`, `schemas/trusted_action.py`, `schemas/flight_search.py`). | `scripts/check_module_size.py` → step in `ci-runner.yaml` |
 
+## Architecture audit (quarterly) (TWM-225)
+
+The `ci-runner` enforces the rules above per PR. This audit catches *drift* — the tree creeping toward a break, or a fitness function's own assumptions going stale. It runs on a schedule (`.github/workflows/architecture-audit.yaml`, 1st of Jan/Apr/Jul/Oct; also `workflow_dispatch`), never blocks anything, and produces a findings report kept as a build artifact + step summary. The PR template's DoD checklist is the per-PR half of the same intent.
+
+**What it checks** (`scripts/architecture_audit.py`):
+
+- **Modules approaching the size cap** — any `twm/` file within ~120 lines of the 600 cap. Consider splitting before it forces an `EXEMPT` entry.
+- **Suppression growth** — the `# noqa: C901` / `PLR0912` count (budget 5) and any other `# noqa` / `# type: ignore`. Each is a rule bending; if the list grows, fix the code.
+- **import-linter ratcheted debt** — every entry in a contract's `ignore_imports` is a known layering violation waiting to be removed; a contract with more than 3 is drifting.
+- **`if x == "literal"` dispatch chains** — a function with ≥ 4 literal-equality branches (outside `schemas/` validators and the command registry) is a candidate for a `{name: handler}` registry.
+- **Routes with no test coverage** — a `@router` path whose distinctive segment appears in no test is a candidate dead endpoint.
+
+**Triage.** A finding is not a failure. For each one: fix it now if small, or open a cleanup story (own Linear issue, `Feature`-child if it's a capability). Update this section and the *Architecture rules (enforced)* table whenever a rule, budget, or exemption changes. Findings history lives in `docs/architecture-audit-*.md`.
+
 ## Agent prompts and workflows
 
 - Treat `twm/prompts/scout.md` and `twm/prompts/meridian.md` as independently evolving runtime prompts.
