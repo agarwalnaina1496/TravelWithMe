@@ -377,5 +377,63 @@
       "requires_ranked_options": true,
       "awaiting_cleared": true
     }
+  },
+  {
+    "id": "multi-origin-meeting-point-success",
+    "scenario": "A four-person group departing from two different cities asks where they can all meet for a weekend; Meridian recommends meeting cities without stalling on origin_city",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin_city": "two of us from Delhi, two from Mumbai",
+          "num_travelers": 4,
+          "trip_duration": 3,
+          "budget": "INR 60000 total",
+          "travel_dates": "a weekend next month"
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {
+          "conversation_context": { "awaiting": "anything_else" }
+        }
+      },
+      "message": "Nothing else to add. Where can the four of us meet up for the weekend?"
+    },
+    "invariants": {
+      "status": "SUCCESS",
+      "trip_type": "single",
+      "requires_traveler_criteria": true,
+      "requires_ranked_options": true,
+      "awaiting_cleared": true,
+      "origin_gate_not_blocked": true,
+      "origin_city_single_valued": true,
+      "options_compatible_with_all_origins": true,
+      "meeting_point_framing": true
+    }
+  },
+  {
+    "id": "multi-origin-does-not-reask-origin-clarification",
+    "scenario": "Multiple origins are stated but budget is missing; Meridian asks for budget and never re-asks origin_city",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin_city": "some in Bengaluru, some in Pune",
+          "num_travelers": 5,
+          "trip_duration": 4
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Suggest somewhere the whole group can get to easily."
+    },
+    "invariants": {
+      "status": "NEEDS_CLARIFICATION",
+      "requires_awaiting_reason": true,
+      "message_matches_last_meridian_message": true,
+      "no_options_allowed": true,
+      "origin_gate_not_blocked": true
+    }
   }
 ]

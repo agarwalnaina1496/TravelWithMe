@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "multi-origin-does-not-reask-origin-clarification",
+  "execution_path": "direct",
+  "prompt_version": "1.13.0",
+  "recorded_by": "twm-214-seed",
+  "raw_output": "{\"status\": \"NEEDS_CLARIFICATION\", \"state_delta\": {\"trip_context\": {}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": \"budget\", \"last_meridian_message\": \"With people starting from both Bengaluru and Pune I can look for a central spot everyone can reach easily. Roughly what total budget are the five of you working with for four days?\"}}}, \"message\": \"With people starting from both Bengaluru and Pune I can look for a central spot everyone can reach easily. Roughly what total budget are the five of you working with for four days?\", \"options\": []}"
+}
