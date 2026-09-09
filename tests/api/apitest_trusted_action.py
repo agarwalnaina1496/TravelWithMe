@@ -697,6 +697,65 @@ def test_feasibility_endpoint_returns_empty_modes_for_a_degenerate_route(api_cli
     assert body["modes"] == []
 
 
+def test_feasibility_endpoint_uses_distance_fallback_for_an_unresolvable_gateway_hub(
+    api_client: TestClient,
+):
+    # TWM-215: a rail-only gateway hub the resolver cannot place still yields
+    # train + bus (flight excluded) via Atlas's long_haul_distance_km, instead
+    # of the fail-closed empty modes.
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={
+            "origin": "Bengaluru",
+            "destination": "Tiny Rail Only Junction",
+            "long_haul_distance_km": 420,
+        },
+    )
+
+    assert response.status_code == 200
+    modes = {mode["mode"]: mode for mode in response.json()["modes"]}
+    assert "flight" not in modes
+    assert modes["train"]["status"] == "feasible"
+    assert modes["bus"]["status"] == "feasible"
+    assert modes["drive"]["status"] == "feasible"  # 420km is within the drive cutoff
+
+
+def test_feasibility_endpoint_ignores_distance_fallback_when_both_cities_resolve(
+    api_client: TestClient,
+):
+    # TWM-215: the fallback is only a last resort — a resolvable pair is still
+    # assessed by real haversine distance, so flight stays in for a long hop.
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Bangalore", "destination": "Mangalore", "long_haul_distance_km": 10},
+    )
+
+    assert response.status_code == 200
+    modes = {mode["mode"] for mode in response.json()["modes"]}
+    assert "flight" in modes
+
+
+def test_feasibility_endpoint_rejects_non_positive_distance_fallback(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action/feasibility",
+        json={"origin": "Bengaluru", "destination": "Somewhere", "long_haul_distance_km": 0},
+    )
+
+    assert response.status_code == 422
+
+
 def test_feasibility_endpoint_unknown_trip_returns_404(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_persistence(repository)

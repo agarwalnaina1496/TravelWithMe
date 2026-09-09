@@ -36,6 +36,13 @@ Rules (only apply when BOTH origin and destination resolve -- see
 When either city cannot be resolved, the pair's distance is unknown and this
 returns a completely empty ``modes: []`` -- fail closed, never "assume every
 mode is feasible" (the original TWM-195 bug) and never partially feasible.
+
+TWM-215: a gateway hub for a hubless endpoint may itself be a rail-only town
+the OurAirports resolver cannot place. When the caller supplies Atlas's
+``long_haul_distance_km`` ballpark for such a pair, this uses that distance
+instead of returning empty -- but excludes flight unconditionally (a hub with
+no resolvable airport has no scheduled air service to assess), yielding
+train/bus (and drive when within range).
 """
 
 import logging
@@ -118,13 +125,28 @@ def _mode(
     )
 
 
-def assess_trip_feasibility(origin: str, destination: str) -> TripFeasibilityAssessment:
+_DISTANCE_FALLBACK_FLIGHT_EXCLUDED_REASON = (
+    "This leg uses an approximate distance for a gateway with no resolvable "
+    "airport, so a scheduled flight cannot be assessed for it."
+)
+
+
+def assess_trip_feasibility(
+    origin: str,
+    destination: str,
+    long_haul_distance_km: Optional[float] = None,
+) -> TripFeasibilityAssessment:
     """Assemble a ``TripFeasibilityAssessment`` for a route using bounded,
     deterministic distance rules. Always returns a real assessment --
     never ``None`` -- with ``modes: []`` for a degenerate route (blank/
-    identical origin and destination) or an unknown city pair (either city
-    missing from the bounded table). Callers must not treat a missing/None
+    identical origin and destination) or an unknown city pair with no
+    ``long_haul_distance_km`` fallback. Callers must not treat a missing/None
     return as a possibility; there is none.
+
+    ``long_haul_distance_km`` (TWM-215): Atlas's ballpark for a gateway-hub
+    pair. Used only when the resolver cannot place one/both cities; in that
+    case flight is excluded unconditionally (no resolvable airport) and the
+    remaining distance rules apply to the supplied distance.
     """
 
     origin = origin.strip()
@@ -133,15 +155,20 @@ def assess_trip_feasibility(origin: str, destination: str) -> TripFeasibilityAss
         return TripFeasibilityAssessment(modes=[])
 
     distance_km = _resolve_known_distance_km(origin, destination)
+    flight_assessable = distance_km is not None
     if distance_km is None:
-        return TripFeasibilityAssessment(modes=[])
+        if long_haul_distance_km is None or long_haul_distance_km <= 0:
+            return TripFeasibilityAssessment(modes=[])
+        distance_km = float(long_haul_distance_km)
 
     modes: list[ModeFeasibility] = []
-    if distance_km >= _FLIGHT_INFEASIBLE_BELOW_KM:
+    if flight_assessable and distance_km >= _FLIGHT_INFEASIBLE_BELOW_KM:
         modes.append(_mode("flight", distance_km=distance_km, reason=_FLIGHT_INCLUDED_REASON))
     if distance_km <= _DRIVE_INFEASIBLE_ABOVE_KM:
         modes.append(_mode("drive", distance_km=distance_km, reason=_DRIVE_INCLUDED_REASON))
-    modes.append(_mode("train", distance_km=distance_km, reason=_TRAIN_REASON))
-    modes.append(_mode("bus", distance_km=distance_km, reason=_BUS_REASON))
+    train_reason = _TRAIN_REASON if flight_assessable else _DISTANCE_FALLBACK_FLIGHT_EXCLUDED_REASON
+    bus_reason = _BUS_REASON if flight_assessable else _DISTANCE_FALLBACK_FLIGHT_EXCLUDED_REASON
+    modes.append(_mode("train", distance_km=distance_km, reason=train_reason))
+    modes.append(_mode("bus", distance_km=distance_km, reason=bus_reason))
 
     return TripFeasibilityAssessment(modes=modes)

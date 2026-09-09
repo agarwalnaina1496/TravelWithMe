@@ -105,3 +105,30 @@ def test_assess_trip_feasibility_always_returns_a_real_assessment_never_none():
     for origin, destination in [("Paris", "paris"), ("Nowhere", "Also Nowhere"), ("Delhi", "Agra")]:
         result = assess_trip_feasibility(origin, destination)
         assert result is not None
+
+
+def test_distance_fallback_yields_train_bus_without_flight_for_an_unresolvable_hub():
+    # TWM-215: a rail-only gateway hub with no resolvable airport still gets
+    # train + bus (+ drive within range) via Atlas's long_haul_distance_km,
+    # instead of the fail-closed empty modes.
+    result = assess_trip_feasibility("Bengaluru", "Unmapped Rail Junction", long_haul_distance_km=420)
+    modes = {entry.mode for entry in result.modes}
+    assert modes == {"train", "bus", "drive"}
+
+
+def test_distance_fallback_excludes_drive_when_the_ballpark_is_long():
+    result = assess_trip_feasibility("Bengaluru", "Unmapped Far Junction", long_haul_distance_km=1200)
+    modes = {entry.mode for entry in result.modes}
+    assert modes == {"train", "bus"}  # no flight (no airport), no drive (too far)
+
+
+def test_distance_fallback_is_ignored_when_both_cities_resolve():
+    with_fallback = assess_trip_feasibility("Bangalore", "Mangalore", long_haul_distance_km=10)
+    without = assess_trip_feasibility("Bangalore", "Mangalore")
+    assert {m.mode for m in with_fallback.modes} == {m.mode for m in without.modes}
+    assert "flight" in {m.mode for m in with_fallback.modes}
+
+
+def test_non_positive_distance_fallback_still_fails_closed():
+    assert assess_trip_feasibility("Bengaluru", "Unmapped Place", long_haul_distance_km=0).modes == []
+    assert assess_trip_feasibility("Bengaluru", "Unmapped Place", long_haul_distance_km=-5).modes == []

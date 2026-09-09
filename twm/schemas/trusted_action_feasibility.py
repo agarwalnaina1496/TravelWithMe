@@ -10,7 +10,9 @@ the way ``TrustedActionRequest`` is. See
 endpoint rather than folded into the trusted-action resolution response.
 """
 
-from pydantic import BaseModel, ConfigDict
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from .trusted_action import TrustedActionText
 
@@ -20,3 +22,8 @@ class TripFeasibilityRequest(BaseModel):
 
     origin: TrustedActionText
     destination: TrustedActionText
+    # TWM-215: Atlas's ballpark distance for a gateway-hub pair, sent when the
+    # caller has substituted a candidate hub for a hubless leg endpoint. Used
+    # only as a fallback when the bundled resolver cannot place a city (a
+    # rail-only hub with no airport); ignored when both cities resolve.
+    long_haul_distance_km: Optional[float] = Field(default=None, gt=0)

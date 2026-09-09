@@ -74,7 +74,9 @@ async def assess_trip_feasibility(
     trusted_action: TrustedAction,
 ):
     await _get_owned_trip(trip_id, request, response, persistence, current_user, logger, "trusted_action_feasibility")
-    return trusted_action.assess_feasibility(trip_id, payload.origin, payload.destination)
+    return trusted_action.assess_feasibility(
+        trip_id, payload.origin, payload.destination, payload.long_haul_distance_km
+    )
 
 
 @router.post("/{trip_id}/booking-options", response_model=BookingOptionsResponse)
