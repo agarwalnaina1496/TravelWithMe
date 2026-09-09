@@ -35,6 +35,12 @@ KNOWN_UNIMPLEMENTED_INVARIANTS: frozenset[tuple[str, str]] = frozenset(
         # absence-of-mode-words checks are what's mechanically verifiable.
         # Verify manually per TWM-203.
         ("atlas", "mode_decided_downstream_by_trusted_actions"),
+        # TWM-226: that the candidate hub set is unranked and Atlas commits to
+        # no single hub in prose, and that the arrival day leaves realistic
+        # room for the hub last-mile transfer, are narrative-judgment facts the
+        # response shape cannot prove mechanically. Verify manually.
+        ("atlas", "unranked_hub_set_no_winner_committed"),
+        ("atlas", "arrival_day_leaves_room_for_hub_transfer"),
     }
 )
 
@@ -753,6 +759,109 @@ def _atlas_stay_price_estimate_tiers_ordered(
             )
 
 
+_HUBLESS_ENDPOINT_TOWNS = {"sumerpur"}
+
+
+def _atlas_hubless_travel_items(response: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in _atlas_travel_items(response)
+        if _HUBLESS_ENDPOINT_TOWNS
+        & {
+            (item.get("from_city") or "").casefold(),
+            (item.get("to_city") or "").casefold(),
+        }
+    ]
+
+
+def _atlas_hubless_endpoint_emits_ordered_hub_set(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    legs = _atlas_hubless_travel_items(response)
+    if not legs:
+        raise RubricFailure("expected a TRAVEL leg touching the hubless town")
+    for leg in legs:
+        hubs = leg.get("hubs")
+        if not isinstance(hubs, list) or len(hubs) < 2:
+            raise RubricFailure(
+                f"expected an ordered candidate hub set (>=2) on the hubless "
+                f"leg {leg.get('from_city')}->{leg.get('to_city')}, got {hubs!r}"
+            )
+
+
+def _atlas_hub_carries_last_mile_and_long_haul_distance(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    for leg in _atlas_hubless_travel_items(response):
+        for hub in leg.get("hubs") or []:
+            for field in (
+                "last_mile_km",
+                "last_mile_duration_minutes",
+                "long_haul_distance_km",
+            ):
+                if not isinstance(hub.get(field), int) or hub[field] < 0:
+                    raise RubricFailure(
+                        f"hub {hub.get('city')!r} must carry a non-negative "
+                        f"integer {field}, got {hub.get(field)!r}"
+                    )
+
+
+def _atlas_hub_side_matches_hubless_endpoint(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    for leg in _atlas_hubless_travel_items(response):
+        to_hubless = (leg.get("to_city") or "").casefold() in _HUBLESS_ENDPOINT_TOWNS
+        want = "destination" if to_hubless else "origin"
+        for hub in leg.get("hubs") or []:
+            if hub.get("side") != want:
+                raise RubricFailure(
+                    f"hub {hub.get('city')!r} on leg "
+                    f"{leg.get('from_city')}->{leg.get('to_city')} expected "
+                    f"side {want!r}, got {hub.get('side')!r}"
+                )
+
+
+def _atlas_hub_facts_name_no_transit_mode(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    for leg in _atlas_hubless_travel_items(response):
+        for hub in leg.get("hubs") or []:
+            found = _contains_mode_word(hub.get("city", ""))
+            if found:
+                raise RubricFailure(
+                    f"expected no transit-mode word in hub city, found {found!r}"
+                )
+
+
+def _atlas_explicit_entry_and_exit_travel_legs(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    if not expected:
+        return
+    days = response.get("final_itinerary", {}).get("days", [])
+    if not days:
+        raise RubricFailure("expected at least one day")
+    first_travel = any(
+        item.get("kind") == "TRAVEL" for item in days[0].get("timeline", [])
+    )
+    last_travel = any(
+        item.get("kind") == "TRAVEL" for item in days[-1].get("timeline", [])
+    )
+    if not (first_travel and last_travel):
+        raise RubricFailure(
+            "expected an explicit TRAVEL leg on both the first and last day "
+            f"(first={first_travel}, last={last_travel})"
+        )
+
+
 def _atlas_has_verified_reference(response: dict[str, Any]) -> bool:
     return any(
         reference.get("status") == "VERIFIED"
@@ -851,5 +960,10 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "no_mode_naming_in_budget_notes": _atlas_no_mode_naming_in_budget_notes,
         "stay_price_estimate_required_on_days": _atlas_stay_price_estimate_required_on_days,
         "stay_price_estimate_tiers_ordered": _atlas_stay_price_estimate_tiers_ordered,
+        "hubless_endpoint_emits_ordered_hub_set": _atlas_hubless_endpoint_emits_ordered_hub_set,
+        "hub_carries_last_mile_and_long_haul_distance": _atlas_hub_carries_last_mile_and_long_haul_distance,
+        "hub_side_matches_hubless_endpoint": _atlas_hub_side_matches_hubless_endpoint,
+        "hub_facts_name_no_transit_mode": _atlas_hub_facts_name_no_transit_mode,
+        "explicit_entry_and_exit_travel_legs": _atlas_explicit_entry_and_exit_travel_legs,
     },
 }

@@ -1,5 +1,28 @@
 # Atlas prompt changelog
 
+## Atlas 1.15.0 — 2026-09-09
+
+- **Transport hub sets for hubless endpoints (TWM-226).** Adds an optional
+  `hubs: list[AtlasTransportHub]` to the `TRAVEL` timeline item. When a leg's
+  own endpoint town has no realistic long-haul transport (e.g. Sumerpur),
+  Atlas now emits an ordered 2–3 set of candidate gateway cities as plain
+  geographic facts — each with `city`, `side` (`origin` | `destination`),
+  `last_mile_km`, `last_mile_duration_minutes`, and a `long_haul_distance_km`
+  ballpark so a rail-only hub with no airport can still be assessed downstream.
+  Hubs are unranked peers; Atlas names no transit mode and picks no winner.
+  Absent for a well-connected leg and when no real gateway can be confidently
+  named (never fabricated). Deterministic hub→feasibility resolution, per-hub
+  fares, and the drawer picker are the sibling story (TWM-215).
+- **Guaranteed entry/exit legs.** Atlas must always emit an explicit entry
+  `TRAVEL` leg and exit `TRAVEL` leg, including when the shared trip origin is
+  the same place as the day-1 city (split-origin / meeting-point trips), so
+  downstream booking always has a first/last movement to attach to. Replaces
+  the previous "transport to and from the origin when known".
+- **Transfer-aware arrival/departure days.** The arrival day's first
+  substantive activity must leave realistic room for the hub last-mile
+  transfer, and the departure day must allow time to reach the hub. Narrated
+  mode-neutrally and without committing to a single hub in prose.
+
 ## Atlas 1.14.0 — 2026-09-07
 
 - **Output discipline pass (TWM-217).** A real payload review found the same
