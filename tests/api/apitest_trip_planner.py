@@ -719,6 +719,133 @@ def test_atlas_timeline_items_reject_any_structured_date_field(
         assert adapter.invoke.await_count == 1
 
 
+def _atlas_output_with_gateway_leg(hub_overrides: list[dict] | None = None) -> dict:
+    """TWM-226: a one-day itinerary whose sole timeline item is a TRAVEL leg
+    into a hubless destination carrying a candidate gateway-hub set."""
+    general_reference = {
+        "status": "GENERAL_GUIDANCE",
+        "source_title": None,
+        "source_url": None,
+    }
+    hubs = hub_overrides if hub_overrides is not None else [
+        {
+            "city": "Udaipur",
+            "side": "destination",
+            "last_mile_km": 100,
+            "last_mile_duration_minutes": 150,
+            "long_haul_distance_km": 660,
+        },
+        {
+            "city": "Ahmedabad",
+            "side": "destination",
+            "last_mile_km": 220,
+            "last_mile_duration_minutes": 300,
+            "long_haul_distance_km": 800,
+        },
+    ]
+    output = atlas_output()
+    output["final_itinerary"]["trip_summary"]["destinations"] = ["Sumerpur"]
+    output["final_itinerary"]["days"][0]["timeline"] = [
+        {
+            "start_time": "Morning",
+            "end_time": None,
+            "kind": "TRAVEL",
+            "title": "Travel from Bengaluru to Sumerpur",
+            "location": "Bengaluru to Sumerpur",
+            "detail": "Reach the trip start via the nearest gateway city.",
+            "movement_guidance": None,
+            "from_city": "Bengaluru",
+            "to_city": "Sumerpur",
+            "estimated_cost_low": 0,
+            "estimated_cost_high": 0,
+            "reference": general_reference,
+            "requires_advance_booking": False,
+            "booking_readiness": None,
+            "hubs": hubs,
+        }
+    ]
+    return output
+
+
+def _post_atlas(api_client: TestClient, output: dict) -> object:
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(output))
+    )
+    set_engine(
+        api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    )
+    return api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Bengaluru", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Sumerpur"],
+                "trip_duration": 1,
+                "approved_places": [],
+                "days": [{"day_number": 1, "places": []}],
+            },
+        },
+    )
+
+
+def test_atlas_api_returns_travel_leg_with_candidate_gateway_hubs(
+    api_client: TestClient,
+) -> None:
+    """TWM-226: a TRAVEL leg into a hubless town carries an ordered candidate
+    gateway-hub set, passed through the normalized response unchanged for the
+    sibling deterministic resolver (TWM-215) to consume."""
+    response = _post_atlas(api_client, _atlas_output_with_gateway_leg())
+
+    assert response.status_code == 200
+    leg = response.json()["final_itinerary"]["days"][0]["timeline"][0]
+    assert [hub["city"] for hub in leg["hubs"]] == ["Udaipur", "Ahmedabad"]
+    assert {hub["side"] for hub in leg["hubs"]} == {"destination"}
+    assert leg["hubs"][0]["last_mile_km"] == 100
+    assert leg["hubs"][0]["last_mile_duration_minutes"] == 150
+    assert leg["hubs"][0]["long_haul_distance_km"] == 660
+
+
+def test_atlas_omits_hubs_for_a_normally_connected_leg(api_client: TestClient) -> None:
+    """TWM-226: hubs is absent (not an empty list) for a well-connected leg."""
+    output = _atlas_output_with_gateway_leg()
+    del output["final_itinerary"]["days"][0]["timeline"][0]["hubs"]
+
+    response = _post_atlas(api_client, output)
+
+    assert response.status_code == 200
+    leg = response.json()["final_itinerary"]["days"][0]["timeline"][0]
+    assert leg["hubs"] is None
+
+
+def test_atlas_rejects_empty_hubs_list(api_client: TestClient) -> None:
+    """TWM-226: an unidentifiable hub means hubs is absent, never an empty
+    list presented as 'a set with nothing in it'."""
+    response = _post_atlas(api_client, _atlas_output_with_gateway_leg(hub_overrides=[]))
+
+    assert response.status_code == 502
+
+
+def test_atlas_rejects_hubs_on_a_non_travel_timeline_item(
+    api_client: TestClient,
+) -> None:
+    """TWM-226: hubs are a movement fact — only a TRAVEL item may carry them."""
+    output = atlas_output()
+    output["final_itinerary"]["days"][0]["timeline"][0]["hubs"] = [
+        {
+            "city": "Udaipur",
+            "side": "destination",
+            "last_mile_km": 100,
+            "last_mile_duration_minutes": 150,
+            "long_haul_distance_km": 660,
+        }
+    ]
+
+    response = _post_atlas(api_client, output)
+
+    assert response.status_code == 502
+
+
 def test_atlas_rejects_plan_that_does_not_allocate_approved_places(
     api_client: TestClient,
 ) -> None:

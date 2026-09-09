@@ -27,6 +27,30 @@ AtlasAssumptionCategory = Literal[
 # — an item whose booking status is merely uncertain carries
 # `needs_verification: true` on its note instead.
 AtlasBookingReadiness = Literal["suggested", "needs_advance_booking"]
+# TWM-226: which trip endpoint a candidate gateway hub serves. `origin` for a
+# hub the traveler passes through to *leave* a hubless origin town, `destination`
+# for a hub they pass through to *reach* a hubless destination town.
+AtlasHubSide = Literal["origin", "destination"]
+
+
+class AtlasTransportHub(BaseModel):
+    """TWM-226: a plain geographic fact about a candidate gateway city for a
+    `TRAVEL` leg whose own endpoint town has no realistic long-haul transport.
+    Atlas supplies an unranked plausible set (2-3); deterministic downstream
+    feasibility/booking resolves modes, fares, and the final pick. Atlas never
+    names a transit mode here -- `long_haul_distance_km` lets a rail-only hub
+    with no airport still be assessed downstream."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    city: AtlasText
+    side: AtlasHubSide
+    # All three are positive: a gateway sits a real surface transfer from the
+    # town and a real long-haul distance from the trip's other endpoint, so a
+    # zero on any of them is a degenerate "hub" that is not a hub.
+    last_mile_km: int = Field(gt=0)
+    last_mile_duration_minutes: int = Field(gt=0)
+    long_haul_distance_km: int = Field(gt=0)
 
 
 class AtlasAssumption(BaseModel):
@@ -127,6 +151,11 @@ class AtlasTimelineItem(BaseModel):
     reference: AtlasReference
     requires_advance_booking: bool = False
     booking_readiness: Optional[AtlasBookingReadiness] = None
+    # TWM-226: candidate gateway hubs for a TRAVEL leg whose own endpoint town
+    # has no realistic long-haul transport -- presented as equal options (the
+    # more commonly-used gateway first where there is one). Absent for a
+    # normally-connected leg and when Atlas cannot confidently name a hub.
+    hubs: Optional[list[AtlasTransportHub]] = None
 
     @model_validator(mode="after")
     def validate_cost_range(self) -> "AtlasTimelineItem":
@@ -155,6 +184,19 @@ class AtlasTimelineItem(BaseModel):
         if (self.from_city is None) != (self.to_city is None):
             raise ValueError(
                 "from_city and to_city must both be present or both be absent"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_hubs(self) -> "AtlasTimelineItem":
+        if self.hubs is None:
+            return self
+        if self.kind != "TRAVEL":
+            raise ValueError("hubs are allowed only when kind is TRAVEL")
+        if not self.hubs:
+            raise ValueError(
+                "hubs must be absent rather than an empty list when Atlas "
+                "cannot confidently name a gateway hub"
             )
         return self
 

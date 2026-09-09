@@ -283,6 +283,44 @@
     }
   },
   {
+    "id": "hubless-endpoint-gateway-hubs",
+    "scenario": "Destination town has no long-haul transport of its own; every trip still needs a first and last movement",
+    "input": {
+      "trip_context": {
+        "origin_city": "Bengaluru"
+      },
+      "working_plan": {
+        "destinations": [
+          "Sumerpur"
+        ],
+        "trip_duration": 2,
+        "start_date": null,
+        "approved_places": [],
+        "days": [
+          {
+            "day_number": 1,
+            "date": null,
+            "places": []
+          },
+          {
+            "day_number": 2,
+            "date": null,
+            "places": []
+          }
+        ]
+      }
+    },
+    "invariants": {
+      "hubless_endpoint_emits_ordered_hub_set": true,
+      "hub_carries_last_mile_and_long_haul_distance": true,
+      "hub_side_matches_hubless_endpoint": true,
+      "hub_facts_name_no_transit_mode": true,
+      "explicit_entry_and_exit_travel_legs": true,
+      "unranked_hub_set_no_winner_committed": true,
+      "arrival_day_leaves_room_for_hub_transfer": true
+    }
+  },
+  {
     "id": "overnight-stay-price-band-estimate",
     "scenario": "Multi-day single-base trip where every day involves an overnight stay",
     "input": {
