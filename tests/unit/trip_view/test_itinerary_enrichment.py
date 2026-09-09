@@ -3,7 +3,7 @@ segments. The former TripBoardService logic, relocated (minus feasibility)."""
 
 from uuid import uuid4
 
-from twm.services.trip_view.itinerary_enrichment import enrich_itinerary
+from twm.services.trip_view.itinerary_enrichment import _hub_long_haul_endpoints, enrich_itinerary
 from twm.services.trip_view.trip_dates import compose_trip_dates
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
 
@@ -152,6 +152,19 @@ def test_hub_with_no_resolvable_endpoint_and_no_distance_stays_unresolved_and_wa
     assert hub_out["feasible_modes"] == []
     warn = [e for e in sink.events if e["event"] == "be.itinerary.hub_resolution" and e["level"] == "WARNING"]
     assert warn and warn[0]["fields"]["resolved_hub_count"] == 0
+
+
+def test_hub_endpoint_pairing_prefers_the_unresolvable_side_then_falls_back_to_atlas_side():
+    dest_hub = {"city": "Udaipur", "side": "destination"}
+    origin_hub = {"city": "Udaipur", "side": "origin"}
+
+    # to_city hubless -> pair from_city -> hub, regardless of Atlas `side`
+    assert _hub_long_haul_endpoints("Bengaluru", "Sumerpur", False, True, origin_hub) == ("Bengaluru", "Udaipur")
+    # from_city hubless -> pair hub -> to_city
+    assert _hub_long_haul_endpoints("Sumerpur", "Mumbai", True, False, dest_hub) == ("Udaipur", "Mumbai")
+    # both resolvable (defensive) -> Atlas `side` decides
+    assert _hub_long_haul_endpoints("Bengaluru", "Delhi", False, False, origin_hub) == ("Udaipur", "Delhi")
+    assert _hub_long_haul_endpoints("Bengaluru", "Delhi", False, False, dest_hub) == ("Bengaluru", "Udaipur")
 
 
 def test_non_gateway_leg_hubs_are_left_untouched():

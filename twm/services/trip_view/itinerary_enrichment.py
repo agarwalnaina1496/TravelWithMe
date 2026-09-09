@@ -77,7 +77,11 @@ def enrich_itinerary(
     ]
     # TWM-215: origin-agnostic — the trip's first and last movements are the
     # gateway legs, whatever cities they actually connect. A single-leg trip's
-    # one leg is both.
+    # one leg is both. This assumes the first/last inter-city TRAVEL item *is*
+    # the entry/exit leg, which TWM-226 guarantees for every itinerary Atlas
+    # now generates (an explicit entry + exit leg always emitted). A pre-226
+    # stored itinerary with no day-1 travel leg would flag its first internal
+    # hop instead — acceptable pre-MVP; there is no legacy itinerary to migrate.
     outbound = travel_legs[0] if travel_legs else None
     inbound = travel_legs[-1] if travel_legs else None
 
@@ -102,16 +106,17 @@ def enrich_itinerary(
     }
 
 
-def _hub_long_haul_endpoints(item: dict[str, Any], hub: dict[str, Any]) -> tuple[str, str]:
+def _hub_long_haul_endpoints(
+    from_city: str, to_city: str, from_hubless: bool, to_hubless: bool, hub: dict[str, Any]
+) -> tuple[str, str]:
     """The (origin, destination) pair the hub's long-haul portion spans.
 
     Trust Atlas's ``side`` only as a tie-break: prefer replacing whichever
     leg endpoint the bundled resolver cannot actually place (TWM-226 PR #162
     review — ``side`` is Atlas's judgement and the schema cannot check it).
+    ``from_hubless`` / ``to_hubless`` are the same for every hub on a leg, so
+    the caller resolves them once rather than per hub.
     """
-    from_city, to_city = item["from_city"], item["to_city"]
-    from_hubless = resolve_airport(from_city) is None
-    to_hubless = resolve_airport(to_city) is None
     if to_hubless and not from_hubless:
         return from_city, hub["city"]
     if from_hubless and not to_hubless:
@@ -128,11 +133,16 @@ def _attach_hub_feasibility(
     if not (item.get("is_gateway_leg") and hubs):
         return item
 
+    from_city, to_city = item["from_city"], item["to_city"]
+    from_hubless = resolve_airport(from_city) is None
+    to_hubless = resolve_airport(to_city) is None
     resolved_hubs: list[dict[str, Any]] = []
     fallback_count = 0
     unresolved: list[str] = []
     for hub in hubs:
-        origin, destination = _hub_long_haul_endpoints(item, hub)
+        origin, destination = _hub_long_haul_endpoints(
+            from_city, to_city, from_hubless, to_hubless, hub
+        )
         assessment = assess_trip_feasibility(origin, destination, hub.get("long_haul_distance_km"))
         modes = [entry.mode for entry in assessment.modes]
         if resolve_airport(hub.get("city", "")) is None:
