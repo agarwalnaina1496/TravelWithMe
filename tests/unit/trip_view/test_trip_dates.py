@@ -97,6 +97,22 @@ def test_cross_year_range_day_month_order():
     assert (result.precision, result.departure, result.return_) == ("exact", "2026-12-30", "2027-01-02")
 
 
+def test_two_month_range_that_does_not_cross_year_and_is_past_is_left_for_guide():
+    # "Feb 26 - Mar 2" seen on 2026-06-15: end month (Mar) does NOT precede the
+    # start (Feb), so this is an ordinary same-year range — and it is already
+    # past. It must not be silently rolled to 2027.
+    result = _dates("Feb 26 - Mar 2", day_count=5)
+    assert result.precision == "none"
+    assert result.label == "Feb 26 - Mar 2"
+    assert result.departure is None
+
+
+def test_two_month_range_that_does_not_cross_year_and_is_future_resolves():
+    result = _dates("Nov 26 - Dec 2", day_count=5)
+    assert result.precision == "exact"
+    assert result.departure == "2026-11-26"
+
+
 def test_future_bare_month_no_year_is_month_precision_current_year():
     result = _dates("October")
     assert result.precision == "month"
@@ -142,6 +158,7 @@ def test_missing_key_is_none():
 
 
 def test_today_defaults_to_the_real_date_when_not_injected():
-    # No `today=` — exercises the date.today() fallback branch.
-    result = compose_trip_dates({"travel_dates": "flexible"}, 5)
-    assert result.precision == "none"
+    # Omitting `today` must behave exactly as passing date.today() — on a
+    # yearless value, which is where `today` actually gets used.
+    raw = {"travel_dates": "15 August"}
+    assert compose_trip_dates(raw, 5) == compose_trip_dates(raw, 5, today=date.today())

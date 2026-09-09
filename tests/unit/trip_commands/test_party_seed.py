@@ -32,7 +32,10 @@ def _state(num_travelers=None, party=None) -> dict:
     "raw,expected",
     [
         ("3", 3),
-        (3, None),  # not a string — the loose fact is stored as text
+        (3, 3),  # Guide/Scout may store the headcount as a bare int
+        (3.0, 3),
+        (True, None),  # a bool is not a headcount
+        (3.5, None),  # a non-whole number is not a headcount
         ("3 travellers", 3),
         ("3 of us", 3),
         ("party of 4", 4),
@@ -45,7 +48,8 @@ def _state(num_travelers=None, party=None) -> dict:
         ("a big group", None),
         ("", None),
         ("  ", None),
-        ("12", None),  # above the 9-person booking cap
+        ("12 of us", 9),  # clamped to the 9-person booking cap, not dropped
+        (25, 9),
         ("0", None),
         (None, None),
     ],

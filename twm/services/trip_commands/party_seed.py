@@ -36,13 +36,33 @@ _NUMBER_WORDS: dict[str, int] = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9,
 }
-_INT_RE = re.compile(r"\b(\d{1,2})\b")
+_INT_RE = re.compile(r"\d{1,3}")
 _MAX_PARTY = 9
 
 
+def _clamp(value: int) -> Optional[int]:
+    # Below 1 is not a headcount; above the booking cap is clamped rather than
+    # dropped — a stated large group should still seed *some* party for the
+    # traveler to correct in the drawer, not silently fall back to 1 adult.
+    if value < 1:
+        return None
+    return min(value, _MAX_PARTY)
+
+
 def parse_headcount(raw: Any) -> Optional[int]:
-    """A bounded best-effort read of the loose ``num_travelers`` string.
-    Returns a 1–9 count, or ``None`` when nothing confidently reads as one."""
+    """A bounded best-effort read of the loose ``num_travelers`` fact — a bare
+    int, or a string Guide/Scout stored verbatim. Returns a 1–9 count, or
+    ``None`` when nothing confidently reads as one.
+
+    Deliberately shallow: the first number wins, so a stated breakdown
+    ("2 adults 3 kids") collapses to its first figure and children/infants
+    seed as 0. That is acceptable — the party is the traveler's to refine in
+    the booking drawer; this only removes the wrong 1-adult default.
+    """
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)) and float(raw).is_integer():
+        return _clamp(int(raw))
     if not isinstance(raw, str):
         return None
     text = raw.strip().lower()
@@ -51,8 +71,7 @@ def parse_headcount(raw: Any) -> Optional[int]:
 
     match = _INT_RE.search(text)
     if match:
-        value = int(match.group(1))
-        return value if 1 <= value <= _MAX_PARTY else None
+        return _clamp(int(match.group()))
 
     for phrase, count in _PHRASE_COUNTS:
         if phrase in text:

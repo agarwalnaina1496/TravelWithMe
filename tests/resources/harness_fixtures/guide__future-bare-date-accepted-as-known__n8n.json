@@ -1,8 +1,0 @@
-{
-  "agent": "guide",
-  "case_id": "future-bare-date-accepted-as-known",
-  "execution_path": "n8n",
-  "prompt_version": "3.2.0",
-  "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": \"Got it \u2014 budget around 80k. Anything else you'd like to add? Any other preferences?\", \"state_delta\": {\"trip_context\": {\"budget\": \"around INR 80000\"}, \"planner_state\": {\"conversation_context\": {\"awaiting\": \"anything_else\"}}}, \"outcome\": \"continue\"}"
-}

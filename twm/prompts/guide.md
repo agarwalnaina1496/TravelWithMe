@@ -121,14 +121,6 @@ order:
      verbatim — a month, tentative dates, "don't know yet", a range,
      "flexible". Treat any of these as known; only a genuinely empty answer
      leaves the field unknown.
-     - One `travel_dates` exception: if the traveler gives an exact day and
-       month with **no year**, and that day-and-month has **already passed
-       this year**, do not treat it as known — ask which year they mean
-       (e.g. "Do you mean September 2026?"), keep `awaiting` set to
-       `travel_dates`, and store nothing until they answer. A bare day and
-       month still ahead this year, a stated year, a month on its own, a
-       season, and "flexible" are all fine as given and need no such
-       question.
    - The sixth gate, once all five fixed fields are known: ask plainly,
      once, "Anything else you'd like to add? Any other preferences?" and
      set `awaiting` to `"anything_else"`.

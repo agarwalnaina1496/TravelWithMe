@@ -60,16 +60,15 @@ _MONTH_DAY_YEAR = re.compile(r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2})\s*,?\s*(\d{4})\b
 # TWM-227: yearless forms, matched against the whole stripped string so
 # free-text ("sometime in March", "mid-March") never trips them. The year is
 # supplied by _parse_yearless against `today`, never by the pattern.
-_YL_SEP = r"\s*(?:-|–|—|to|until|through|thru)\s*"
-_YL_RANGE_DAY_MONTH = re.compile(rf"^(\d{{1,2}}){_YL_SEP}(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?$", re.IGNORECASE)
-_YL_RANGE_MONTH_DAY = re.compile(rf"^([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}}){_YL_SEP}(\d{{1,2}})$", re.IGNORECASE)
+_YL_RANGE_DAY_MONTH = re.compile(rf"^(\d{{1,2}}){_RANGE_SEP}(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?$", re.IGNORECASE)
+_YL_RANGE_MONTH_DAY = re.compile(rf"^([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}}){_RANGE_SEP}(\d{{1,2}})$", re.IGNORECASE)
 _YL_SINGLE_DAY_MONTH = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9})\.?$", re.IGNORECASE)
 _YL_SINGLE_MONTH_DAY = re.compile(r"^([A-Za-z]{3,9})\.?\s+(\d{1,2})$", re.IGNORECASE)
 _YL_CROSS_DAY_MONTH = re.compile(
-    rf"^(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?{_YL_SEP}(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?$", re.IGNORECASE
+    rf"^(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?{_RANGE_SEP}(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?$", re.IGNORECASE
 )
 _YL_CROSS_MONTH_DAY = re.compile(
-    rf"^([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}}){_YL_SEP}([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}})$", re.IGNORECASE
+    rf"^([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}}){_RANGE_SEP}([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}})$", re.IGNORECASE
 )
 _YL_BARE_MONTH = re.compile(r"^([A-Za-z]{3,9})\.?$", re.IGNORECASE)
 
@@ -238,63 +237,63 @@ def _resolve_current_year(month: int, day: int, today: date) -> Optional[int]:
 
 
 def _parse_yearless(text: str, day_count: int, today: date) -> Optional[TripDates]:
-    """A day+month (or day-range, or cross-year range) with no year stated.
+    """A day+month (or day-range, or two-month range) with no year stated.
     Returns ``None`` when nothing matched, so the caller falls back to
     verbatim."""
     for pattern, month_first in ((_YL_CROSS_MONTH_DAY, True), (_YL_CROSS_DAY_MONTH, False)):
         match = pattern.match(text)
         if match:
-            return _cross_year(match.groups(), month_first, day_count, today)
+            return _two_month_range(match.groups(), month_first, text, day_count, today)
 
     for pattern, month_first in ((_YL_RANGE_MONTH_DAY, True), (_YL_RANGE_DAY_MONTH, False)):
         match = pattern.match(text)
         if match:
             groups = match.groups()
             month = _month_index(groups[0] if month_first else groups[2])
-            start, end = (groups[1], groups[2]) if month_first else (groups[0], groups[1])
-            return _single_yearless(month, int(start), int(end), day_count, today)
+            start = int(groups[1] if month_first else groups[0])
+            end = int(groups[2] if month_first else groups[1])
+            return _resolve_yearless_start(month, start, day_count, today, _yearless_label(month, start, end))
 
     for pattern, month_first in ((_YL_SINGLE_MONTH_DAY, True), (_YL_SINGLE_DAY_MONTH, False)):
         match = pattern.match(text)
         if match:
             month = _month_index(match.group(1 if month_first else 2))
             day = int(match.group(2 if month_first else 1))
-            return _single_yearless(month, day, None, day_count, today)
+            return _resolve_yearless_start(month, day, day_count, today, _yearless_label(month, day))
 
     match = _YL_BARE_MONTH.match(text)
     if match:
         month = _month_index(match.group(1))
-        if month and (today.year, month) >= (today.year, today.month):
-            return _month_result(today.year, month)
         if month:
-            return _verbatim(text)
+            return _month_result(today.year, month) if month >= today.month else _verbatim(text)
 
     return None
 
 
-def _single_yearless(
-    month: Optional[int], day_start: int, day_end: Optional[int], day_count: int, today: date
+def _resolve_yearless_start(
+    month: Optional[int], day_start: int, day_count: int, today: date, unresolved_label: str
 ) -> Optional[TripDates]:
+    """Resolve an omitted year to the current year when the start is
+    today-or-future; leave a start already past this year unresolved (clean
+    label, ``precision: none``) for Guide to clarify — never a next-year guess."""
     if not month:
         return None
     year = _resolve_current_year(month, day_start, today)
     if year is None:
-        return TripDates(
-            precision="none",
-            label=_yearless_label(month, day_start, day_end),
-            source="conversational",
-        )
+        return TripDates(precision="none", label=unresolved_label, source="conversational")
     return _from_departure(date(year, month, day_start), day_count)
 
 
-def _cross_year(
-    groups: tuple[str, ...], month_first: bool, day_count: int, today: date
+def _two_month_range(
+    groups: tuple[str, ...], month_first: bool, text: str, day_count: int, today: date
 ) -> Optional[TripDates]:
-    """A "Dec 30 - Jan 2" style range: both sides carry a day and a month,
-    neither carries a year. The start anchors to the current year (rolled
-    forward if already past); the itinerary length carries the computed
-    return across the year boundary the same way it does for any exact
-    departure."""
+    """A range with a month on both sides ("Dec 30 - Jan 2", "Feb 26 - Mar 2").
+    Only a range whose end month precedes its start month genuinely spans the
+    year boundary — that one anchors the start to the current year (rolled
+    forward if past) with no question, since it is unambiguous. Any other
+    two-month range is an ordinary same-year range and goes through the same
+    resolve-if-future / leave-for-Guide-if-past path as every other yearless
+    start."""
     if month_first:
         start_month, start_day = _month_index(groups[0]), int(groups[1])
         end_month = _month_index(groups[2])
@@ -303,6 +302,8 @@ def _cross_year(
         end_month = _month_index(groups[3])
     if not start_month or not end_month:
         return None
+    if end_month >= start_month:
+        return _resolve_yearless_start(start_month, start_day, day_count, today, text)
     try:
         start = date(today.year, start_month, start_day)
         if start < today:
