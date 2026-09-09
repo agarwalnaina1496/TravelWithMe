@@ -1,5 +1,28 @@
 # Meridian prompt changelog
 
+## Meridian 1.13.0 — 2026-09-09
+
+- **Multi-origin destination matching (TWM-214).** Adds a "Multiple Origins
+  and Meeting Points" section: when a group states more than one starting
+  city, Meridian reasons about all of them and ranks destinations (and
+  candidate meeting cities) by how reasonably each works for every stated
+  origin at once — connectivity plus a distance/time/cost balance, the same
+  judgment applied for one origin extended across several, not a formal
+  optimization. Round-trip affordability folds in every origin's access.
+- **Origin gate accepts multiple origins.** `origin_city` counts as known
+  once any starting point is stated, including several at once — Meridian
+  never returns `NEEDS_CLARIFICATION` with `awaiting: "origin_city"` when
+  one or more origins are already given. The "missing origin" readiness
+  line says the same.
+- **"Where should we all meet?" is a first-class ask** — answered with a
+  normal ranked `SUCCESS` set whose options are candidate meeting cities.
+- **`origin_city` stays single-valued.** Once the group settles on a shared
+  start (named, or a selected meeting-city option), Meridian records it in
+  `state_delta.trip_context.origin_city` only as a single string — never a
+  list — so every downstream consumer keeps its existing single-value
+  contract. No schema or `matcher_state` shape change; the stated origins
+  are carried conversationally like any other multi-turn fact.
+
 ## Meridian 1.12.0 — 2026-08-21
 
 - Removes every line describing what Backend or the UI does — the prompt

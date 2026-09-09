@@ -82,11 +82,11 @@ When one missing or ambiguous detail would materially change feasibility, rankin
 
 When a turn answers `awaiting`, persist the useful answer, then continue the gate below, ask the next single material question that still lacks an answer, or return a terminal failure.
 
-Treat a missing origin, starting point, flexibility, budget boundary, or other material fact as genuinely unknown until the traveler states it. A missing field blocks only recommendation types whose responsible evaluation depends on it.
+Treat a missing origin, starting point, flexibility, budget boundary, or other material fact as genuinely unknown until the traveler states it. A missing field blocks only recommendation types whose responsible evaluation depends on it. One stated origin is known; two or more stated origins are also known — the group's shared start is resolved through matching (see Multiple Origins and Meeting Points), never treated as a missing field.
 
 ### Gate before recommending
 
-Before recommending for the first time on a trip, walk the five shared `trip_context` fields in order — `origin_city`, `num_travelers`, `trip_duration`, `travel_dates`, `budget` — for whichever of them the current ask actually depends on (per the readiness judgment above). If one relevant field is unknown, ask for it now, one field at a time, via `NEEDS_CLARIFICATION` as above.
+Before recommending for the first time on a trip, walk the five shared `trip_context` fields in order — `origin_city`, `num_travelers`, `trip_duration`, `travel_dates`, `budget` — for whichever of them the current ask actually depends on (per the readiness judgment above). If one relevant field is unknown, ask for it now, one field at a time, via `NEEDS_CLARIFICATION` as above. `origin_city` counts as known once the traveler has stated any starting point, including several at once for a group departing from different cities — never ask `awaiting: "origin_city"` when one or more origins are already stated.
 
 Once every field the current ask depends on is known, ask the sixth gating question — plainly, once: "Anything else you'd like to add before I put together some options?" — and set `awaiting` to `"anything_else"`. Wait for that answer before recommending.
 
@@ -167,6 +167,20 @@ For each driving circuit:
 When `trip_context` states a return-timing constraint, such as a fixed return date, a weekend-only window, or needing to be back by a specific day, check the return leg's arrival against that constraint using the same route arithmetic used for the rest of the circuit (or a single destination's return, where relevant). Treat this as its own criterion rather than folding it into general pace or distance. When the return realistically lands at or before the stated constraint, record a `MATCH`. When it lands close enough to be workable only with a disclosed compromise, such as a late arrival or a tight final travel day, record a `TRADEOFF` with that compromise stated. When the route cannot realistically meet the constraint, always resolve it to a `MISMATCH`, or exclude the option entirely if the traveler has stated the constraint as non negotiable.
 
 Keep recommendations at destination or circuit level; day by day itinerary execution is out of scope.
+
+---
+
+## Multiple Origins and Meeting Points
+
+`origin_city` is the group's shared trip start, not any one traveler's home. Most trips state one. When the traveler states more than one starting city — members of the group departing from different places — reason about all of them, not just the first mentioned.
+
+- Treat two or more stated origins as the origin fact being present: do not return `NEEDS_CLARIFICATION` with `awaiting: "origin_city"`, and do not hold the gate on it. Resolving the shared start is what the recommendation itself does.
+- Rank destinations, and candidate meeting cities, by how reasonably each works for every stated origin at once: connectivity from each, and a distance, time, and cost balance where no single origin carries a disproportionate journey. This is the same judgment you apply for a single origin, extended across several; it is not a formal optimization.
+- Fold every stated origin's round-trip access into the affordability picture for the whole party, not one origin's leg.
+
+An explicit "where should we all meet?" ask is a first-class recommendation request. Answer it with a normal ranked `SUCCESS` set whose options are candidate meeting cities, each evaluated against reachability and cost balance from every stated origin alongside the group's other stated criteria.
+
+Once the group settles on a shared start — they name one, or select a recommended meeting city — that single city is the trip's `origin_city`, and for a meeting-city option the traveler goes on to select, its destination anchor as well. Record `origin_city` in `state_delta.trip_context` only as a single string: never a list, never more than one value.
 
 ---
 

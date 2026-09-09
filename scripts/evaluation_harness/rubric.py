@@ -25,6 +25,13 @@ KNOWN_UNIMPLEMENTED_INVARIANTS: frozenset[tuple[str, str]] = frozenset(
         # evaluation versus a hardcoded rule is a judgment call the schema
         # cannot distinguish mechanically; verify manually per TWM-125.
         ("meridian", "no_hardcoded_transport_mode_exclusion"),
+        # TWM-214: whether the ranked options are genuinely compatible with
+        # every stated origin, and whether the reply frames them as meeting
+        # points, are travel-judgment reads of the evaluation prose, not
+        # something the response shape proves. The mechanical checks are the
+        # origin-gate carve-out and the single-valued origin_city write.
+        ("meridian", "options_compatible_with_all_origins"),
+        ("meridian", "meeting_point_framing"),
         # Complete round-trip cost accounting requires reading the actual
         # cost narrative in evaluation details; not automatable from shape
         # alone. Verify manually per TWM-125.
@@ -257,6 +264,35 @@ def _meridian_reject_written_selected_option(
     )
     if expected and has_selected:
         raise RubricFailure("meridian must not write selected_option")
+
+
+def _meridian_origin_gate_not_blocked(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    # TWM-214: with one or more origins already stated, Meridian must never
+    # stall the pre-recommend gate on origin_city.
+    if not expected:
+        return
+    awaiting = response.get("state_delta", {}).get("matcher_state", {}).get(
+        "conversation_context", {}
+    ).get("awaiting")
+    if response.get("status") == "NEEDS_CLARIFICATION" and awaiting == "origin_city":
+        raise RubricFailure(
+            "expected Meridian not to ask awaiting: origin_city when origins are stated"
+        )
+
+
+def _meridian_origin_city_single_valued(
+    case: EvaluationCase, response: dict[str, Any], expected: bool
+) -> None:
+    # TWM-214: origin_city is only ever written as a single string, never a list.
+    if not expected:
+        return
+    origin_city = response.get("state_delta", {}).get("trip_context", {}).get("origin_city")
+    if isinstance(origin_city, (list, tuple, dict)):
+        raise RubricFailure(
+            f"expected origin_city to be a single scalar, got {type(origin_city).__name__}"
+        )
 
 
 # ---- guide -------------------------------------------------------------
@@ -915,6 +951,8 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "allows_constraint_adjustment_suggestions": _meridian_allows_constraint_adjustments,
         "reject_agent_written_recommendations": _meridian_reject_written_recommendations,
         "reject_agent_written_selected_option": _meridian_reject_written_selected_option,
+        "origin_gate_not_blocked": _meridian_origin_gate_not_blocked,
+        "origin_city_single_valued": _meridian_origin_city_single_valued,
     },
     "guide": {
         "awaiting": _guide_awaiting,

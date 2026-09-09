@@ -30,6 +30,8 @@ def test_meridian_evaluation_corpus_covers_status_and_state_ownership() -> None:
         "circuit-return-timing-feasible-match",
         "circuit-return-timing-infeasible-tradeoff",
         "circuit-no-return-timing-constraint-unaffected",
+        "multi-origin-meeting-point-success",
+        "multi-origin-does-not-reask-origin-clarification",
     }
     assert cases_by_id["circuit-preference-clarification"]["invariants"] == {
         "status": "NEEDS_CLARIFICATION",
@@ -46,3 +48,30 @@ def test_meridian_evaluation_corpus_covers_status_and_state_ownership() -> None:
     assert cases_by_id["circuit-accounts-for-complete-round-trip-cost"][
         "invariants"
     ]["requires_complete_round_trip_accounting"] is True
+
+
+def test_meridian_evaluation_corpus_covers_multi_origin_meeting_points() -> None:
+    # TWM-214: a group stating several origins never re-triggers the
+    # origin_city gate, and a "where can we all meet" ask returns ranked
+    # options; origin_city is only ever written as a single scalar.
+    cases = json.loads(
+        (ROOT / "tests" / "resources" / "meridian_agent_cases.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    cases_by_id = {case["id"]: case for case in cases}
+
+    assert cases_by_id["multi-origin-meeting-point-success"]["invariants"] == {
+        "status": "SUCCESS",
+        "trip_type": "single",
+        "requires_traveler_criteria": True,
+        "requires_ranked_options": True,
+        "awaiting_cleared": True,
+        "origin_gate_not_blocked": True,
+        "origin_city_single_valued": True,
+        "options_compatible_with_all_origins": True,
+        "meeting_point_framing": True,
+    }
+    assert cases_by_id["multi-origin-does-not-reask-origin-clarification"][
+        "invariants"
+    ]["origin_gate_not_blocked"] is True
