@@ -45,9 +45,12 @@ class AtlasTransportHub(BaseModel):
 
     city: AtlasText
     side: AtlasHubSide
-    last_mile_km: int = Field(ge=0)
-    last_mile_duration_minutes: int = Field(ge=0)
-    long_haul_distance_km: int = Field(ge=0)
+    # All three are positive: a gateway sits a real surface transfer from the
+    # town and a real long-haul distance from the trip's other endpoint, so a
+    # zero on any of them is a degenerate "hub" that is not a hub.
+    last_mile_km: int = Field(gt=0)
+    last_mile_duration_minutes: int = Field(gt=0)
+    long_haul_distance_km: int = Field(gt=0)
 
 
 class AtlasAssumption(BaseModel):
@@ -148,9 +151,10 @@ class AtlasTimelineItem(BaseModel):
     reference: AtlasReference
     requires_advance_booking: bool = False
     booking_readiness: Optional[AtlasBookingReadiness] = None
-    # TWM-226: ordered (most-obvious first) candidate gateway hubs for a TRAVEL
-    # leg whose own endpoint town has no realistic long-haul transport. Absent
-    # for a normally-connected leg and when Atlas cannot confidently name a hub.
+    # TWM-226: candidate gateway hubs for a TRAVEL leg whose own endpoint town
+    # has no realistic long-haul transport -- presented as equal options (the
+    # more commonly-used gateway first where there is one). Absent for a
+    # normally-connected leg and when Atlas cannot confidently name a hub.
     hubs: Optional[list[AtlasTransportHub]] = None
 
     @model_validator(mode="after")

@@ -803,9 +803,9 @@ def _atlas_hub_carries_last_mile_and_long_haul_distance(
                 "last_mile_duration_minutes",
                 "long_haul_distance_km",
             ):
-                if not isinstance(hub.get(field), int) or hub[field] < 0:
+                if not isinstance(hub.get(field), int) or hub[field] <= 0:
                     raise RubricFailure(
-                        f"hub {hub.get('city')!r} must carry a non-negative "
+                        f"hub {hub.get('city')!r} must carry a positive "
                         f"integer {field}, got {hub.get(field)!r}"
                     )
 

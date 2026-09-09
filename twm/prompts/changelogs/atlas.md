@@ -5,11 +5,13 @@
 - **Transport hub sets for hubless endpoints (TWM-226).** Adds an optional
   `hubs: list[AtlasTransportHub]` to the `TRAVEL` timeline item. When a leg's
   own endpoint town has no realistic long-haul transport (e.g. Sumerpur),
-  Atlas now emits an ordered 2–3 set of candidate gateway cities as plain
-  geographic facts — each with `city`, `side` (`origin` | `destination`),
-  `last_mile_km`, `last_mile_duration_minutes`, and a `long_haul_distance_km`
-  ballpark so a rail-only hub with no airport can still be assessed downstream.
-  Hubs are unranked peers; Atlas names no transit mode and picks no winner.
+  Atlas now emits a 2–3 set of candidate gateway cities as plain geographic
+  facts — each with `city`, `side` (`origin` | `destination`), and positive
+  whole-number `last_mile_km`, `last_mile_duration_minutes`, and
+  `long_haul_distance_km` (a ballpark, so a rail-only hub with no airport can
+  still be assessed downstream). The more commonly-used gateway is listed
+  first where there is one, but the hubs are presented as equal options —
+  Atlas names no transit mode and picks no winner.
   Absent for a well-connected leg and when no real gateway can be confidently
   named (never fabricated). Deterministic hub→feasibility resolution, per-hub
   fares, and the drawer picker are the sibling story (TWM-215).
