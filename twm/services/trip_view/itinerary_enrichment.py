@@ -5,7 +5,16 @@ the deleted ``TripBoardService`` — minus feasibility (``feasible_modes`` is a
 per-leg ``/trusted-action/feasibility`` call now).
 
 Every timeline item gains a stable ``id``, ``is_gateway_leg``, and a resolved
-date. Resolution, in order:
+date.
+
+TWM-215: the trip's first and last ``TRAVEL`` legs are the booking-relevant
+gateway legs, regardless of whether a stored ``origin_city`` string matches
+either endpoint (split-origin / meeting-point trips, or an unset origin).
+A gateway leg that carries Atlas ``hubs`` (TWM-226 — a hubless endpoint) has
+each hub enriched with deterministic ``feasible_modes`` for its long-haul
+portion; the indicative fare stays lazy (TWM-229).
+
+Date resolution, in order:
 
     a per-entity ``search_prefs`` entry            -> date_source "search_pref"
     -> the item's itinerary-day calendar date,     -> date_source "trip_dates"
@@ -23,26 +32,14 @@ from datetime import date, timedelta
 from typing import Any, Optional
 from uuid import UUID
 
+from ...telemetry import TelemetryLogger
 from ..airport_resolution import resolve_airport
+from ..trusted_action.feasibility import assess_trip_feasibility
 from .trip_dates import TripDates
 
 logger = logging.getLogger(__name__)
 
 DateSource = str  # "search_pref" | "trip_dates" | "none"
-
-
-def _city_matches(left: str, right: str) -> bool:
-    if left.strip().casefold() == right.strip().casefold():
-        return True
-    left_match = resolve_airport(left)
-    right_match = resolve_airport(right)
-    if left_match is None or right_match is None:
-        if left_match is None:
-            logger.warning("Could not resolve itinerary city: %s", left)
-        if right_match is None:
-            logger.warning("Could not resolve itinerary city: %s", right)
-        return False
-    return left_match.iata == right_match.iata
 
 
 def _search_pref(prefs: dict[str, Any], bucket: str, target_id: str) -> Optional[dict[str, Any]]:
@@ -67,8 +64,8 @@ def enrich_itinerary(
     trip_context: dict[str, Any],
     booking_setup: dict[str, Any],
     trip_dates: TripDates,
+    logger: TelemetryLogger,
 ) -> dict[str, Any]:
-    origin_city = (trip_context or {}).get("origin_city")
     search_prefs = (booking_setup or {}).get("search_prefs") or {}
     days = final_itinerary.get("days", [])
 
@@ -78,21 +75,26 @@ def enrich_itinerary(
         for item in day.get("timeline", [])
         if item.get("kind") == "TRAVEL" and item.get("from_city") and item.get("to_city")
     ]
-    outbound = next(
-        (leg for leg in travel_legs if origin_city and _city_matches(leg["from_city"], origin_city)),
-        None,
-    )
-    inbound = next(
-        (leg for leg in reversed(travel_legs) if origin_city and _city_matches(leg["to_city"], origin_city)),
-        None,
-    )
+    # TWM-215: origin-agnostic — the trip's first and last movements are the
+    # gateway legs, whatever cities they actually connect. A single-leg trip's
+    # one leg is both. This assumes the first/last inter-city TRAVEL item *is*
+    # the entry/exit leg, which TWM-226 guarantees for every itinerary Atlas
+    # now generates (an explicit entry + exit leg always emitted). A pre-226
+    # stored itinerary with no day-1 travel leg would flag its first internal
+    # hop instead — acceptable pre-MVP; there is no legacy itinerary to migrate.
+    outbound = travel_legs[0] if travel_legs else None
+    inbound = travel_legs[-1] if travel_legs else None
 
     enriched_days = []
     for day in days:
         day_number = day["day_number"]
         calendar_date = _day_calendar_date(trip_dates, day_number)
         enriched_timeline = [
-            _enrich_item(item, index, day_number, calendar_date, outbound, inbound, search_prefs, trip_id)
+            _attach_hub_feasibility(
+                trip_id,
+                _enrich_item(item, index, day_number, calendar_date, outbound, inbound, search_prefs, trip_id),
+                logger,
+            )
             for index, item in enumerate(day.get("timeline", []))
         ]
         enriched_days.append({**day, "timeline": enriched_timeline})
@@ -102,6 +104,84 @@ def enrich_itinerary(
         "days": enriched_days,
         "stay_segments": _build_stay_segments(trip_id, enriched_days, trip_dates, search_prefs),
     }
+
+
+def _hub_long_haul_endpoints(
+    from_city: str, to_city: str, from_hubless: bool, to_hubless: bool, hub: dict[str, Any]
+) -> tuple[str, str]:
+    """The (origin, destination) pair the hub's long-haul portion spans.
+
+    Trust Atlas's ``side`` only as a tie-break: prefer replacing whichever
+    leg endpoint the bundled resolver cannot actually place (TWM-226 PR #162
+    review — ``side`` is Atlas's judgement and the schema cannot check it).
+    ``from_hubless`` / ``to_hubless`` are the same for every hub on a leg, so
+    the caller resolves them once rather than per hub.
+    """
+    if to_hubless and not from_hubless:
+        return from_city, hub["city"]
+    if from_hubless and not to_hubless:
+        return hub["city"], to_city
+    if hub.get("side") == "origin":
+        return hub["city"], to_city
+    return from_city, hub["city"]
+
+
+def _attach_hub_feasibility(
+    trip_id: UUID, item: dict[str, Any], logger: TelemetryLogger
+) -> dict[str, Any]:
+    hubs = item.get("hubs")
+    if not (item.get("is_gateway_leg") and hubs):
+        return item
+
+    from_city, to_city = item["from_city"], item["to_city"]
+    from_hubless = resolve_airport(from_city) is None
+    to_hubless = resolve_airport(to_city) is None
+    resolved_hubs: list[dict[str, Any]] = []
+    fallback_count = 0
+    unresolved: list[str] = []
+    for hub in hubs:
+        origin, destination = _hub_long_haul_endpoints(
+            from_city, to_city, from_hubless, to_hubless, hub
+        )
+        assessment = assess_trip_feasibility(origin, destination, hub.get("long_haul_distance_km"))
+        modes = [entry.mode for entry in assessment.modes]
+        if resolve_airport(hub.get("city", "")) is None:
+            fallback_count += 1
+        if not modes:
+            unresolved.append(hub.get("city", ""))
+        resolved_hubs.append({**hub, "feasible_modes": modes})
+
+    _log_hub_resolution(trip_id, item, len(hubs), fallback_count, unresolved, logger)
+    return {**item, "hubs": resolved_hubs}
+
+
+def _log_hub_resolution(
+    trip_id: UUID,
+    item: dict[str, Any],
+    candidate_count: int,
+    fallback_count: int,
+    unresolved: list[str],
+    logger: TelemetryLogger,
+) -> None:
+    fields = {
+        "event": "be.itinerary.hub_resolution",
+        "source": "application",
+        "trip_id": str(trip_id),
+        "leg_id": item["id"],
+        "from_city": item.get("from_city"),
+        "to_city": item.get("to_city"),
+        "candidate_hub_count": candidate_count,
+        "resolved_hub_count": candidate_count - len(unresolved),
+        "distance_fallback_count": fallback_count,
+    }
+    if unresolved:
+        logger.warning(
+            "Gateway leg has candidate hubs that resolved to no feasible transport modes.",
+            unresolved_hubs=unresolved,
+            **fields,
+        )
+    else:
+        logger.info("Resolved candidate gateway hubs for a gateway leg.", **fields)
 
 
 def _enrich_item(

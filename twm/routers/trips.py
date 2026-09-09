@@ -247,6 +247,7 @@ async def get_current_itinerary(trip_id: UUID, request: Request, response: Respo
         trip.trip_state.get("trip_context") or {},
         trip.trip_state.get("booking_setup") or {},
         trip_dates,
+        logger,
     )
     stay_segments = enriched.pop("stay_segments")
     logger.info(

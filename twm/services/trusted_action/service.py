@@ -140,12 +140,19 @@ class TrustedActionService:
         return TrustedActionResult(status="resolved", generated_at=generated_at, action=action)
 
     def assess_feasibility(
-        self, trip_id: UUID, origin: str, destination: str
+        self,
+        trip_id: UUID,
+        origin: str,
+        destination: str,
+        long_haul_distance_km: float | None = None,
     ) -> TripFeasibilityAssessment:
         """Deterministic, synchronous route-mode feasibility assessment
         (TWM-195 root fix -- no classifier/LLM/agent call of any kind).
         Always returns a real ``TripFeasibilityAssessment``; ``modes`` is
-        empty when the route could not be confidently assessed."""
+        empty when the route could not be confidently assessed.
+
+        ``long_haul_distance_km`` (TWM-215): Atlas's gateway-hub ballpark,
+        used only as a fallback when a city cannot be resolved."""
 
         self.logger.info(
             "Received trip-feasibility assessment request.",
@@ -153,8 +160,9 @@ class TrustedActionService:
             source="application",
             trip_id=str(trip_id),
             segment_count=1,
+            distance_fallback_supplied=long_haul_distance_km is not None,
         )
-        assessment = assess_trip_feasibility(origin, destination)
+        assessment = assess_trip_feasibility(origin, destination, long_haul_distance_km)
         returned_modes = [entry.mode for entry in assessment.modes]
         if returned_modes:
             self.logger.info(
