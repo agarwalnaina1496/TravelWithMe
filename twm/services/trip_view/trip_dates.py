@@ -12,10 +12,10 @@ resulting date is today-or-future* — the near-future occurrence is how
 everyone reads "26-28 Sept". A range whose end month precedes its start
 month ("Dec 30 - Jan 2") spans the year boundary (current-year start,
 next-year end). A bare day/month whose current-year date is already **past**
-is left unresolved (clean label, precision ``none``) — Guide asks which year
-before it becomes a calendar value. The composer never guesses across a year
-boundary for that ambiguous case. Any text it cannot resolve renders
-verbatim, with no prefix.
+is left unresolved (clean label, precision ``none``); nothing asks the
+traveler for the year — the booking drawer is where they set an exact date.
+The composer never guesses across a year boundary for that ambiguous case.
+Any text it cannot resolve renders verbatim, with no prefix.
 
 Trip dates are read-only after itinerary generation (changing them would
 imply regeneration) and independent of booking dates — they only pre-fill
@@ -306,6 +306,11 @@ def _two_month_range(
         return _resolve_yearless_start(start_month, start_day, day_count, today, text)
     try:
         start = date(today.year, start_month, start_day)
+        # Deliberate: a genuine cross-year phrase ("Dec 30 - Jan 2") is
+        # unambiguous even when its current-year start is already past —
+        # "the next one" is the only sensible read, so roll it forward
+        # rather than leave it unresolved. Not the same as the single-date
+        # ambiguity above, which we never guess across a boundary.
         if start < today:
             start = date(today.year + 1, start_month, start_day)
     except ValueError:
