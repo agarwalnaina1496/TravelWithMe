@@ -1775,6 +1775,100 @@ def test_set_party_persists_structured_composition(api_client: TestClient):
     }
 
 
+def _pre_freeze_state(*, num_travelers=None, booking_party=None):
+    trip_context = {
+        "destinations": ["Rishikesh"], "trip_duration": 1,
+        "preferences": ["pilgrimage"], "exclusions": ["rafting"],
+    }
+    if num_travelers is not None:
+        trip_context["num_travelers"] = num_travelers
+    state = {
+        "stage": "plan_ready", "active_agent": "guide",
+        "trip_context": trip_context,
+        "planner_state": {
+            "conversation_context": {"awaiting": None},
+            "places": ["Triveni Ghat"],
+            "day_plan": [{"day_number": 1, "date": None, "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None}],
+            "revision": 4,
+        },
+    }
+    if booking_party is not None:
+        state["booking_setup"] = {"party": booking_party}
+    return state
+
+
+def _approve_then_generate(api_client, trip):
+    approve = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "approve_plan", "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert approve.status_code == 200
+    seed_state = approve.json()["trip"]["trip_state"]
+    start = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "start_itinerary", "expected_version": 2, "idempotency_key": str(uuid4())},
+    )
+    assert start.status_code == 200
+    return seed_state
+
+
+def test_approve_plan_seeds_booking_party_from_num_travelers(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    sink = InMemorySink()
+    logger = TelemetryLogger(
+        TelemetrySettings(enabled=True, environment="test", payload_mode=PayloadMode.METADATA, max_field_size=256),
+        sink,
+    )
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_logger] = lambda: logger
+    trip = _create_seeded_trip(api_client, repository, trip_state=_pre_freeze_state(num_travelers="3 friends"))
+
+    seed_state = _approve_then_generate(api_client, trip)
+
+    assert seed_state["booking_setup"]["party"] == {"adults": 3, "children": 0, "infants": 0}
+    [event] = [e for e in sink.events if e["event"] == "be.trip.booking_setup.party.seeded"]
+    assert event["fields"]["trip_id"] == trip["id"]
+    assert event["fields"]["adults"] == 3
+    assert event["fields"]["source_field"] == "num_travelers"
+    # TripView surfaces the seeded party without the traveler opening a drawer.
+    view = api_client.get(f"/trips/{trip['id']}").json()
+    assert view["booking"]["party"] == {"adults": 3, "children": 0, "infants": 0}
+    app.dependency_overrides.clear()
+
+
+def test_approve_plan_does_not_overwrite_an_edited_booking_party(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(
+        api_client, repository,
+        trip_state=_pre_freeze_state(num_travelers="6 people", booking_party={"adults": 2, "children": 0, "infants": 0}),
+    )
+
+    _approve_then_generate(api_client, trip)
+
+    view = api_client.get(f"/trips/{trip['id']}").json()
+    assert view["booking"]["party"] == {"adults": 2, "children": 0, "infants": 0}
+    app.dependency_overrides.clear()
+
+
+def test_approve_plan_leaves_party_unset_when_no_headcount_was_stated(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(api_client, repository, trip_state=_pre_freeze_state(num_travelers="a few of us"))
+
+    _approve_then_generate(api_client, trip)
+
+    view = api_client.get(f"/trips/{trip['id']}").json()
+    assert view["booking"]["party"] is None
+    app.dependency_overrides.clear()
+
+
 def test_set_party_rejects_infants_exceeding_adults(api_client: TestClient):
     repository = MemoryTripRepository()
     engine = FakeAtlasLifecycleEngine()

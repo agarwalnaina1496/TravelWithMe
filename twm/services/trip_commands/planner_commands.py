@@ -9,6 +9,7 @@ from ...telemetry import TelemetryLogger
 from ..agent_engine import AgentEngine
 from ..response_normalization import _normalize_guide_response
 from .errors import InvalidTripCommandError
+from .party_seed import seed_party_from_num_travelers
 from .state import merge_operational_state, merge_trip_context, set_stage
 
 
@@ -196,6 +197,9 @@ def _apply_plan_freeze(
     planner["frozen_plan"] = {"guide_state": guide_state, "guide_revision": revision}
     state["active_agent"] = None
     set_stage(state, "planned")
+    # TWM-227: bridge the stated headcount into the structured booking party
+    # once, now that the plan is final and before Atlas / any booking surface.
+    seed_party_from_num_travelers(logger, state)
     logger.info(
         "Applied Backend-owned Guide revision.",
         event="be.trip.guide.revision_applied",

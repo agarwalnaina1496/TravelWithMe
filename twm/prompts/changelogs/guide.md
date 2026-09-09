@@ -1,5 +1,16 @@
 # Guide prompt changelog
 
+## Guide 3.2.0 — 2026-09-09
+
+- One narrow `travel_dates` gate exception (TWM-227): when the traveler
+  gives an exact day and month with no year and that day/month has already
+  passed this year, Guide asks which year they mean and keeps `awaiting`
+  on `travel_dates` instead of storing an ambiguous value. Every other
+  timing form is unchanged — a stated year, a future bare day/month, a
+  month, a season, and "flexible" are all still accepted verbatim with no
+  question. Guide still does not confirm or normalise anything else about
+  the trip basics; `num_travelers` in particular stays exactly as given.
+
 ## Guide 3.1.0 — 2026-08-21
 
 - Root-cause fix for the Ladakh bug: the known-destination entry path

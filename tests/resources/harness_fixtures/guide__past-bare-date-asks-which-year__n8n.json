@@ -1,0 +1,8 @@
+{
+  "agent": "guide",
+  "case_id": "past-bare-date-asks-which-year",
+  "execution_path": "n8n",
+  "prompt_version": "3.2.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Quick check on the dates \u2014 September 26\u201328 has already gone by this year. Do you mean September 2026?\", \"state_delta\": {\"planner_state\": {\"conversation_context\": {\"awaiting\": \"travel_dates\"}}}, \"outcome\": \"continue\"}"
+}

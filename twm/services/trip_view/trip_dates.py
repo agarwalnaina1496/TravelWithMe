@@ -1,11 +1,21 @@
 """Compose structured trip dates from the loose ``trip_context.travel_dates``
-conversational fact (TWM-217).
+conversational fact (TWM-217, TWM-227).
 
 A bounded best-effort parse — the same pattern Atlas uses for
 ``num_travelers``: read it when confidently interpretable, otherwise keep it
-verbatim and say so. A year is never guessed when it is not stated. The raw
-string in ``trip_context`` is never rewritten — this is a read-time
-interpretation only.
+verbatim. The raw string in ``trip_context`` is never rewritten — this is a
+read-time interpretation only.
+
+Year resolution (TWM-227): when the traveler states an exact day+month with
+no year, the omitted year is resolved to the current year *only when the
+resulting date is today-or-future* — the near-future occurrence is how
+everyone reads "26-28 Sept". A range whose end month precedes its start
+month ("Dec 30 - Jan 2") spans the year boundary (current-year start,
+next-year end). A bare day/month whose current-year date is already **past**
+is left unresolved (clean label, precision ``none``) — Guide asks which year
+before it becomes a calendar value. The composer never guesses across a year
+boundary for that ambiguous case. Any text it cannot resolve renders
+verbatim, with no prefix.
 
 Trip dates are read-only after itinerary generation (changing them would
 imply regeneration) and independent of booking dates — they only pre-fill
@@ -46,6 +56,22 @@ _DAY_RANGE_YEAR = re.compile(
 )
 _DAY_MONTH_YEAR = re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})\b")
 _MONTH_DAY_YEAR = re.compile(r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2})\s*,?\s*(\d{4})\b")
+
+# TWM-227: yearless forms, matched against the whole stripped string so
+# free-text ("sometime in March", "mid-March") never trips them. The year is
+# supplied by _parse_yearless against `today`, never by the pattern.
+_YL_SEP = r"\s*(?:-|–|—|to|until|through|thru)\s*"
+_YL_RANGE_DAY_MONTH = re.compile(rf"^(\d{{1,2}}){_YL_SEP}(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?$", re.IGNORECASE)
+_YL_RANGE_MONTH_DAY = re.compile(rf"^([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}}){_YL_SEP}(\d{{1,2}})$", re.IGNORECASE)
+_YL_SINGLE_DAY_MONTH = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,9})\.?$", re.IGNORECASE)
+_YL_SINGLE_MONTH_DAY = re.compile(r"^([A-Za-z]{3,9})\.?\s+(\d{1,2})$", re.IGNORECASE)
+_YL_CROSS_DAY_MONTH = re.compile(
+    rf"^(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?{_YL_SEP}(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?$", re.IGNORECASE
+)
+_YL_CROSS_MONTH_DAY = re.compile(
+    rf"^([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}}){_YL_SEP}([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}})$", re.IGNORECASE
+)
+_YL_BARE_MONTH = re.compile(r"^([A-Za-z]{3,9})\.?$", re.IGNORECASE)
 
 _FLEXIBLE = re.compile(r"^\s*(flexible|any\s*time|anytime|not\s*sure|tbd|unsure|open)\b", re.IGNORECASE)
 
@@ -115,13 +141,16 @@ def _from_departure(departure: date, day_count: int) -> TripDates:
 # TWM-223: one branch per (date-precision x day-count-known) combination —
 # the composed dates surface is genuinely a small decision table, not a
 # god function. Split further only if a real new axis appears.
-def compose_trip_dates(trip_context: dict[str, Any], day_count: int) -> TripDates:  # noqa: C901, PLR0912
+def compose_trip_dates(  # noqa: C901, PLR0912
+    trip_context: dict[str, Any], day_count: int, *, today: Optional[date] = None
+) -> TripDates:
     raw = trip_context.get("travel_dates") if isinstance(trip_context, dict) else None
     if not isinstance(raw, str):
         return _NONE
     text = raw.strip()
     if not text or _FLEXIBLE.match(text):
         return _NONE
+    today = today or date.today()
 
     # --- exact: a single ISO date ---
     match = _ISO_DATE.match(text)
@@ -174,6 +203,11 @@ def compose_trip_dates(trip_context: dict[str, Any], day_count: int) -> TripDate
         if month:
             return _month_result(int(match.group(2)), month)
 
+    # --- TWM-227: yearless day/month, resolved against `today` ---
+    yearless = _parse_yearless(text, day_count, today)
+    if yearless is not None:
+        return yearless
+
     return _verbatim(text)
 
 
@@ -183,6 +217,96 @@ def _month_result(year: int, month: int) -> TripDates:
 
 
 def _verbatim(text: str) -> TripDates:
-    # A month name with no year, "mid-March", "spring", etc. — a real signal,
-    # but not one we can turn into a calendar value. Never guess the year.
-    return TripDates(precision="none", label=f"you mentioned: {text}", source="conversational")
+    # A season, "mid-March", an unrecognizable phrase — a real signal, but not
+    # one we can turn into a calendar value. Rendered as the traveler wrote it.
+    return TripDates(precision="none", label=text, source="conversational")
+
+
+def _yearless_label(month: int, day_start: int, day_end: Optional[int] = None) -> str:
+    label = f"{_MONTH_ABBR[month - 1]} {day_start}"
+    return f"{label}–{day_end}" if day_end is not None else label
+
+
+def _resolve_current_year(month: int, day: int, today: date) -> Optional[int]:
+    """The omitted year is this year when that lands today-or-later; a
+    day/month already past this year is ambiguous — left for Guide to ask."""
+    try:
+        candidate = date(today.year, month, day)
+    except ValueError:
+        return None
+    return today.year if candidate >= today else None
+
+
+def _parse_yearless(text: str, day_count: int, today: date) -> Optional[TripDates]:
+    """A day+month (or day-range, or cross-year range) with no year stated.
+    Returns ``None`` when nothing matched, so the caller falls back to
+    verbatim."""
+    for pattern, month_first in ((_YL_CROSS_MONTH_DAY, True), (_YL_CROSS_DAY_MONTH, False)):
+        match = pattern.match(text)
+        if match:
+            return _cross_year(match.groups(), month_first, day_count, today)
+
+    for pattern, month_first in ((_YL_RANGE_MONTH_DAY, True), (_YL_RANGE_DAY_MONTH, False)):
+        match = pattern.match(text)
+        if match:
+            groups = match.groups()
+            month = _month_index(groups[0] if month_first else groups[2])
+            start, end = (groups[1], groups[2]) if month_first else (groups[0], groups[1])
+            return _single_yearless(month, int(start), int(end), day_count, today)
+
+    for pattern, month_first in ((_YL_SINGLE_MONTH_DAY, True), (_YL_SINGLE_DAY_MONTH, False)):
+        match = pattern.match(text)
+        if match:
+            month = _month_index(match.group(1 if month_first else 2))
+            day = int(match.group(2 if month_first else 1))
+            return _single_yearless(month, day, None, day_count, today)
+
+    match = _YL_BARE_MONTH.match(text)
+    if match:
+        month = _month_index(match.group(1))
+        if month and (today.year, month) >= (today.year, today.month):
+            return _month_result(today.year, month)
+        if month:
+            return _verbatim(text)
+
+    return None
+
+
+def _single_yearless(
+    month: Optional[int], day_start: int, day_end: Optional[int], day_count: int, today: date
+) -> Optional[TripDates]:
+    if not month:
+        return None
+    year = _resolve_current_year(month, day_start, today)
+    if year is None:
+        return TripDates(
+            precision="none",
+            label=_yearless_label(month, day_start, day_end),
+            source="conversational",
+        )
+    return _from_departure(date(year, month, day_start), day_count)
+
+
+def _cross_year(
+    groups: tuple[str, ...], month_first: bool, day_count: int, today: date
+) -> Optional[TripDates]:
+    """A "Dec 30 - Jan 2" style range: both sides carry a day and a month,
+    neither carries a year. The start anchors to the current year (rolled
+    forward if already past); the itinerary length carries the computed
+    return across the year boundary the same way it does for any exact
+    departure."""
+    if month_first:
+        start_month, start_day = _month_index(groups[0]), int(groups[1])
+        end_month = _month_index(groups[2])
+    else:
+        start_day, start_month = int(groups[0]), _month_index(groups[1])
+        end_month = _month_index(groups[3])
+    if not start_month or not end_month:
+        return None
+    try:
+        start = date(today.year, start_month, start_day)
+        if start < today:
+            start = date(today.year + 1, start_month, start_day)
+    except ValueError:
+        return None
+    return _from_departure(start, day_count)

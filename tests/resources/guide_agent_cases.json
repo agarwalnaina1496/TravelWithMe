@@ -229,5 +229,47 @@
       "awaiting": "anything_else",
       "day_plan_length": 0
     }
+  },
+  {
+    "id": "past-bare-date-asks-which-year",
+    "input": {
+      "event": "MESSAGE",
+      "message": "Let's do September 26 to 28.",
+      "trip_context": {
+        "destinations": ["Ladakh"],
+        "trip_duration": 5,
+        "origin_city": "Delhi",
+        "num_travelers": 2
+      },
+      "planner_state": {
+        "conversation_context": { "awaiting": "travel_dates" }
+      }
+    },
+    "invariants": {
+      "awaiting": "travel_dates",
+      "day_plan_length": 0,
+      "places_omitted_from_delta": true
+    }
+  },
+  {
+    "id": "future-bare-date-accepted-as-known",
+    "input": {
+      "event": "MESSAGE",
+      "message": "Budget is around 80k.",
+      "trip_context": {
+        "destinations": ["Ladakh"],
+        "trip_duration": 5,
+        "origin_city": "Delhi",
+        "num_travelers": 2,
+        "travel_dates": "26-28 December"
+      },
+      "planner_state": {
+        "conversation_context": { "awaiting": "budget" }
+      }
+    },
+    "invariants": {
+      "awaiting": "anything_else",
+      "day_plan_length": 0
+    }
   }
 ]

@@ -27,6 +27,8 @@ def test_guide_evaluation_corpus_covers_incremental_planning() -> None:
         "missing-dates-start",
         "missing-budget-start",
         "all-fixed-inputs-known-start",
+        "past-bare-date-asks-which-year",
+        "future-bare-date-accepted-as-known",
     }
     assert cases_by_id["anything-else-answered-generates-plan"]["invariants"] == {
         "trip_duration": 3,
@@ -76,3 +78,24 @@ def test_guide_evaluation_corpus_covers_fixed_input_gate_sequence() -> None:
         "awaiting": "anything_else",
         "day_plan_length": 0,
     }
+
+
+def test_guide_evaluation_corpus_covers_yearless_date_gate() -> None:
+    cases = json.loads(
+        (ROOT / "tests" / "resources" / "guide_agent_cases.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    cases_by_id = {case["id"]: case for case in cases}
+
+    # A day+month with no year that has already passed this year re-awaits
+    # travel_dates instead of being stored (TWM-227).
+    past = cases_by_id["past-bare-date-asks-which-year"]
+    assert past["input"]["trip_context"].get("travel_dates") is None
+    assert past["invariants"]["awaiting"] == "travel_dates"
+    assert past["invariants"]["day_plan_length"] == 0
+
+    # A future day+month with no year is accepted as given — the gate moves on.
+    future = cases_by_id["future-bare-date-accepted-as-known"]
+    assert future["input"]["trip_context"]["travel_dates"] == "26-28 December"
+    assert future["invariants"]["awaiting"] == "anything_else"
