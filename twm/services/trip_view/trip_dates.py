@@ -17,6 +17,12 @@ traveler for the year — the booking drawer is where they set an exact date.
 The composer never guesses across a year boundary for that ambiguous case.
 Any text it cannot resolve renders verbatim, with no prefix.
 
+Ordinal day suffixes are tolerated: "26th - 28th Sept" reads the same as
+"26-28 Sept". Only the "26th" -> "26" rewrite happens before matching;
+nothing else in the string is normalised, and a value that still does not
+match a recognised shape ("late October", "the week of Diwali") is left
+verbatim exactly as the traveler wrote it.
+
 Trip dates are read-only after itinerary generation (changing them would
 imply regeneration) and independent of booking dates — they only pre-fill
 the drawers; per-entity ``search_prefs`` are the booking source of truth.
@@ -45,14 +51,22 @@ _MONTH_ALT = {name[:3]: index for name, index in _MONTHS.items()}
 
 _ISO = r"\d{4}-\d{2}-\d{2}"
 _RANGE_SEP = r"\s*(?:-|–|—|to|until|through|thru)\s*"
+# "26th" -> "26", "1st" -> "1" — a day number, not a 4-digit year.
+_ORDINAL_SUFFIX = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)\b", re.IGNORECASE)
 
 _ISO_DATE = re.compile(rf"^\s*({_ISO})\s*$")
 _ISO_RANGE = re.compile(rf"^\s*({_ISO}){_RANGE_SEP}({_ISO})\s*$", re.IGNORECASE)
 _YEAR_MONTH = re.compile(r"^\s*(\d{4})-(0[1-9]|1[0-2])\s*$")
 _MONTH_YEAR = re.compile(r"^\s*([A-Za-z]{3,9})\.?\s+(\d{4})\s*$")
-# "March 12-17, 2026" / "12-17 March 2026" / "March 12 – March 17 2026"
+# month-first range: "March 12-17, 2026" / "March 12 – March 17 2026"
 _DAY_RANGE_YEAR = re.compile(
     r"([A-Za-z]{3,9})\.?\s+(\d{1,2})\s*(?:-|–|—|to)\s*(?:[A-Za-z]{3,9}\.?\s+)?(\d{1,2})\s*,?\s*(\d{4})",
+)
+# day-first range: "12-17 March 2026" / "12 to 17 March 2026" — groups are
+# (start day, end day, month, year). Without this the single-date matcher
+# below grabs the *end* day out of the range.
+_DAY_RANGE_YEAR_DM = re.compile(
+    rf"(\d{{1,2}}){_RANGE_SEP}(\d{{1,2}})\s+([A-Za-z]{{3,9}})\.?\s*,?\s*(\d{{4}})", re.IGNORECASE
 )
 _DAY_MONTH_YEAR = re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})\b")
 _MONTH_DAY_YEAR = re.compile(r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2})\s*,?\s*(\d{4})\b")
@@ -137,77 +151,75 @@ def _from_departure(departure: date, day_count: int) -> TripDates:
     )
 
 
-# TWM-223: one branch per (date-precision x day-count-known) combination —
-# the composed dates surface is genuinely a small decision table, not a
-# god function. Split further only if a real new axis appears.
-def compose_trip_dates(  # noqa: C901, PLR0912
+def compose_trip_dates(
     trip_context: dict[str, Any], day_count: int, *, today: Optional[date] = None
 ) -> TripDates:
+    """Read ``trip_context.travel_dates`` at the precision the traveler gave
+    it — exact departure, a month, or unresolved — trying the parses from
+    most specific to least and keeping the raw string when none fit."""
     raw = trip_context.get("travel_dates") if isinstance(trip_context, dict) else None
     if not isinstance(raw, str):
         return _NONE
-    text = raw.strip()
-    if not text or _FLEXIBLE.match(text):
+    original = raw.strip()
+    if not original or _FLEXIBLE.match(original):
         return _NONE
     today = today or date.today()
+    # Match against an ordinal-stripped copy; the verbatim fallback still
+    # shows the traveler's own wording.
+    text = _ORDINAL_SUFFIX.sub(r"\1", original)
 
-    # --- exact: a single ISO date ---
-    match = _ISO_DATE.match(text)
-    if match:
-        try:
-            return _from_departure(date.fromisoformat(match.group(1)), day_count)
-        except ValueError:
-            return _verbatim(text)
+    return (
+        _parse_exact_dated(text, day_count)
+        or _parse_bare_month(text)
+        or _parse_yearless(text, day_count, today)
+        or _verbatim(original)
+    )
 
-    # --- exact: an ISO range (itinerary length still wins for `return`) ---
-    match = _ISO_RANGE.match(text)
-    if match:
-        try:
-            return _from_departure(date.fromisoformat(match.group(1)), day_count)
-        except ValueError:
-            return _verbatim(text)
 
-    # --- exact: "March 12-17, 2026" style, explicit year ---
-    match = _DAY_RANGE_YEAR.search(text)
-    if match:
-        month = _month_index(match.group(1))
+def _parse_exact_dated(text: str, day_count: int) -> Optional[TripDates]:
+    """A value that pins an exact departure: an ISO date/range, or a
+    day + month + year in any common ordering. ``None`` when nothing matches
+    (a matched-but-impossible calendar date included — the caller falls
+    through to the looser parses and then to verbatim)."""
+    for pattern in (_ISO_DATE, _ISO_RANGE):
+        match = pattern.match(text)
+        if match:
+            try:
+                return _from_departure(date.fromisoformat(match.group(1)), day_count)
+            except ValueError:
+                return None
+
+    # (month token, start-day, year) pulled from whichever explicit-year
+    # shape matched — month-first range, day-first range, then single date.
+    for match, month_g, day_g, year_g in _explicit_year_matches(text):
+        month = _month_index(match.group(month_g))
         if month:
             try:
-                start = date(int(match.group(4)), month, int(match.group(2)))
-                return _from_departure(start, day_count)
+                return _from_departure(date(int(match.group(year_g)), month, int(match.group(day_g))), day_count)
             except ValueError:
-                pass
+                continue
+    return None
 
-    # --- exact: a single "12 March 2026" / "March 12, 2026", explicit year ---
-    for pattern, order in ((_DAY_MONTH_YEAR, ("d", "m", "y")), (_MONTH_DAY_YEAR, ("m", "d", "y"))):
-        match = pattern.search(text)
-        if match:
-            groups = dict(zip(order, match.groups()))
-            month = _month_index(groups["m"])
-            if month:
-                try:
-                    return _from_departure(date(int(groups["y"]), month, int(groups["d"])), day_count)
-                except ValueError:
-                    pass
 
-    # --- month: "YYYY-MM" ---
-    match = _YEAR_MONTH.match(text)
-    if match:
+def _explicit_year_matches(text: str):
+    if (m := _DAY_RANGE_YEAR.search(text)):        # "March 12-17, 2026"
+        yield m, 1, 2, 4
+    if (m := _DAY_RANGE_YEAR_DM.search(text)):     # "12-17 March 2026"
+        yield m, 3, 1, 4
+    if (m := _DAY_MONTH_YEAR.search(text)):        # "12 March 2026"
+        yield m, 2, 1, 3
+    if (m := _MONTH_DAY_YEAR.search(text)):        # "March 12, 2026"
+        yield m, 1, 2, 3
+
+
+def _parse_bare_month(text: str) -> Optional[TripDates]:
+    if (match := _YEAR_MONTH.match(text)):         # "2026-03"
         return _month_result(int(match.group(1)), int(match.group(2)))
-
-    # --- month: "March 2026" ---
-    match = _MONTH_YEAR.match(text)
-    if match:
+    if (match := _MONTH_YEAR.match(text)):         # "March 2026"
         month = _month_index(match.group(1))
         if month:
             return _month_result(int(match.group(2)), month)
-
-    # --- TWM-227: yearless day/month, resolved against `today` ---
-    yearless = _parse_yearless(text, day_count, today)
-    if yearless is not None:
-        return yearless
-
-    return _verbatim(text)
+    return None
 
 
 def _month_result(year: int, month: int) -> TripDates:
