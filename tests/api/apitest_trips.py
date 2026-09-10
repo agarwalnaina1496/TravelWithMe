@@ -1722,7 +1722,8 @@ def test_set_party_and_search_pref_log_structured_events(api_client: TestClient)
         f"/trips/{trip['id']}/commands",
         json={"command": "set_search_pref", "expected_version": party.json()["trip"]["version"],
               "idempotency_key": str(uuid4()),
-              "search_pref_update": {"target_type": "stay", "target_id": segment_id, "date": "2026-06-10"}},
+              "search_pref_update": {"target_type": "stay", "target_id": segment_id,
+                                     "date": "2026-06-10", "checkout_date": "2026-06-13"}},
     )
 
     [party_event] = [e for e in sink.events if e["event"] == "be.trip.booking_setup.party.updated"]
@@ -1735,6 +1736,7 @@ def test_set_party_and_search_pref_log_structured_events(api_client: TestClient)
     assert pref_event["fields"]["target_type"] == "stay"
     assert pref_event["fields"]["target_id"] == segment_id
     assert pref_event["fields"]["new_precision"] == "exact"
+    assert pref_event["fields"]["has_checkout_override"] is True
     assert pref_event["fields"]["itinerary_regeneration_skipped"] is True
     app.dependency_overrides.clear()
 
@@ -1914,6 +1916,52 @@ def test_set_and_clear_search_pref_round_trip_for_a_stay_segment(api_client: Tes
     # A cleared pref reads back identically to one that was never set — no
     # empty stays bucket or empty search_prefs left behind.
     assert "search_prefs" not in clear_response.json()["trip"]["trip_state"]["booking_setup"]
+
+
+def test_set_search_pref_stores_an_editable_checkout_date_for_a_stay(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+    segment_id = f"{trip['id']}:stay:1:1:rishikesh"
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(
+            trip, "set_search_pref",
+            search_pref_update={"target_type": "stay", "target_id": segment_id,
+                                "date": "2026-06-10", "checkout_date": "2026-06-14"},
+        ),
+    )
+    assert response.status_code == 200
+    stays = response.json()["trip"]["trip_state"]["booking_setup"]["search_prefs"]["stays"]
+    assert stays[segment_id] == {"precision": "exact", "date": "2026-06-10", "checkout_date": "2026-06-14"}
+
+
+def test_set_search_pref_rejects_a_checkout_that_is_not_after_check_in(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeAtlasLifecycleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _seed_ready_itinerary(api_client, repository, engine)
+    segment_id = f"{trip['id']}:stay:1:1:rishikesh"
+
+    same_day = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(trip, "set_search_pref", search_pref_update={
+            "target_type": "stay", "target_id": segment_id,
+            "date": "2026-06-10", "checkout_date": "2026-06-10"}),
+    )
+    assert same_day.status_code == 422
+
+    month_plus_checkout = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json=_command(trip, "set_search_pref", search_pref_update={
+            "target_type": "stay", "target_id": segment_id,
+            "month": "2026-06", "checkout_date": "2026-06-14"}),
+    )
+    assert month_plus_checkout.status_code == 422
 
 
 def test_search_pref_update_rejected_for_wrong_command(api_client: TestClient):

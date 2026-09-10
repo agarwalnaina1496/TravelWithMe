@@ -74,13 +74,35 @@ class ScheduleDateInput(BaseModel):
 class SearchPrefInput(ScheduleDateInput):
     """``set_search_pref`` payload — a search-date override for one enriched
     ``GET /itinerary`` entity, identified by its stable id (a ``stay_segments``
-    entry id or a transport timeline item's ``id``). For a stay the date is the
-    check-in; checkout defaults to the segment's night count (editable in the
-    drawer).
+    entry id or a transport timeline item's ``id``).
+
+    For a stay the ``date`` is the check-in and ``checkout_date`` is the
+    optional, independently-chosen check-out — a standard OTA form where the
+    traveler moves either date freely. When ``checkout_date`` is omitted the
+    drawer falls back to check-in plus the itinerary's night count. Check-out
+    only makes sense alongside an exact check-in, never a month window, and
+    must be after it.
     """
 
     target_type: SearchPrefTarget
     target_id: str = Field(min_length=1, max_length=300)
+    checkout_date: Optional[_date] = None
+
+    @model_validator(mode="after")
+    def validate_checkout(self) -> "SearchPrefInput":
+        if self.checkout_date is None:
+            return self
+        if self.date is None:
+            raise ValueError("checkout_date requires an exact check-in date")
+        if self.checkout_date <= self.date:
+            raise ValueError("checkout_date must be after the check-in date")
+        return self
+
+    def as_stored(self) -> dict[str, Any]:
+        stored = super().as_stored()
+        if self.checkout_date is not None:
+            stored["checkout_date"] = self.checkout_date.isoformat()
+        return stored
 
 
 class SearchPrefClearInput(BaseModel):
