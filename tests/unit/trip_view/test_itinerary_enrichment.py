@@ -239,6 +239,23 @@ def test_stay_segment_checkin_follows_trip_dates_then_search_pref():
     assert seg["checkin_date"] == "2026-07-10" and seg["date_source"] == "search_pref"
 
 
+def test_stay_segment_checkout_override_beats_the_itinerary_night_count():
+    days = [_day(1, [_stay("Jaipur")]), _day(2, [_stay("Jaipur")])]
+    segment_id = f"{TRIP_ID}:stay:1:2:jaipur"
+
+    # An explicit check-out wins over check-in + itinerary nights.
+    moved = _enrich(days, travel_dates="2026-05-01", booking_setup={"search_prefs": {"stays": {
+        segment_id: {"precision": "exact", "date": "2026-07-10", "checkout_date": "2026-07-15"}}}})
+    seg = moved["stay_segments"][0]
+    assert (seg["checkin_date"], seg["checkout_date"]) == ("2026-07-10", "2026-07-15")
+    assert seg["nights"] == 2  # the plan's night count is untouched
+
+    # No check-out override -> fall back to check-in + itinerary nights.
+    kept = _enrich(days, travel_dates="2026-05-01", booking_setup={"search_prefs": {"stays": {
+        segment_id: {"precision": "exact", "date": "2026-07-10"}}}})
+    assert kept["stay_segments"][0]["checkout_date"] == "2026-07-12"
+
+
 def test_no_feasible_modes_field_on_enriched_items():
     item = _enrich([_day(1, [_travel("Delhi", "Jaipur")])])["days"][0]["timeline"][0]
     assert "feasible_modes" not in item

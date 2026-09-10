@@ -287,7 +287,15 @@ def _finish_segment(
 
     if override and override.get("precision") == "exact" and override.get("date"):
         checkin = date.fromisoformat(override["date"])
-        checkin_date, checkout_date = checkin.isoformat(), (checkin + timedelta(days=nights)).isoformat()
+        # A standard OTA form: the traveler can move check-out independently of
+        # the plan's night count. Fall back to check-in + itinerary nights only
+        # when they haven't set one.
+        checkout = (
+            date.fromisoformat(override["checkout_date"])
+            if override.get("checkout_date")
+            else checkin + timedelta(days=nights)
+        )
+        checkin_date, checkout_date = checkin.isoformat(), checkout.isoformat()
         date_precision, date_source = "exact", "search_pref"
     elif override and override.get("precision") == "month" and override.get("month"):
         month, date_precision, date_source = override["month"], "month", "search_pref"

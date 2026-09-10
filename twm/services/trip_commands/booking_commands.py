@@ -83,6 +83,7 @@ def apply_set_search_pref(
         target_id=update.target_id,
         previous_precision=previous.get("precision") if isinstance(previous, dict) else None,
         new_precision=bucket[update.target_id]["precision"],
+        has_checkout_override="checkout_date" in bucket[update.target_id],
         itinerary_regeneration_skipped=True,
     )
     return {"message": None, "agent_meta": None}
