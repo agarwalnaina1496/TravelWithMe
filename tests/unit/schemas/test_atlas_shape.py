@@ -51,6 +51,40 @@ def test_atlas_timeline_item_rejects_removed_travel_narrative_fields():
             )
 
 
+def test_atlas_transport_hub_requires_mode_neutral_access_gap():
+    validated = AtlasTimelineItem.model_validate(
+        _timeline_item(
+            hubs=[
+                {
+                    "city": "Udaipur",
+                    "side": "destination",
+                    "access_gap": "air",
+                    "last_mile_km": 100,
+                    "last_mile_duration_minutes": 150,
+                    "long_haul_distance_km": 660,
+                }
+            ]
+        )
+    )
+    assert validated.hubs[0].access_gap == "air"
+
+    with pytest.raises(ValidationError):
+        AtlasTimelineItem.model_validate(
+            _timeline_item(
+                hubs=[
+                    {
+                        "city": "Udaipur",
+                        "side": "destination",
+                        "access_gap": "flight",
+                        "last_mile_km": 100,
+                        "last_mile_duration_minutes": 150,
+                        "long_haul_distance_km": 660,
+                    }
+                ]
+            )
+        )
+
+
 def test_atlas_day_uses_notes_instead_of_legacy_guidance_fields():
     validated = AtlasDay.model_validate(_day())
 

@@ -1,5 +1,14 @@
 # Atlas prompt changelog
 
+## Atlas 1.16.0 — 2026-09-10
+
+- **Per-mode access gaps (TWM-230).** Candidate gateway hubs now carry
+  `access_gap` as a mode-neutral geographic fact: `air` when the endpoint
+  lacks realistic airport access, `rail` when it lacks realistic rail access.
+  Atlas assesses those access gaps separately for each `TRAVEL` endpoint, so
+  downstream itinerary enrichment can resolve flight/train/bus independently
+  instead of treating a whole leg as hubless for every mode.
+
 ## Atlas 1.15.0 — 2026-09-09
 
 - **Transport hub sets for hubless endpoints (TWM-226).** Adds an optional

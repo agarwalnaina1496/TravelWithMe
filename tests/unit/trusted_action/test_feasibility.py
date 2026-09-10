@@ -80,7 +80,8 @@ def test_long_distance_route_excludes_drive_but_includes_flight():
     modes = {entry.mode for entry in result.modes}
     assert "drive" not in modes
     assert "flight" in modes
-    assert {"train", "bus"} <= modes
+    assert "train" in modes
+    assert "bus" not in modes
 
 
 def test_returned_modes_carry_general_guidance_verification_and_computed_source():
@@ -119,7 +120,15 @@ def test_distance_fallback_yields_train_bus_without_flight_for_an_unresolvable_h
 def test_distance_fallback_excludes_drive_when_the_ballpark_is_long():
     result = assess_trip_feasibility("Bengaluru", "Unmapped Far Junction", long_haul_distance_km=1200)
     modes = {entry.mode for entry in result.modes}
-    assert modes == {"train", "bus"}  # no flight (no airport), no drive (too far)
+    assert modes == {"train"}  # no flight (no airport), no bus/drive (too far)
+
+
+def test_bus_is_excluded_above_the_long_distance_cutoff():
+    result = assess_trip_feasibility("Bhubaneswar", "Jodhpur")
+    modes = {entry.mode for entry in result.modes}
+    assert "bus" not in modes
+    assert "flight" in modes
+    assert "train" in modes
 
 
 def test_distance_fallback_is_ignored_when_both_cities_resolve():

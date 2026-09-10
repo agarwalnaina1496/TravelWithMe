@@ -1,5 +1,5 @@
 """TWM-217: the enriched /itinerary — item identity, resolved dates, stay
-segments. The former TripBoardService logic, relocated (minus feasibility)."""
+segments, and gateway transport options."""
 
 from uuid import uuid4
 
@@ -108,50 +108,73 @@ def test_single_travel_leg_trip_flags_its_one_leg():
 
 _HUBS = [
     {"city": "Udaipur", "side": "destination", "last_mile_km": 100,
-     "last_mile_duration_minutes": 150, "long_haul_distance_km": 660},
+     "last_mile_duration_minutes": 150, "long_haul_distance_km": 660, "access_gap": "air"},
     {"city": "Unmapped Rail Junction", "side": "destination", "last_mile_km": 60,
-     "last_mile_duration_minutes": 90, "long_haul_distance_km": 300},
+     "last_mile_duration_minutes": 90, "long_haul_distance_km": 300, "access_gap": "rail"},
 ]
 
 
-def test_gateway_leg_hubs_are_enriched_with_feasible_modes():
+def test_gateway_leg_hubs_are_replaced_with_per_mode_transport_options():
     days = [_day(1, [_travel("Bengaluru", "Sumerpur", hubs=_HUBS)])]
-    hub_out = _enrich(days)["days"][0]["timeline"][0]["hubs"]
-    by_city = {h["city"]: h for h in hub_out}
-    # airport hub: long hop -> flight in
-    assert "flight" in by_city["Udaipur"]["feasible_modes"]
-    assert {"train", "bus"} <= set(by_city["Udaipur"]["feasible_modes"])
-    # rail-only hub: distance fallback -> train/bus, never flight
-    assert "flight" not in by_city["Unmapped Rail Junction"]["feasible_modes"]
-    assert {"train", "bus"} <= set(by_city["Unmapped Rail Junction"]["feasible_modes"])
+    item = _enrich(days)["days"][0]["timeline"][0]
+    assert "hubs" not in item
+    options = {option["mode"]: option for option in item["transport_options"]}
+    assert options["flight"]["direct"] is False
+    assert options["flight"]["hubs"] == [{
+        "city": "Udaipur",
+        "access_gap": "air",
+        "side": "destination",
+        "last_mile_km": 100,
+        "last_mile_duration_minutes": 150,
+        "distance_km": 660,
+        "long_haul_distance_km": 660,
+        "feasible": True,
+    }]
+    assert options["train"]["direct"] is False
+    assert options["train"]["hubs"][0]["city"] == "Unmapped Rail Junction"
+    assert options["train"]["hubs"][0]["feasible"] is True
+    assert options["bus"]["hubs"][0]["feasible"] is True
+
+
+def test_station_no_airport_leg_keeps_train_direct_from_access_gap_contract():
+    hubs = [
+        {"city": "Udaipur", "side": "destination", "access_gap": "air", "last_mile_km": 100,
+         "last_mile_duration_minutes": 150, "long_haul_distance_km": 660},
+    ]
+    days = [_day(1, [_travel("Bengaluru", "Sumerpur", hubs=hubs)])]
+    options = {option["mode"]: option for option in _enrich(days)["days"][0]["timeline"][0]["transport_options"]}
+    assert options["flight"]["direct"] is False
+    assert options["train"] == {"mode": "train", "direct": True, "hubs": []}
+    assert "bus" not in options
 
 
 def test_hubless_origin_leg_uses_hub_to_town_pair_and_side_origin():
     # Outbound leg *from* a hubless origin: the long-haul portion is
     # hub -> real destination, and side "origin" is honoured when the
     # resolver can place the real endpoint.
-    hubs = [{"city": "Udaipur", "side": "origin", "last_mile_km": 100,
+    hubs = [{"city": "Udaipur", "side": "origin", "access_gap": "air", "last_mile_km": 100,
              "last_mile_duration_minutes": 150, "long_haul_distance_km": 660}]
     days = [
         _day(1, [_travel("Sumerpur", "Mumbai", hubs=hubs)]),
         _day(2, [_travel("Mumbai", "Sumerpur")]),
     ]
-    hub_out = _enrich(days)["days"][0]["timeline"][0]["hubs"][0]
-    assert "flight" in hub_out["feasible_modes"]  # Udaipur -> Mumbai is a real long hop
+    flight = _enrich(days)["days"][0]["timeline"][0]["transport_options"][0]
+    assert flight["mode"] == "flight"
+    assert flight["hubs"][0]["feasible"] is True  # Udaipur -> Mumbai is a real long hop
 
 
 def test_hub_with_no_resolvable_endpoint_and_no_distance_stays_unresolved_and_warns():
     # Defensive path: a malformed hub with no distance ballpark and no
     # resolvable endpoint fails closed to no modes, and the leg is logged at
     # WARNING so the gap is visible in Axiom.
-    hubs = [{"city": "Also Unmapped Town", "side": "destination", "last_mile_km": 40,
+    hubs = [{"city": "Also Unmapped Town", "side": "destination", "access_gap": "air", "last_mile_km": 40,
              "last_mile_duration_minutes": 60}]
     logger, sink = _logger()
     days = [_day(1, [_travel("Unmapped Origin", "Unmapped Dest", hubs=hubs)])]
-    hub_out = _enrich(days, logger=logger)["days"][0]["timeline"][0]["hubs"][0]
-    assert hub_out["feasible_modes"] == []
+    hub_out = _enrich(days, logger=logger)["days"][0]["timeline"][0]["transport_options"][0]["hubs"][0]
+    assert hub_out["feasible"] is False
     warn = [e for e in sink.events if e["event"] == "be.itinerary.hub_resolution" and e["level"] == "WARNING"]
-    assert warn and warn[0]["fields"]["resolved_hub_count"] == 0
+    assert warn and warn[0]["fields"]["mode_resolution_counts"]["flight"]["feasible_hub_count"] == 0
 
 
 def test_hub_endpoint_pairing_prefers_the_unresolvable_side_then_falls_back_to_atlas_side():
@@ -175,6 +198,23 @@ def test_non_gateway_leg_hubs_are_left_untouched():
     ]
     mid_leg = _enrich(days)["days"][1]["timeline"][0]
     assert "feasible_modes" not in mid_leg["hubs"][0]
+    assert "transport_options" not in mid_leg
+
+
+def test_gateway_leg_suppresses_hub_that_is_an_itinerary_city():
+    hubs = [
+        {"city": "Udaipur", "side": "destination", "access_gap": "air", "last_mile_km": 100,
+         "last_mile_duration_minutes": 150, "long_haul_distance_km": 660},
+        {"city": "Ahmedabad", "side": "destination", "access_gap": "air", "last_mile_km": 220,
+         "last_mile_duration_minutes": 300, "long_haul_distance_km": 800},
+    ]
+    days = [
+        _day(1, [_travel("Bengaluru", "Sumerpur", hubs=hubs)], primary="Sumerpur"),
+        _day(2, [_travel("Sumerpur", "Ahmedabad")], primary="Ahmedabad"),
+    ]
+    options = _enrich(days)["days"][0]["timeline"][0]["transport_options"]
+    flight = next(option for option in options if option["mode"] == "flight")
+    assert [hub["city"] for hub in flight["hubs"]] == ["Udaipur"]
 
 
 def test_hub_resolution_emits_a_structured_event_with_trip_id():
@@ -185,8 +225,9 @@ def test_hub_resolution_emits_a_structured_event_with_trip_id():
     fields = events[0]["fields"]
     assert fields["trip_id"] == str(TRIP_ID)
     assert fields["candidate_hub_count"] == 2
-    assert fields["resolved_hub_count"] == 2
-    assert fields["distance_fallback_count"] == 1
+    assert fields["suppressed_hub_count"] == 0
+    assert fields["mode_resolution_counts"]["flight"]["resolution"] == "via_hub"
+    assert fields["mode_resolution_counts"]["train"]["feasible_hub_count"] == 1
 
 
 def test_resolved_date_precedence_search_pref_then_trip_dates_then_none():
