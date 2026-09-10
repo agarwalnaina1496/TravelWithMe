@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "dates-answer-recorded-in-iso",
+  "execution_path": "direct",
+  "prompt_version": "1.14.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"NEEDS_CLARIFICATION\", \"state_delta\": {\"trip_context\": {\"travel_dates\": \"2026-12\"}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": \"budget\", \"last_meridian_message\": \"Roughly what budget are you working with for the trip?\"}}}, \"message\": \"Roughly what budget are you working with for the trip?\", \"options\": []}"
+}

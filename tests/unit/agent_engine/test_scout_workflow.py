@@ -21,6 +21,7 @@ def test_scout_evaluation_corpus_covers_extraction_and_routing() -> None:
         "destination-confirmed-routes-to-planner",
         "extraction-preserves-advisor-message",
         "extracts-fixed-shared-keys-verbatim",
+        "travel-dates-non-specific-stays-verbatim",
     }
     assert cases_by_id["criteria-ready-routes-to-matcher"]["invariants"] == {
         "intent": "matcher",
@@ -42,7 +43,11 @@ def test_scout_evaluation_corpus_covers_fixed_shared_keys() -> None:
         "origin_city": "Delhi",
         "num_travelers": "me and my partner",
         "trip_duration": 5,
-        "travel_dates": "sometime in October",
+        "travel_dates": "October",
         "budget": "flexible",
     }
     assert "origin" in invariants["must_not_invent_synonym_keys"]
+    # A season with no specific dates is kept as the traveler said it.
+    assert cases_by_id["travel-dates-non-specific-stays-verbatim"]["invariants"][
+        "fixed_keys_present_verbatim"
+    ] == {"travel_dates": "sometime in spring"}

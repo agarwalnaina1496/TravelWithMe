@@ -1,10 +1,16 @@
-"""Compose structured trip dates from the loose ``trip_context.travel_dates``
-conversational fact (TWM-217, TWM-227).
+"""Compose structured trip dates from ``trip_context.travel_dates`` (TWM-217,
+TWM-227).
 
-A bounded best-effort parse — the same pattern Atlas uses for
-``num_travelers``: read it when confidently interpretable, otherwise keep it
-verbatim. The raw string in ``trip_context`` is never rewritten — this is a
-read-time interpretation only.
+Scout / Meridian / Guide record ``travel_dates`` in a plain form — an ISO
+date (``2026-11-03``), an ISO range, ``YYYY-MM``, a bare ``D Month`` when the
+traveler gave no year, or ``Month`` — and keep the traveler's own wording
+only when the timing is genuinely non-specific ("flexible", a season). This
+module parses that clean form, resolves an omitted year, and formats a
+display label. The regex layer below also still tolerates looser prose
+(ordinals, "12-17 March 2026", month names) as a safety net for a value an
+agent did not normalise and for direct API tests. A value it cannot resolve
+renders verbatim. The raw string in ``trip_context`` is never rewritten —
+this is a read-time interpretation only.
 
 Year resolution (TWM-227): when the traveler states an exact day+month with
 no year, the omitted year is resolved to the current year *only when the
@@ -231,6 +237,18 @@ def _verbatim(text: str) -> TripDates:
     # A season, "mid-March", an unrecognizable phrase — a real signal, but not
     # one we can turn into a calendar value. Rendered as the traveler wrote it.
     return TripDates(precision="none", label=text, source="conversational")
+
+
+def recap_label(trip_context: dict[str, Any], *, today: Optional[date] = None) -> Optional[str]:
+    """A short human label for the "When" context-recap row — decoupled from
+    however ``travel_dates`` is stored so the recap stays readable whether the
+    agent wrote ``2026-11-03`` or the traveler's own prose. ``None`` when the
+    timing is unset (the caller falls back to the raw value)."""
+    composed = compose_trip_dates(trip_context, 0, today=today)
+    if composed.precision == "exact" and composed.departure:
+        parsed = date.fromisoformat(composed.departure)
+        return f"{parsed.day} {parsed:%b %Y}"
+    return composed.label
 
 
 def _yearless_label(month: int, day_start: int, day_end: Optional[int] = None) -> str:

@@ -220,7 +220,7 @@
         "trip_duration": 5,
         "origin_city": "Delhi",
         "num_travelers": 2,
-        "travel_dates": "October, tentative",
+        "travel_dates": "October",
         "budget": "flexible, around INR 60000-70000"
       },
       "planner_state": {}
@@ -228,6 +228,28 @@
     "invariants": {
       "awaiting": "anything_else",
       "day_plan_length": 0
+    }
+  },
+  {
+    "id": "dates-answer-recorded-in-iso",
+    "input": {
+      "event": "MESSAGE",
+      "message": "the 3rd of November 2026",
+      "trip_context": {
+        "destinations": ["Ladakh"],
+        "trip_duration": 5,
+        "origin_city": "Delhi",
+        "num_travelers": 2
+      },
+      "planner_state": {
+        "conversation_context": { "awaiting": "travel_dates" }
+      }
+    },
+    "invariants": {
+      "travel_dates": "2026-11-03",
+      "awaiting": "budget",
+      "day_plan_length": 0,
+      "places_omitted_from_delta": true
     }
   }
 ]

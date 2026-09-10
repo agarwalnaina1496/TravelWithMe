@@ -2,7 +2,9 @@
 
 from datetime import date
 
-from twm.services.trip_view.trip_dates import compose_trip_dates
+import pytest
+
+from twm.services.trip_view.trip_dates import compose_trip_dates, recap_label
 
 # A fixed "today" so every year-resolution case is deterministic.
 _TODAY = date(2026, 6, 15)
@@ -194,3 +196,17 @@ def test_today_defaults_to_the_real_date_when_not_injected():
     # yearless value, which is where `today` actually gets used.
     raw = {"travel_dates": "15 August"}
     assert compose_trip_dates(raw, 5) == compose_trip_dates(raw, 5, today=date.today())
+
+
+@pytest.mark.parametrize("stored,label", [
+    ("2026-11-03", "3 Nov 2026"),
+    ("2026-11-03 to 2026-11-07", "3 Nov 2026"),
+    ("2026-11", "November 2026"),
+    ("3 November", "3 Nov 2026"),            # yearless, future -> current year
+    ("November", "November 2026"),
+    ("flexible", None),                       # unset -> caller falls back to raw
+    ("sometime in spring", "sometime in spring"),
+    ("the 3rd of November 2026", "the 3rd of November 2026"),  # unparsed prose kept whole
+])
+def test_recap_label(stored, label):
+    assert recap_label({"travel_dates": stored}, today=_TODAY) == label

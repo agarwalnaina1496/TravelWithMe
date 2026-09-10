@@ -435,5 +435,31 @@
       "no_options_allowed": true,
       "origin_gate_not_blocked": true
     }
+  },
+  {
+    "id": "dates-answer-recorded-in-iso",
+    "scenario": "Meridian asked for timing; the answer is a month phrase, recorded in plain form",
+    "input": {
+      "trip_state": {
+        "trip_context": {
+          "origin_city": "Mumbai",
+          "num_travelers": 2,
+          "trip_duration": 6
+        },
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {
+          "conversation_context": { "awaiting": "travel_dates" }
+        }
+      },
+      "message": "the first week of December 2026"
+    },
+    "invariants": {
+      "travel_dates": "2026-12",
+      "status": "NEEDS_CLARIFICATION",
+      "requires_awaiting_reason": true,
+      "no_options_allowed": true
+    }
   }
 ]

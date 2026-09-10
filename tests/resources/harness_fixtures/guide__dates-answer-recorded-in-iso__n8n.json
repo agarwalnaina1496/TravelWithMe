@@ -1,0 +1,8 @@
+{
+  "agent": "guide",
+  "case_id": "dates-answer-recorded-in-iso",
+  "execution_path": "n8n",
+  "prompt_version": "3.2.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"Got it \u2014 November 3rd, 2026. And what's the budget for the trip?\", \"state_delta\": {\"trip_context\": {\"travel_dates\": \"2026-11-03\"}, \"planner_state\": {\"conversation_context\": {\"awaiting\": \"budget\"}}}, \"outcome\": \"continue\"}"
+}

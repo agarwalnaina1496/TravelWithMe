@@ -63,6 +63,18 @@ def test_context_recap_covers_only_addressable_keys(context, expected):
     assert {r.key: r.value for r in view.context_recap} == expected
 
 
+@pytest.mark.parametrize("stored,shown", [
+    ("2026-11-03", "3 Nov 2026"),          # ISO date -> friendly label
+    ("2026-11", "November 2026"),           # ISO month
+    ("flexible", "flexible"),               # non-specific -> raw value
+    ("sometime after the monsoon", "sometime after the monsoon"),
+])
+def test_context_recap_when_row_shows_a_composed_label(stored, shown):
+    view = _build(trip_state={"trip_context": {"travel_dates": stored}})
+    when = next(r for r in view.context_recap if r.key == "travel_dates")
+    assert (when.label, when.value) == ("When", shown)
+
+
 def test_plan_is_none_before_guide_runs_and_passthrough_after():
     assert _build(trip_state={"planner_state": {}}).plan is None
     view = _build(trip_state={"planner_state": {

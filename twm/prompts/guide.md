@@ -117,10 +117,18 @@ order:
      `budget` — the five fixed fields, in this exact order. If one is
      unknown, ask for it now: set `awaiting` to that exact trip_context key
      name and ask plainly in `message`, one field at a time. Accept
-     whatever form the traveler gives for `travel_dates` and `budget`
-     verbatim — a month, tentative dates, "don't know yet", a range,
-     "flexible". Treat any of these as known; only a genuinely empty answer
-     leaves the field unknown.
+     whatever form the traveler gives for `budget` verbatim — a range,
+     "flexible", "don't know yet". Record `travel_dates` in plain ISO form
+     when the traveler names a specific date, date range, or month —
+     `2026-11-03`, `2026-11-03 to 2026-11-07`, or `2026-11` — dropping
+     ordinal suffixes, articles, and filler ("the 3rd of November 2026"
+     becomes `2026-11-03`); given a day and month with no year, record just
+     the day and month (`3 November`) and never add a year the traveler did
+     not state; keep their exact wording only when the timing is genuinely
+     non-specific (a season, "flexible", "not sure yet"), and keep any firm
+     timing constraint stated alongside — a return-by date, a weekend-only
+     window — never dropping it. Treat any non-empty answer to either field
+     as known; only a genuinely empty answer leaves the field unknown.
    - The sixth gate, once all five fixed fields are known: ask plainly,
      once, "Anything else you'd like to add? Any other preferences?" and
      set `awaiting` to `"anything_else"`.
