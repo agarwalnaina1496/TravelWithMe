@@ -137,7 +137,7 @@ def test_gateway_leg_hubs_are_replaced_with_per_mode_transport_options():
     assert options["train"]["hubs"][0]["feasible"] is True
     assert options["bus"]["hubs"][0]["feasible"] is True
     assert options["drive"]["feasible"] is False
-    assert options["drive"]["ruled_out_reason"]
+    assert "arrange a drive yourself" in options["drive"]["ruled_out_reason"]
 
 
 def test_station_no_airport_leg_does_not_guess_train_direct_without_rail_gap():
@@ -150,10 +150,10 @@ def test_station_no_airport_leg_does_not_guess_train_direct_without_rail_gap():
     assert options["flight"]["direct"] is False
     assert options["train"]["direct"] is True
     assert options["train"]["feasible"] is False
-    assert "no resolved distance" in options["train"]["ruled_out_reason"]
+    assert "No reliable distance" in options["train"]["ruled_out_reason"]
     assert options["bus"]["direct"] is True
     assert options["bus"]["feasible"] is False
-    assert "no resolved distance" in options["bus"]["ruled_out_reason"]
+    assert "No reliable distance" in options["bus"]["ruled_out_reason"]
 
 
 def test_hubless_origin_leg_uses_hub_to_town_pair_and_side_origin():
@@ -251,9 +251,9 @@ def test_gateway_leg_adds_ruled_out_reasons_and_long_journey_note():
     assert options["train"]["direct"] is False
     assert options["train"]["long_journey_note"] == "Roughly 36 h long-haul journey before the local transfer."
     assert options["bus"]["feasible"] is False
-    assert "Too far for bus" in options["bus"]["ruled_out_reason"]
+    assert "Too far for a bus" in options["bus"]["ruled_out_reason"]
     assert options["drive"]["feasible"] is False
-    assert options["drive"]["ruled_out_reason"]
+    assert options["drive"]["ruled_out_reason"] == "Too far for a single road trip (~1,600 km)."
 
 
 def test_hub_resolution_emits_a_structured_event_with_trip_id():

@@ -44,6 +44,14 @@ _LONG_JOURNEY_AVG_SPEED_KMH = 45.0
 _LONG_JOURNEY_THRESHOLD_HOURS = 20
 _LONG_JOURNEY_ROUND_TO_HOURS = 6
 
+# Drive is never bookable on a gateway leg. It is surfaced in transport_options
+# only so the chooser can explain the absence; when the distance rules would
+# otherwise call a short gateway leg drive-feasible, this is the honest line
+# (the "too far" reason is kept whenever it actually applies).
+_DRIVE_NOT_BOOKED_REASON = (
+    "TWM books flights and trains for gateway legs — arrange a drive yourself."
+)
+
 
 def _search_pref(prefs: dict[str, Any], bucket: str, target_id: str) -> Optional[dict[str, Any]]:
     entry = (prefs.get(bucket) or {}).get(target_id) if isinstance(prefs, dict) else None
@@ -176,6 +184,15 @@ def _assessment_by_mode(origin: str, destination: str, long_haul_distance_km: An
     }
 
 
+def _rough_hub_distance(hubs: list[dict[str, Any]]) -> float | None:
+    distances = [
+        float(distance)
+        for hub in hubs
+        if (distance := hub.get("long_haul_distance_km")) is not None and distance > 0
+    ]
+    return max(distances, default=None)
+
+
 def _long_journey_note(distance_km: Any) -> str | None:
     if distance_km is None:
         return None
@@ -224,6 +241,7 @@ def _resolve_transport_options(
     suppressed_access_gaps: set[Any] | None = None,
 ) -> list[dict[str, Any]]:
     direct_assessment = _assessment_by_mode(from_city, to_city)
+    rough_direct_assessment = _assessment_by_mode(from_city, to_city, _rough_hub_distance(hubs)) if hubs else {}
     options: list[dict[str, Any]] = []
     for mode in ("flight", "train", "bus", "drive"):
         # Drive is surfaced only so UI can explain why it is not bookable in
@@ -233,8 +251,14 @@ def _resolve_transport_options(
         if not mode_hubs:
             if suppressed_access_gaps and access_gap in suppressed_access_gaps:
                 continue
-            entry = direct_assessment[mode]
-            options.append(_option_from_assessment(mode, entry, direct=True, hubs=[]))
+            if mode == "drive":
+                rough = rough_direct_assessment.get("drive") or direct_assessment["drive"]
+                option = _option_from_assessment("drive", rough, direct=True, hubs=[])
+                if option["feasible"]:
+                    option = {**option, "feasible": False, "ruled_out_reason": _DRIVE_NOT_BOOKED_REASON}
+                options.append(option)
+                continue
+            options.append(_option_from_assessment(mode, direct_assessment[mode], direct=True, hubs=[]))
             continue
         resolved_hubs: list[dict[str, Any]] = []
         hub_assessments = []
