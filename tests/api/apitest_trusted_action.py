@@ -658,13 +658,14 @@ def test_feasibility_endpoint_excludes_route_absurd_flight_for_a_short_hop(api_c
     assert response.status_code == 200
     body = response.json()
     modes = {mode["mode"]: mode for mode in body["modes"]}
-    assert "flight" not in modes
+    assert modes["flight"]["status"] == "not_feasible"
+    assert "Too short for flight" in modes["flight"]["reason"]
     assert modes["train"]["status"] == "feasible"
     assert modes["bus"]["status"] == "feasible"
     assert modes["drive"]["status"] == "feasible"
 
 
-def test_feasibility_endpoint_returns_empty_modes_never_all_modes_for_unknown_cities(
+def test_feasibility_endpoint_returns_not_feasible_modes_for_unknown_cities(
     api_client: TestClient,
 ):
     repository = MemoryTripRepository()
@@ -678,10 +679,15 @@ def test_feasibility_endpoint_returns_empty_modes_never_all_modes_for_unknown_ci
 
     assert response.status_code == 200
     body = response.json()
-    assert body["modes"] == []
+    modes = {mode["mode"]: mode for mode in body["modes"]}
+    assert set(modes) == {"flight", "train", "bus", "drive"}
+    assert {mode["status"] for mode in modes.values()} == {"not_feasible"}
+    assert {mode["reason"] for mode in modes.values()} == {
+        "This mode cannot be assessed because this route has no resolved distance."
+    }
 
 
-def test_feasibility_endpoint_returns_empty_modes_for_a_degenerate_route(api_client: TestClient):
+def test_feasibility_endpoint_returns_not_feasible_modes_for_a_degenerate_route(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_persistence(repository)
     trip_id = _create_trip(api_client)
@@ -694,15 +700,17 @@ def test_feasibility_endpoint_returns_empty_modes_for_a_degenerate_route(api_cli
     assert response.status_code == 200
     body = response.json()
     assert body is not None
-    assert body["modes"] == []
+    modes = {mode["mode"]: mode for mode in body["modes"]}
+    assert set(modes) == {"flight", "train", "bus", "drive"}
+    assert {mode["status"] for mode in modes.values()} == {"not_feasible"}
 
 
 def test_feasibility_endpoint_uses_distance_fallback_for_an_unresolvable_gateway_hub(
     api_client: TestClient,
 ):
-    # TWM-215: a rail-only gateway hub the resolver cannot place still yields
-    # train + bus (flight excluded) via Atlas's long_haul_distance_km, instead
-    # of the fail-closed empty modes.
+    # TWM-215/TWM-230: a rail-only gateway hub the resolver cannot place still
+    # yields train + bus via Atlas's long_haul_distance_km, while flight is
+    # explicitly ruled out instead of omitted.
     repository = MemoryTripRepository()
     _override_persistence(repository)
     trip_id = _create_trip(api_client)
@@ -718,9 +726,12 @@ def test_feasibility_endpoint_uses_distance_fallback_for_an_unresolvable_gateway
 
     assert response.status_code == 200
     modes = {mode["mode"]: mode for mode in response.json()["modes"]}
-    assert "flight" not in modes
+    assert modes["flight"]["status"] == "not_feasible"
+    assert "no resolved airport" in modes["flight"]["reason"]
     assert modes["train"]["status"] == "feasible"
+    assert "approximate long-haul distance rules" in modes["train"]["reason"]
     assert modes["bus"]["status"] == "feasible"
+    assert "approximate long-haul distance rules" in modes["bus"]["reason"]
     assert modes["drive"]["status"] == "feasible"  # 420km is within the drive cutoff
 
 
@@ -788,12 +799,15 @@ def test_feasibility_resolved_is_logged_with_returned_mode_names(api_client: Tes
     events = {event["event"]: event for event in sink.events}
     assert "be.trusted_action.feasibility.requested" in events
     resolved = events["be.trusted_action.feasibility.resolved"]
-    assert set(resolved["fields"]["returned_modes"]) == {"train", "bus", "drive"}
-    assert resolved["fields"]["returned_mode_count"] == 3
+    assert set(resolved["fields"]["returned_modes"]) == {"flight", "train", "bus", "drive"}
+    assert resolved["fields"]["returned_mode_count"] == 4
+    assert resolved["fields"]["feasible_mode_count"] == 3
+    assert resolved["fields"]["not_feasible_modes"] == ["flight"]
+    assert "Too short for flight" in resolved["fields"]["ruled_out_reasons"]["flight"]
     app.dependency_overrides.pop(get_logger, None)
 
 
-def test_feasibility_empty_outcome_is_logged_separately_from_resolved(api_client: TestClient):
+def test_feasibility_unassessable_outcome_is_logged_as_resolved_not_feasible_modes(api_client: TestClient):
     repository = MemoryTripRepository()
     sink = InMemorySink()
     logger = TelemetryLogger(
@@ -811,7 +825,10 @@ def test_feasibility_empty_outcome_is_logged_separately_from_resolved(api_client
         json={"origin": "Some Remote Village", "destination": "Another Remote Village"},
     )
 
-    events = [event["event"] for event in sink.events]
-    assert "be.trusted_action.feasibility.empty" in events
-    assert "be.trusted_action.feasibility.resolved" not in events
+    events = {event["event"]: event for event in sink.events}
+    assert "be.trusted_action.feasibility.empty" not in events
+    resolved = events["be.trusted_action.feasibility.resolved"]
+    assert resolved["fields"]["returned_mode_count"] == 4
+    assert resolved["fields"]["feasible_mode_count"] == 0
+    assert set(resolved["fields"]["not_feasible_modes"]) == {"flight", "train", "bus", "drive"}
     app.dependency_overrides.pop(get_logger, None)

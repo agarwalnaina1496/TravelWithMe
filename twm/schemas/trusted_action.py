@@ -75,19 +75,20 @@ Security posture (structural, not documentation):
   construct one from the other's data (see tests) and cannot present an
   action as verified evidence or evidence as an actionable link.
 
-Feasibility reasoning (TWM-195 root-fix contract): ``TripFeasibilityAssessment``
-is a single ``modes`` list of only genuinely route-valid, bookable
-transport modes for a leg, produced by deterministic Backend rule code
-(``twm/services/trusted_action/feasibility.py``) — there is no LLM/agent/
-classifier runtime anywhere in this path (an internal LLM route-mode
-classifier was tried and explicitly rejected in prior review rounds; see
-Linear TWM-195). A route this data cannot confidently assess returns
-``modes: []`` — never a fabricated "everything is feasible" fallback and
-never all four modes by default. Every entry that is returned must carry
-the same GENERAL_GUIDANCE honesty tag Atlas already uses (imported directly
-from ``twm/schemas/atlas.py`` to avoid duplicating its honesty-validator
-logic) and is structurally forbidden from ever claiming ``VERIFIED``, since
-a rule-based judgement is not itself a fact-checked, sourced claim.
+Feasibility reasoning (TWM-195 root-fix contract, expanded by TWM-230):
+``TripFeasibilityAssessment`` is a single ``modes`` list with one entry for
+each supported transport mode for a leg, produced by deterministic Backend
+rule code (``twm/services/trusted_action/feasibility.py``) — there is no
+LLM/agent/classifier runtime anywhere in this path (an internal LLM
+route-mode classifier was tried and explicitly rejected in prior review
+rounds; see Linear TWM-195). A route this data cannot confidently assess
+returns each mode as ``not_feasible`` with a traveler-safe reason — never a
+fabricated "everything is feasible" fallback, and never service-frequency
+or provider-availability claims. Every entry must carry the same
+GENERAL_GUIDANCE honesty tag Atlas already uses (imported directly from
+``twm/schemas/atlas.py`` to avoid duplicating its honesty-validator logic)
+and is structurally forbidden from ever claiming ``VERIFIED``, since a
+rule-based judgement is not itself a fact-checked, sourced claim.
 
 This is a read/query-style resolution boundary, matching
 ``twm/services/flight_search/service.py``'s framing: it never mutates trip
@@ -233,15 +234,11 @@ class ActionTarget(BaseModel):
 # real routing/geocoding provider can be added as a new literal value later.
 DurationSource = Literal["computed"]
 TransportMode = Literal["flight", "train", "bus", "drive"]
-# TWM-195 root-fix contract: modes only ever contains genuinely route-valid,
-# bookable entries -- there is no more ruled_out/unknown bucket to express,
-# because non-feasible modes are simply absent from the list (see
-# TripFeasibilityAssessment). The Literal is collapsed to its single actual
-# value per the Linear issue's explicit direction that keeping `status` at
-# all is "transitional/redundant" -- this keeps the field temporarily (to
-# avoid churn to every existing ModeFeasibility construction site) while
-# removing the now-pointless three-way branching it used to require.
-FeasibilityStatus = Literal["feasible"]
+# TWM-230: every supported mode is returned. Non-selectable modes use the
+# narrow ``not_feasible`` status plus a distance/access based reason; they
+# must not imply missing provider service, timetable, or live availability
+# research.
+FeasibilityStatus = Literal["feasible", "not_feasible"]
 
 _MAX_ESTIMATED_DURATION_MINUTES = 4320
 
@@ -255,15 +252,15 @@ class ModeFeasibility(BaseModel):
     estimated_duration_minutes: Optional[int] = Field(default=None, ge=1)
     estimated_distance_km: Optional[float] = Field(default=None, ge=0)
     reason: TrustedActionText
-    # Required on every entry now (modes only ever holds feasible entries).
-    # Bounded to GENERAL_GUIDANCE, never VERIFIED -- a deterministic rule
-    # judgement is not itself a fact-checked, sourced claim.
+    # Required on every entry. Bounded to GENERAL_GUIDANCE, never VERIFIED --
+    # a deterministic rule judgement is not itself a fact-checked, sourced
+    # claim.
     verification: Optional[AtlasReference] = None
 
     @model_validator(mode="after")
     def validate_verification_honesty(self) -> "ModeFeasibility":
         if self.verification is None:
-            raise ValueError("a feasible mode requires a verification tag")
+            raise ValueError("a feasibility entry requires a verification tag")
         if self.verification.status == "VERIFIED":
             raise ValueError(
                 "a deterministic route-rule judgement must never claim "
@@ -282,18 +279,17 @@ class ModeFeasibility(BaseModel):
 
 
 class TripFeasibilityAssessment(BaseModel):
-    """TWM-195 root-fix contract: the single, route-valid/bookable mode list
-    for a leg (flight/train/bus/drive), produced by deterministic Backend
-    rule code, never an LLM/agent/classifier runtime.
+    """TWM-230 transport-feasibility contract: the single per-mode judgement
+    list for a leg (flight/train/bus/drive), produced by deterministic
+    Backend rule code, never an LLM/agent/classifier runtime.
 
-    ``modes`` holds only genuinely feasible entries -- there is no
-    ``excluded_modes`` field and no per-mode ``ruled_out``/``unknown``
-    status exposed to callers; a mode that is not route-valid is simply
-    absent from the list. A route this data cannot confidently assess (or a
-    leg with zero genuine modes) returns ``modes: []`` -- Backend must never
-    fail open to "assume everything is feasible". A route can genuinely
-    have anywhere from 0 to 4 feasible modes; nothing here assumes all four
-    must be judged or present.
+    ``modes`` returns one entry for each supported transport mode. Modes
+    that should not be selectable are explicit ``not_feasible`` entries
+    with distance/access based reasons; there is no ``excluded_modes`` field
+    and no omitted-mode meaning for callers to infer. A route this data
+    cannot confidently assess fails closed by marking every mode
+    ``not_feasible`` -- Backend must never fail open to "assume everything
+    is feasible".
 
     Distinct from any action: this never carries a price, only a
     feasibility judgement and a duration/distance estimate with an honest
