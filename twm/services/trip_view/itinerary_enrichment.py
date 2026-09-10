@@ -44,6 +44,14 @@ _LONG_JOURNEY_AVG_SPEED_KMH = 45.0
 _LONG_JOURNEY_THRESHOLD_HOURS = 20
 _LONG_JOURNEY_ROUND_TO_HOURS = 6
 
+# Drive is never bookable on a gateway leg. It is surfaced in transport_options
+# only so the chooser can explain the absence; when the distance rules would
+# otherwise call a short gateway leg drive-feasible, this is the honest line
+# (the "too far" reason is kept whenever it actually applies).
+_DRIVE_NOT_BOOKED_REASON = (
+    "TWM books flights and trains for gateway legs — arrange a drive yourself."
+)
+
 
 def _search_pref(prefs: dict[str, Any], bucket: str, target_id: str) -> Optional[dict[str, Any]]:
     entry = (prefs.get(bucket) or {}).get(target_id) if isinstance(prefs, dict) else None
@@ -243,8 +251,14 @@ def _resolve_transport_options(
         if not mode_hubs:
             if suppressed_access_gaps and access_gap in suppressed_access_gaps:
                 continue
-            entry = rough_direct_assessment.get(mode, direct_assessment[mode]) if mode == "drive" else direct_assessment[mode]
-            options.append(_option_from_assessment(mode, entry, direct=True, hubs=[]))
+            if mode == "drive":
+                rough = rough_direct_assessment.get("drive") or direct_assessment["drive"]
+                option = _option_from_assessment("drive", rough, direct=True, hubs=[])
+                if option["feasible"]:
+                    option = {**option, "feasible": False, "ruled_out_reason": _DRIVE_NOT_BOOKED_REASON}
+                options.append(option)
+                continue
+            options.append(_option_from_assessment(mode, direct_assessment[mode], direct=True, hubs=[]))
             continue
         resolved_hubs: list[dict[str, Any]] = []
         hub_assessments = []

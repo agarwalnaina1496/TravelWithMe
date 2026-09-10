@@ -136,8 +136,8 @@ def test_gateway_leg_hubs_are_replaced_with_per_mode_transport_options():
     assert options["train"]["hubs"][0]["city"] == "Unmapped Rail Junction"
     assert options["train"]["hubs"][0]["feasible"] is True
     assert options["bus"]["hubs"][0]["feasible"] is True
-    assert options["drive"]["feasible"] is True
-    assert options["drive"]["ruled_out_reason"] is None
+    assert options["drive"]["feasible"] is False
+    assert "arrange a drive yourself" in options["drive"]["ruled_out_reason"]
 
 
 def test_station_no_airport_leg_does_not_guess_train_direct_without_rail_gap():
@@ -267,7 +267,7 @@ def test_hub_resolution_emits_a_structured_event_with_trip_id():
     assert fields["suppressed_hub_count"] == 0
     assert fields["mode_resolution_counts"]["flight"]["resolution"] == "via_hub"
     assert fields["mode_resolution_counts"]["train"]["feasible_hub_count"] == 1
-    assert fields["mode_resolution_counts"]["drive"]["feasible_count"] == 1
+    assert fields["mode_resolution_counts"]["drive"]["not_feasible_count"] == 1
 
 
 def test_resolved_date_precedence_search_pref_then_trip_dates_then_none():
