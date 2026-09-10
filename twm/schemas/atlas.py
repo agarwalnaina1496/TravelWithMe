@@ -31,6 +31,7 @@ AtlasBookingReadiness = Literal["suggested", "needs_advance_booking"]
 # hub the traveler passes through to *leave* a hubless origin town, `destination`
 # for a hub they pass through to *reach* a hubless destination town.
 AtlasHubSide = Literal["origin", "destination"]
+AtlasAccessGap = Literal["air", "rail"]
 
 
 class AtlasTransportHub(BaseModel):
@@ -45,6 +46,7 @@ class AtlasTransportHub(BaseModel):
 
     city: AtlasText
     side: AtlasHubSide
+    access_gap: AtlasAccessGap
     # All three are positive: a gateway sits a real surface transfer from the
     # town and a real long-haul distance from the trip's other endpoint, so a
     # zero on any of them is a degenerate "hub" that is not a hub.

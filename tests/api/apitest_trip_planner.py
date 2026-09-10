@@ -731,6 +731,7 @@ def _atlas_output_with_gateway_leg(hub_overrides: list[dict] | None = None) -> d
         {
             "city": "Udaipur",
             "side": "destination",
+            "access_gap": "air",
             "last_mile_km": 100,
             "last_mile_duration_minutes": 150,
             "long_haul_distance_km": 660,
@@ -738,6 +739,7 @@ def _atlas_output_with_gateway_leg(hub_overrides: list[dict] | None = None) -> d
         {
             "city": "Ahmedabad",
             "side": "destination",
+            "access_gap": "air",
             "last_mile_km": 220,
             "last_mile_duration_minutes": 300,
             "long_haul_distance_km": 800,
@@ -801,6 +803,7 @@ def test_atlas_api_returns_travel_leg_with_candidate_gateway_hubs(
     leg = response.json()["final_itinerary"]["days"][0]["timeline"][0]
     assert [hub["city"] for hub in leg["hubs"]] == ["Udaipur", "Ahmedabad"]
     assert {hub["side"] for hub in leg["hubs"]} == {"destination"}
+    assert {hub["access_gap"] for hub in leg["hubs"]} == {"air"}
     assert leg["hubs"][0]["last_mile_km"] == 100
     assert leg["hubs"][0]["last_mile_duration_minutes"] == 150
     assert leg["hubs"][0]["long_haul_distance_km"] == 660
@@ -835,6 +838,7 @@ def test_atlas_rejects_hubs_on_a_non_travel_timeline_item(
         {
             "city": "Udaipur",
             "side": "destination",
+            "access_gap": "air",
             "last_mile_km": 100,
             "last_mile_duration_minutes": 150,
             "long_haul_distance_km": 660,

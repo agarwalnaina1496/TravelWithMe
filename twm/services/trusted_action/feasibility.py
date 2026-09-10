@@ -72,6 +72,7 @@ _FLIGHT_INFEASIBLE_BELOW_KM = 150.0
 # feasibility.py before commit a92634a). Still comfortably above
 # Bangalore->Mangalore (~352km), which must remain drive-feasible.
 _DRIVE_INFEASIBLE_ABOVE_KM = 800.0
+_BUS_INFEASIBLE_ABOVE_KM = 1000.0
 
 _FLIGHT_INCLUDED_REASON = (
     "Distance between these cities is long enough that a domestic flight "
@@ -160,6 +161,7 @@ def assess_trip_feasibility(
         if long_haul_distance_km is None or long_haul_distance_km <= 0:
             return TripFeasibilityAssessment(modes=[])
         distance_km = float(long_haul_distance_km)
+    assert distance_km is not None
 
     modes: list[ModeFeasibility] = []
     if flight_assessable and distance_km >= _FLIGHT_INFEASIBLE_BELOW_KM:
@@ -169,6 +171,7 @@ def assess_trip_feasibility(
     train_reason = _TRAIN_REASON if flight_assessable else _DISTANCE_FALLBACK_FLIGHT_EXCLUDED_REASON
     bus_reason = _BUS_REASON if flight_assessable else _DISTANCE_FALLBACK_FLIGHT_EXCLUDED_REASON
     modes.append(_mode("train", distance_km=distance_km, reason=train_reason))
-    modes.append(_mode("bus", distance_km=distance_km, reason=bus_reason))
+    if distance_km <= _BUS_INFEASIBLE_ABOVE_KM:
+        modes.append(_mode("bus", distance_km=distance_km, reason=bus_reason))
 
     return TripFeasibilityAssessment(modes=modes)

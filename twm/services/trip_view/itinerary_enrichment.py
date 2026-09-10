@@ -93,6 +93,7 @@ def enrich_itinerary(
             _attach_hub_feasibility(
                 trip_id,
                 _enrich_item(item, index, day_number, calendar_date, outbound, inbound, search_prefs, trip_id),
+                _itinerary_locations(days),
                 logger,
             )
             for index, item in enumerate(day.get("timeline", []))
@@ -126,43 +127,120 @@ def _hub_long_haul_endpoints(
     return from_city, hub["city"]
 
 
+def _itinerary_locations(days: list[dict[str, Any]]) -> set[str]:
+    return {
+        str(day.get("primary_location", "")).strip().casefold()
+        for day in days
+        if str(day.get("primary_location", "")).strip()
+    }
+
+
 def _attach_hub_feasibility(
-    trip_id: UUID, item: dict[str, Any], logger: TelemetryLogger
+    trip_id: UUID, item: dict[str, Any], itinerary_locations: set[str], logger: TelemetryLogger
 ) -> dict[str, Any]:
     hubs = item.get("hubs")
-    if not (item.get("is_gateway_leg") and hubs):
+    if not item.get("is_gateway_leg"):
         return item
 
     from_city, to_city = item["from_city"], item["to_city"]
     from_hubless = resolve_airport(from_city) is None
     to_hubless = resolve_airport(to_city) is None
-    resolved_hubs: list[dict[str, Any]] = []
-    fallback_count = 0
-    unresolved: list[str] = []
-    for hub in hubs:
-        origin, destination = _hub_long_haul_endpoints(
-            from_city, to_city, from_hubless, to_hubless, hub
-        )
-        assessment = assess_trip_feasibility(origin, destination, hub.get("long_haul_distance_km"))
-        modes = [entry.mode for entry in assessment.modes]
-        if resolve_airport(hub.get("city", "")) is None:
-            fallback_count += 1
-        if not modes:
-            unresolved.append(hub.get("city", ""))
-        resolved_hubs.append({**hub, "feasible_modes": modes})
+    suppressed_hubs = []
+    candidate_hubs = []
+    for hub in hubs or []:
+        if str(hub.get("city", "")).strip().casefold() in itinerary_locations:
+            suppressed_hubs.append(hub)
+            continue
+        candidate_hubs.append(hub)
+    suppressed_count = len(hubs or []) - len(candidate_hubs)
+    requested_access_gaps = {hub.get("access_gap") for hub in candidate_hubs}
+    suppressed_access_gaps = {hub.get("access_gap") for hub in suppressed_hubs}
+    transport_options = _resolve_transport_options(
+        from_city, to_city, from_hubless, to_hubless, candidate_hubs,
+        requested_access_gaps, suppressed_access_gaps
+    )
+    _log_hub_resolution(
+        trip_id, item, len(hubs or []), transport_options, suppressed_count, logger
+    )
+    item = {key: value for key, value in item.items() if key != "hubs"}
+    return {**item, "transport_options": transport_options}
 
-    _log_hub_resolution(trip_id, item, len(hubs), fallback_count, unresolved, logger)
-    return {**item, "hubs": resolved_hubs}
+
+def _modes_from_assessment(origin: str, destination: str, long_haul_distance_km: Any = None) -> set[str]:
+    return {
+        entry.mode
+        for entry in assess_trip_feasibility(origin, destination, long_haul_distance_km).modes
+        if entry.mode != "drive"
+    }
+
+
+def _resolve_transport_options(
+    from_city: str,
+    to_city: str,
+    from_hubless: bool,
+    to_hubless: bool,
+    hubs: list[dict[str, Any]],
+    requested_access_gaps: set[Any] | None = None,
+    suppressed_access_gaps: set[Any] | None = None,
+) -> list[dict[str, Any]]:
+    direct_modes = _modes_from_assessment(from_city, to_city)
+    options: list[dict[str, Any]] = []
+    for mode in ("flight", "train", "bus"):
+        access_gap = "air" if mode == "flight" else "rail"
+        mode_hubs = [hub for hub in hubs if hub.get("access_gap") == access_gap]
+        if not mode_hubs:
+            if suppressed_access_gaps and access_gap in suppressed_access_gaps:
+                continue
+            if requested_access_gaps and access_gap in requested_access_gaps:
+                options.append({"mode": mode, "direct": False, "hubs": []})
+                continue
+            if mode == "train" and access_gap not in (requested_access_gaps or set()):
+                options.append({"mode": mode, "direct": True, "hubs": []})
+                continue
+            if mode in direct_modes:
+                options.append({"mode": mode, "direct": True, "hubs": []})
+            continue
+        resolved_hubs: list[dict[str, Any]] = []
+        for hub in mode_hubs:
+            origin, destination = _hub_long_haul_endpoints(
+                from_city, to_city, from_hubless, to_hubless, hub
+            )
+            modes = _modes_from_assessment(origin, destination, hub.get("long_haul_distance_km"))
+            resolved_hubs.append({
+                "city": hub.get("city"),
+                "access_gap": hub.get("access_gap"),
+                "side": hub.get("side"),
+                "last_mile_km": hub.get("last_mile_km"),
+                "last_mile_duration_minutes": hub.get("last_mile_duration_minutes"),
+                "distance_km": hub.get("long_haul_distance_km"),
+                "long_haul_distance_km": hub.get("long_haul_distance_km"),
+                "feasible": mode in modes,
+            })
+        options.append({"mode": mode, "direct": False, "hubs": resolved_hubs})
+    return options
 
 
 def _log_hub_resolution(
     trip_id: UUID,
     item: dict[str, Any],
     candidate_count: int,
-    fallback_count: int,
-    unresolved: list[str],
+    transport_options: list[dict[str, Any]],
+    suppressed_count: int,
     logger: TelemetryLogger,
 ) -> None:
+    mode_counts = {
+        option["mode"]: {
+            "resolution": "direct" if option.get("direct") else "via_hub",
+            "candidate_hub_count": len(option.get("hubs") or []),
+            "feasible_hub_count": len([hub for hub in option.get("hubs") or [] if hub.get("feasible")]),
+        }
+        for option in transport_options
+    }
+    unresolved_modes = [
+        option["mode"]
+        for option in transport_options
+        if not option.get("direct") and not any(hub.get("feasible") for hub in option.get("hubs") or [])
+    ]
     fields = {
         "event": "be.itinerary.hub_resolution",
         "source": "application",
@@ -171,17 +249,17 @@ def _log_hub_resolution(
         "from_city": item.get("from_city"),
         "to_city": item.get("to_city"),
         "candidate_hub_count": candidate_count,
-        "resolved_hub_count": candidate_count - len(unresolved),
-        "distance_fallback_count": fallback_count,
+        "suppressed_hub_count": suppressed_count,
+        "mode_resolution_counts": mode_counts,
     }
-    if unresolved:
+    if unresolved_modes:
         logger.warning(
-            "Gateway leg has candidate hubs that resolved to no feasible transport modes.",
-            unresolved_hubs=unresolved,
+            "Gateway leg has per-mode transport resolutions with no feasible options.",
+            unresolved_modes=unresolved_modes,
             **fields,
         )
     else:
-        logger.info("Resolved candidate gateway hubs for a gateway leg.", **fields)
+        logger.info("Resolved per-mode gateway transport options for a gateway leg.", **fields)
 
 
 def _enrich_item(
