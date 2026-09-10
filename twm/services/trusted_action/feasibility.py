@@ -74,7 +74,6 @@ _BUS_INFEASIBLE_ABOVE_KM = 1000.0
 
 _FLIGHT_INCLUDED_REASON = "Distance supports flight as a practical long-haul option (~{distance_km:,.0f} km)."
 _FLIGHT_SHORT_REASON = "Too short for flight under TWM's distance rule (~{distance_km:,.0f} km)."
-_FLIGHT_UNASSESSABLE_REASON = "Flight cannot be assessed because one endpoint has no resolved airport."
 _DRIVE_INCLUDED_REASON = "Within TWM's single-trip drive distance rule (~{distance_km:,.0f} km)."
 _DRIVE_LONG_REASON = "Too far for a single-trip drive under TWM's distance rule (~{distance_km:,.0f} km)."
 _TRAIN_REASON = (
@@ -85,7 +84,6 @@ _TRAIN_FALLBACK_REASON = (
     "Train remains feasible under TWM's approximate long-haul distance rules (~{distance_km:,.0f} km); "
     "route frequency is not checked here."
 )
-_TRAIN_UNASSESSABLE_REASON = "Train cannot be assessed because this route has no resolved distance."
 _BUS_REASON = (
     "Bus remains feasible under TWM's deterministic distance rules (~{distance_km:,.0f} km); "
     "operator service is not checked here."
@@ -95,7 +93,6 @@ _BUS_FALLBACK_REASON = (
     "operator service is not checked here."
 )
 _BUS_LONG_REASON = "Too far for bus under TWM's distance rule (~{distance_km:,.0f} km)."
-_BUS_UNASSESSABLE_REASON = "Bus cannot be assessed because this route has no resolved distance."
 _ROUTE_UNASSESSABLE_REASON = "This mode cannot be assessed because this route has no resolved distance."
 
 

@@ -246,6 +246,7 @@ def test_gateway_leg_adds_ruled_out_reasons_and_long_journey_note():
     ]
     days = [_day(1, [_travel("Bhubaneswar", "Sumerpur", hubs=hubs)])]
     options = {option["mode"]: option for option in _enrich(days)["days"][0]["timeline"][0]["transport_options"]}
+    assert options["flight"]["long_journey_note"] is None
     assert options["train"]["feasible"] is True
     assert options["train"]["direct"] is False
     assert options["train"]["long_journey_note"] == "Roughly 36 h long-haul journey before the local transfer."
