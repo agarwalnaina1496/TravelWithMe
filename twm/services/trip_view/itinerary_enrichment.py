@@ -40,6 +40,9 @@ from .trip_dates import TripDates
 logger = logging.getLogger(__name__)
 
 DateSource = str  # "search_pref" | "trip_dates" | "none"
+_LONG_JOURNEY_AVG_SPEED_KMH = 45.0
+_LONG_JOURNEY_THRESHOLD_HOURS = 20
+_LONG_JOURNEY_ROUND_TO_HOURS = 6
 
 
 def _search_pref(prefs: dict[str, Any], bucket: str, target_id: str) -> Optional[dict[str, Any]]:
@@ -166,12 +169,49 @@ def _attach_hub_feasibility(
     return {**item, "transport_options": transport_options}
 
 
-def _modes_from_assessment(origin: str, destination: str, long_haul_distance_km: Any = None) -> set[str]:
+def _assessment_by_mode(origin: str, destination: str, long_haul_distance_km: Any = None) -> dict[str, Any]:
     return {
-        entry.mode
+        entry.mode: entry
         for entry in assess_trip_feasibility(origin, destination, long_haul_distance_km).modes
-        if entry.mode != "drive"
     }
+
+
+def _long_journey_note(distance_km: Any) -> str | None:
+    if distance_km is None:
+        return None
+    hours = float(distance_km) / _LONG_JOURNEY_AVG_SPEED_KMH
+    if hours < _LONG_JOURNEY_THRESHOLD_HOURS:
+        return None
+    rounded_hours = int(round(hours / _LONG_JOURNEY_ROUND_TO_HOURS) * _LONG_JOURNEY_ROUND_TO_HOURS)
+    rounded_hours = max(_LONG_JOURNEY_THRESHOLD_HOURS, rounded_hours)
+    return f"Roughly {rounded_hours} h long-haul journey before the local transfer."
+
+
+def _long_journey_note_for_mode(mode: str, hubs: list[dict[str, Any]]) -> str | None:
+    if mode not in {"train", "bus"}:
+        return None
+    return _long_journey_note(
+        max((hub.get("long_haul_distance_km") or 0 for hub in hubs), default=0) or None
+    )
+
+
+def _option_from_assessment(mode: str, entry: Any, *, direct: bool, hubs: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "mode": mode,
+        "direct": direct,
+        "feasible": entry.status == "feasible",
+        "ruled_out_reason": entry.reason if entry.status != "feasible" else None,
+        "long_journey_note": _long_journey_note_for_mode(mode, hubs),
+        "hubs": hubs,
+    }
+
+
+def _first_not_feasible_reason(assessments: list[dict[str, Any]], mode: str) -> str | None:
+    for assessment in assessments:
+        entry = assessment.get(mode)
+        if entry and entry.status != "feasible":
+            return entry.reason
+    return None
 
 
 def _resolve_transport_options(
@@ -183,29 +223,28 @@ def _resolve_transport_options(
     requested_access_gaps: set[Any] | None = None,
     suppressed_access_gaps: set[Any] | None = None,
 ) -> list[dict[str, Any]]:
-    direct_modes = _modes_from_assessment(from_city, to_city)
+    direct_assessment = _assessment_by_mode(from_city, to_city)
     options: list[dict[str, Any]] = []
-    for mode in ("flight", "train", "bus"):
-        access_gap = "air" if mode == "flight" else "rail"
+    for mode in ("flight", "train", "bus", "drive"):
+        # Drive is surfaced only so UI can explain why it is not bookable in
+        # the chooser; it never maps to a trusted-action partner request.
+        access_gap = "air" if mode == "flight" else "rail" if mode in ("train", "bus") else None
         mode_hubs = [hub for hub in hubs if hub.get("access_gap") == access_gap]
         if not mode_hubs:
             if suppressed_access_gaps and access_gap in suppressed_access_gaps:
                 continue
-            if requested_access_gaps and access_gap in requested_access_gaps:
-                options.append({"mode": mode, "direct": False, "hubs": []})
-                continue
-            if mode == "train" and access_gap not in (requested_access_gaps or set()):
-                options.append({"mode": mode, "direct": True, "hubs": []})
-                continue
-            if mode in direct_modes:
-                options.append({"mode": mode, "direct": True, "hubs": []})
+            entry = direct_assessment[mode]
+            options.append(_option_from_assessment(mode, entry, direct=True, hubs=[]))
             continue
         resolved_hubs: list[dict[str, Any]] = []
+        hub_assessments = []
         for hub in mode_hubs:
             origin, destination = _hub_long_haul_endpoints(
                 from_city, to_city, from_hubless, to_hubless, hub
             )
-            modes = _modes_from_assessment(origin, destination, hub.get("long_haul_distance_km"))
+            assessment = _assessment_by_mode(origin, destination, hub.get("long_haul_distance_km"))
+            hub_assessments.append(assessment)
+            entry = assessment[mode]
             resolved_hubs.append({
                 "city": hub.get("city"),
                 "access_gap": hub.get("access_gap"),
@@ -214,9 +253,17 @@ def _resolve_transport_options(
                 "last_mile_duration_minutes": hub.get("last_mile_duration_minutes"),
                 "distance_km": hub.get("long_haul_distance_km"),
                 "long_haul_distance_km": hub.get("long_haul_distance_km"),
-                "feasible": mode in modes,
+                "feasible": entry.status == "feasible",
             })
-        options.append({"mode": mode, "direct": False, "hubs": resolved_hubs})
+        feasible = any(hub.get("feasible") for hub in resolved_hubs)
+        options.append({
+            "mode": mode,
+            "direct": False,
+            "feasible": feasible,
+            "ruled_out_reason": None if feasible else _first_not_feasible_reason(hub_assessments, mode),
+            "long_journey_note": _long_journey_note_for_mode(mode, mode_hubs),
+            "hubs": resolved_hubs,
+        })
     return options
 
 
@@ -233,6 +280,10 @@ def _log_hub_resolution(
             "resolution": "direct" if option.get("direct") else "via_hub",
             "candidate_hub_count": len(option.get("hubs") or []),
             "feasible_hub_count": len([hub for hub in option.get("hubs") or [] if hub.get("feasible")]),
+            "feasible_count": 1 if option.get("feasible") else 0,
+            "not_feasible_count": 0 if option.get("feasible") else 1,
+            "ruled_out_reasons": [option["ruled_out_reason"]] if option.get("ruled_out_reason") else [],
+            "long_journey_note_present": bool(option.get("long_journey_note")),
         }
         for option in transport_options
     }
@@ -250,6 +301,12 @@ def _log_hub_resolution(
         "to_city": item.get("to_city"),
         "candidate_hub_count": candidate_count,
         "suppressed_hub_count": suppressed_count,
+        "rail_hub_count": sum(
+            1
+            for option in transport_options
+            for hub in option.get("hubs") or []
+            if hub.get("access_gap") == "rail"
+        ),
         "mode_resolution_counts": mode_counts,
     }
     if unresolved_modes:

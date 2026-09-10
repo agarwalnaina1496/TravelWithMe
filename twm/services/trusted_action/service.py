@@ -150,8 +150,9 @@ class TrustedActionService:
     ) -> TripFeasibilityAssessment:
         """Deterministic, synchronous route-mode feasibility assessment
         (TWM-195 root fix -- no classifier/LLM/agent call of any kind).
-        Always returns a real ``TripFeasibilityAssessment``; ``modes`` is
-        empty when the route could not be confidently assessed.
+        Always returns a real ``TripFeasibilityAssessment`` with an entry
+        for each supported transport mode; unassessable or excluded modes
+        are returned as ``not_feasible`` with a traveler-safe reason.
 
         ``long_haul_distance_km`` (TWM-215): Atlas's gateway-hub ballpark,
         used only as a fallback when a city cannot be resolved."""
@@ -166,23 +167,24 @@ class TrustedActionService:
         )
         assessment = assess_trip_feasibility(origin, destination, long_haul_distance_km)
         returned_modes = [entry.mode for entry in assessment.modes]
-        if returned_modes:
-            self.logger.info(
-                "Resolved trip-feasibility assessment.",
-                event="be.trusted_action.feasibility.resolved",
-                source="application",
-                trip_id=str(trip_id),
-                returned_mode_count=len(returned_modes),
-                returned_modes=returned_modes,
-            )
-        else:
-            self.logger.warning(
-                "Trip-feasibility assessment resolved with no route-valid "
-                "modes (cannot-assess or genuinely no bookable modes).",
-                event="be.trusted_action.feasibility.empty",
-                source="application",
-                trip_id=str(trip_id),
-            )
+        feasible_modes = [entry.mode for entry in assessment.modes if entry.status == "feasible"]
+        not_feasible_modes = [entry.mode for entry in assessment.modes if entry.status == "not_feasible"]
+        ruled_out_reasons = {
+            entry.mode: entry.reason for entry in assessment.modes if entry.status == "not_feasible"
+        }
+        self.logger.info(
+            "Resolved trip-feasibility assessment.",
+            event="be.trusted_action.feasibility.resolved",
+            source="application",
+            trip_id=str(trip_id),
+            returned_mode_count=len(returned_modes),
+            returned_modes=returned_modes,
+            feasible_mode_count=len(feasible_modes),
+            feasible_modes=feasible_modes,
+            not_feasible_mode_count=len(not_feasible_modes),
+            not_feasible_modes=not_feasible_modes,
+            ruled_out_reasons=ruled_out_reasons,
+        )
         return assessment
 
     def _log_resolved(self, trip_id: UUID, action: TrustedAction) -> None:

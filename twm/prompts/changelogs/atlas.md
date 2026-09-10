@@ -1,5 +1,14 @@
 # Atlas prompt changelog
 
+## Atlas 1.17.0 — 2026-09-10
+
+- **Rail access-gap tightening (TWM-230 Increment 1).** Atlas now treats an
+  endpoint town with no station within roughly 10 km / 20 minutes as a rail
+  access gap and emits `access_gap: "rail"` railhead hubs rather than letting
+  downstream UI call the route rail-direct. Locks examples such as
+  Sumerpur/Falna, Dharamshala/Pathankot, and Mount Abu/Abu Road while keeping
+  towns with nearby stations hubless for rail.
+
 ## Atlas 1.16.0 — 2026-09-10
 
 - **Per-mode access gaps (TWM-230).** Candidate gateway hubs now carry
