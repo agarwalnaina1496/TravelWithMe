@@ -124,6 +124,11 @@ def resolve_partner_target(
             return_date=request.return_date,
             trip_shape=request.trip_shape,
             traveler_count=request.traveler_count,
+            party=(
+                (request.traveler_party.adults, request.traveler_party.children, request.traveler_party.infants)
+                if request.traveler_party is not None
+                else None
+            ),
             partner=partner,
             settings=settings,
         ),
@@ -154,6 +159,21 @@ def _ixigo_destination_slug(destination: str) -> str:
     return slug.strip("-") or "stay"
 
 
+Party = tuple[int, int, int]  # (adults, children, infants)
+
+
+def _occupancy(party: Optional[Party], traveler_count: Optional[int]) -> Optional[Party]:
+    """The party to fill an occupancy form with. Prefer the structured
+    ``party`` when the caller has one; otherwise fall back to the single
+    total as an all-adults party. ``None`` when neither is known.
+    """
+    if party is not None:
+        return party
+    if traveler_count is not None:
+        return (traveler_count, 0, 0)
+    return None
+
+
 def build_query_params(
     *,
     domain: TrustedActionDomain,
@@ -163,13 +183,20 @@ def build_query_params(
     return_date: Optional[date],
     trip_shape: Optional[TrustedActionTripType],
     traveler_count: Optional[int],
+    party: Optional[Party] = None,
     partner: PartnerName,
     settings: TrustedActionSettings,
 ) -> dict[str, str]:
     """Pure value -> query-parameter mapping, deliberately independent of
     ``TrustedActionRequest`` (plain primitives in, plain dict out) so it can
     be unit-tested directly without instantiating a request schema model,
-    per this repo's rule against schema-instantiating unit tests."""
+    per this repo's rule against schema-instantiating unit tests.
+
+    ``party`` is ``(adults, children, infants)``; ``traveler_count`` is the
+    single-total fallback for callers without a structured party.
+    """
+
+    occupancy = _occupancy(party, traveler_count)
 
     if partner == "aviasales":
         return _aviasales_query_params(
@@ -178,7 +205,7 @@ def build_query_params(
             departure_date=departure_date,
             return_date=return_date,
             trip_shape=trip_shape,
-            traveler_count=traveler_count,
+            occupancy=occupancy,
             settings=settings,
         )
     if partner == "ixigo" and domain == "stay":
@@ -188,14 +215,14 @@ def build_query_params(
             destination=destination,
             departure_date=departure_date,
             return_date=return_date,
-            traveler_count=traveler_count,
+            occupancy=occupancy,
         )
     if partner == "agoda" and domain == "stay":
         return _agoda_stay_query_params(
             destination=destination,
             departure_date=departure_date,
             return_date=return_date,
-            traveler_count=traveler_count,
+            occupancy=occupancy,
         )
 
     params: dict[str, str] = {"domain": domain}
@@ -219,7 +246,7 @@ def _booking_stay_query_params(
     destination: Optional[str],
     departure_date: Optional[date],
     return_date: Optional[date],
-    traveler_count: Optional[int],
+    occupancy: Optional[Party],
 ) -> dict[str, str]:
     params: dict[str, str] = {
         "ss": destination or "",
@@ -232,8 +259,14 @@ def _booking_stay_query_params(
         params["checkin"] = departure_date.isoformat()
     if return_date is not None:
         params["checkout"] = return_date.isoformat()
-    if traveler_count is not None:
-        params["group_adults"] = str(traveler_count)
+    if occupancy is not None:
+        adults, children, infants = occupancy
+        # Booking.com hotel search has no infant concept — a lap infant is
+        # not a declared occupant. Adults + children only. Booking.com
+        # accepts group_children without per-child age params (it prompts
+        # for ages on the results page); we never guess an age.
+        params["group_adults"] = str(max(1, adults))
+        params["group_children"] = str(children + infants)
     return params
 
 
@@ -242,7 +275,7 @@ def _agoda_stay_query_params(
     destination: Optional[str],
     departure_date: Optional[date],
     return_date: Optional[date],
-    traveler_count: Optional[int],
+    occupancy: Optional[Party],
 ) -> dict[str, str]:
     metadata = _agoda_destination_metadata(destination)
     if metadata is None or "city" not in metadata:
@@ -259,8 +292,10 @@ def _agoda_stay_query_params(
         params["checkIn"] = departure_date.isoformat()
     if return_date is not None:
         params["checkOut"] = return_date.isoformat()
-    if traveler_count is not None:
-        params["adults"] = str(traveler_count)
+    if occupancy is not None:
+        adults, children, infants = occupancy
+        params["adults"] = str(max(1, adults))
+        params["children"] = str(children + infants)
     return params
 
 
@@ -321,7 +356,7 @@ def _aviasales_query_params(
     departure_date: Optional[date],
     return_date: Optional[date],
     trip_shape: Optional[TrustedActionTripType],
-    traveler_count: Optional[int],
+    occupancy: Optional[Party],
     settings: TrustedActionSettings,
 ) -> dict[str, str]:
     """Aviasales' documented search-form query shape (see module docstring
@@ -356,16 +391,15 @@ def _aviasales_query_params(
     # explicit round_trip ever sends one_way=false.
     params["one_way"] = "false" if trip_shape == "round_trip" else "true"
 
-    # TrustedActionRequest.traveler_count is a single total, not an
-    # adults/children/infants breakdown (no richer per-type contract exists
-    # yet — mirrors twm/schemas/flight_search.py's own documented
-    # limitation) — mapped to Aviasales' adults param with children/infants
-    # explicitly zeroed rather than omitted, since Aviasales' search form
-    # treats a missing passenger param as an ambiguous default.
-    if traveler_count is not None:
-        params["adults"] = str(traveler_count)
-        params["children"] = "0"
-        params["infants"] = "0"
+    # Aviasales' search form treats a missing passenger param as an ambiguous
+    # default, so all three are always sent when the party is known. A caller
+    # with only a single total (no structured party) lands here as an
+    # all-adults occupancy.
+    if occupancy is not None:
+        adults, children, infants = occupancy
+        params["adults"] = str(max(1, adults))
+        params["children"] = str(children)
+        params["infants"] = str(infants)
 
     # Economy-class default (documented judgement call, not researched
     # further this session) and English locale, matching the rest of this

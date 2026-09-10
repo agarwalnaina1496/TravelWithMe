@@ -5,6 +5,11 @@ open drawer's worth of targets resolved in a single request. No new business
 logic: every target is turned into the same ``TrustedActionRequest`` the
 single-action endpoint would receive, resolved through the identical path,
 and collected. One target's non-``resolved`` outcome never fails the batch.
+
+The structured ``party`` is passed straight through to each request (as both
+``traveler_party`` and, for callers that still read a single total,
+``traveler_count``) so a provider deep link can fill adults / children /
+infants separately.
 """
 
 from uuid import UUID
@@ -28,6 +33,7 @@ def _request_for_target(
         "return_date": payload.return_date,
         "trip_shape": payload.trip_shape,
         "traveler_count": payload.party.total,
+        "traveler_party": payload.party,
     }
     if target.kind == "mode":
         return TrustedActionRequest(

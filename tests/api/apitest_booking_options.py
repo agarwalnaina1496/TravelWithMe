@@ -106,11 +106,13 @@ def test_transport_batch_resolves_every_target_in_one_request(api_client: TestCl
     assert all(r["action"]["action_type"] == "SEARCH_REDIRECT" for r in results)
 
 
-def test_party_total_flows_through_as_the_resolved_traveler_count(api_client: TestClient):
+def test_structured_party_fills_the_flight_occupancy_fields_separately(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     trip_id = _create_trip(api_client)
 
+    # party = 2 adults, 1 child, 0 infants — the deep link must keep them
+    # distinct, not fold the child into the adult count.
     response = api_client.post(
         f"/trips/{trip_id}/booking-options",
         json={**TRANSPORT_BODY, "targets": [{"kind": "mode", "value": "flight"}]},
@@ -118,8 +120,34 @@ def test_party_total_flows_through_as_the_resolved_traveler_count(api_client: Te
 
     assert response.status_code == 200
     [flight] = response.json()["results"]
-    assert flight["action"]["traveler_count"] == 3
-    assert "adults=3" in flight["action"]["target"]["target_url"]
+    url = flight["action"]["target"]["target_url"]
+    assert "adults=2" in url and "children=1" in url and "infants=0" in url
+    assert "adults=3" not in url
+    assert flight["action"]["traveler_count"] == 3  # single-total fallback still carried
+
+
+def test_structured_party_fills_stay_group_adults_and_group_children(api_client: TestClient):
+    repository = MemoryTripRepository()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/booking-options",
+        json={
+            "domain": "stay",
+            "destination": "Goa",
+            "departure_date": "2026-09-10",
+            "return_date": "2026-09-12",
+            "trip_shape": "round_trip",
+            "party": {"adults": 2, "children": 1, "infants": 0},
+            "targets": [{"kind": "partner", "value": "booking_com"}],
+        },
+    )
+
+    assert response.status_code == 200
+    [stay] = response.json()["results"]
+    url = stay["action"]["target"]["target_url"]
+    assert "group_adults=2" in url and "group_children=1" in url
 
 
 def test_one_target_failing_does_not_fail_the_batch(api_client: TestClient):

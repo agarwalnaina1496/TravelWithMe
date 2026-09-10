@@ -87,6 +87,7 @@ class TrustedActionService:
                 return_date=request.return_date,
                 trip_shape=request.trip_shape,
                 traveler_count=request.traveler_count,
+                traveler_party=request.traveler_party,
                 generated_at=generated_at,
             )
             self._log_resolved(trip_id, action)
@@ -134,6 +135,7 @@ class TrustedActionService:
             return_date=request.return_date,
             trip_shape=request.trip_shape,
             traveler_count=request.traveler_count,
+            traveler_party=request.traveler_party,
             generated_at=generated_at,
         )
         self._log_resolved(trip_id, action)
