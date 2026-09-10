@@ -1,5 +1,18 @@
 # Scout prompt changelog
 
+## Scout 1.11.0 — 2026-09-09
+
+- **`travel_dates` recorded in ISO form (TWM-227 follow-up).** When the
+  traveler names a specific date, date range, or month, Scout now records it
+  under `travel_dates` in plain ISO (`2026-11-03`, `2026-11-03 to
+  2026-11-07`, `2026-11`) with ordinals, articles, and filler dropped — so
+  downstream ("What we know so far", the trip hero, the booking drawers, the itinerary
+  day dates) reads one consistent form instead of re-parsing free prose. A
+  day+month with no year is recorded bare (`3 November`) — no year is
+  invented. Genuinely non-specific timing (a season, "flexible") and any
+  firm return-timing constraint stated alongside the dates are still kept as
+  the traveler said them.
+
 ## Scout 1.10.0 — 2026-08-21
 
 - Removes every line describing what the UI or Backend does — the prompt

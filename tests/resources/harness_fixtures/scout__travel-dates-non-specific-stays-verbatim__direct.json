@@ -1,0 +1,8 @@
+{
+  "agent": "scout",
+  "case_id": "travel-dates-non-specific-stays-verbatim",
+  "execution_path": "direct",
+  "prompt_version": "1.11.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"message\": \"\", \"state_delta\": {\"trip_context\": {\"destination_region\": \"Kerala\", \"num_travelers\": \"the two of us\", \"travel_dates\": \"sometime in spring\"}}, \"intent\": \"matcher\"}"
+}

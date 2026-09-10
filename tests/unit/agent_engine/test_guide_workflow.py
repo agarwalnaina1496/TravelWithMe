@@ -27,6 +27,7 @@ def test_guide_evaluation_corpus_covers_incremental_planning() -> None:
         "missing-dates-start",
         "missing-budget-start",
         "all-fixed-inputs-known-start",
+        "dates-answer-recorded-in-iso",
     }
     assert cases_by_id["anything-else-answered-generates-plan"]["invariants"] == {
         "trip_duration": 3,
@@ -36,6 +37,8 @@ def test_guide_evaluation_corpus_covers_incremental_planning() -> None:
         "requires_day_pace": True,
         "no_intermediate_places_only_state": True,
     }
+    # A prose date answer is recorded in plain ISO form (TWM-227 follow-up).
+    assert cases_by_id["dates-answer-recorded-in-iso"]["invariants"]["travel_dates"] == "2026-11-03"
 
 
 def test_guide_evaluation_corpus_covers_missing_duration_clarification() -> None:

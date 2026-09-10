@@ -2,7 +2,7 @@
   "agent": "scout",
   "case_id": "extracts-fixed-shared-keys-verbatim",
   "execution_path": "direct",
-  "prompt_version": "1.8.0",
+  "prompt_version": "1.11.0",
   "recorded_by": "seed-placeholder",
-  "raw_output": "{\"message\": null, \"state_delta\": {\"trip_context\": {\"origin_city\": \"Delhi\", \"num_travelers\": \"me and my partner\", \"trip_duration\": 5, \"travel_dates\": \"sometime in October\", \"budget\": \"flexible\"}}, \"intent\": \"matcher\"}"
+  "raw_output": "{\"message\": null, \"state_delta\": {\"trip_context\": {\"origin_city\": \"Delhi\", \"num_travelers\": \"me and my partner\", \"trip_duration\": 5, \"travel_dates\": \"October\", \"budget\": \"flexible\"}}, \"intent\": \"matcher\"}"
 }

@@ -142,11 +142,13 @@ def _scout_preserves_trip_context(
 def _scout_fixed_keys_present_verbatim(
     case: EvaluationCase, response: dict[str, Any], expected: dict[str, Any]
 ) -> None:
+    # The four loose keys are kept verbatim; `travel_dates` is normalised to a
+    # plain calendar form when the traveler named specific dates or a month.
     delta = response.get("state_delta", {}).get("trip_context", {})
     for key, value in expected.items():
         if delta.get(key) != value:
             raise RubricFailure(
-                f"expected fixed key {key!r} to equal {value!r} verbatim, got {delta.get(key)!r}"
+                f"expected fixed key {key!r} to equal {value!r}, got {delta.get(key)!r}"
             )
 
 
@@ -282,6 +284,14 @@ def _meridian_origin_gate_not_blocked(
         )
 
 
+def _meridian_travel_dates(
+    case: EvaluationCase, response: dict[str, Any], expected: str
+) -> None:
+    actual = response.get("state_delta", {}).get("trip_context", {}).get("travel_dates")
+    if actual != expected:
+        raise RubricFailure(f"expected travel_dates {expected!r}, got {actual!r}")
+
+
 def _meridian_origin_city_single_valued(
     case: EvaluationCase, response: dict[str, Any], expected: bool
 ) -> None:
@@ -358,6 +368,14 @@ def _guide_trip_duration(
     actual = _guide_effective_trip_context(case, response).get("trip_duration")
     if actual != expected:
         raise RubricFailure(f"expected trip_duration {expected!r}, got {actual!r}")
+
+
+def _guide_travel_dates(
+    case: EvaluationCase, response: dict[str, Any], expected: str
+) -> None:
+    actual = response.get("state_delta", {}).get("trip_context", {}).get("travel_dates")
+    if actual != expected:
+        raise RubricFailure(f"expected travel_dates {expected!r}, got {actual!r}")
 
 
 def _guide_day_plan_length(
@@ -953,12 +971,14 @@ _CHECKS: dict[str, dict[str, CheckFn]] = {
         "reject_agent_written_selected_option": _meridian_reject_written_selected_option,
         "origin_gate_not_blocked": _meridian_origin_gate_not_blocked,
         "origin_city_single_valued": _meridian_origin_city_single_valued,
+        "travel_dates": _meridian_travel_dates,
     },
     "guide": {
         "awaiting": _guide_awaiting,
         "places_omitted_from_delta": _guide_places_omitted_from_delta,
         "destinations": _guide_destinations,
         "trip_duration": _guide_trip_duration,
+        "travel_dates": _guide_travel_dates,
         "day_plan_length": _guide_day_plan_length,
         "must_exclude_places": _guide_must_exclude_places,
         "must_include_exclusions": _guide_must_include_exclusions,

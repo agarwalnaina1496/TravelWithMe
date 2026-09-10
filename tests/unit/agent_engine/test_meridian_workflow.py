@@ -32,7 +32,9 @@ def test_meridian_evaluation_corpus_covers_status_and_state_ownership() -> None:
         "circuit-no-return-timing-constraint-unaffected",
         "multi-origin-meeting-point-success",
         "multi-origin-does-not-reask-origin-clarification",
+        "dates-answer-recorded-in-iso",
     }
+    assert cases_by_id["dates-answer-recorded-in-iso"]["invariants"]["travel_dates"] == "2026-12"
     assert cases_by_id["circuit-preference-clarification"]["invariants"] == {
         "status": "NEEDS_CLARIFICATION",
         "requires_awaiting_reason": True,

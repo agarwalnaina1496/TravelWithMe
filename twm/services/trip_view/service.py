@@ -41,13 +41,14 @@ from ...schemas.trip_view import (
     TripViewPlanDay,
     TripViewSummary,
 )
-from .trip_dates import compose_trip_dates
+from .trip_dates import compose_trip_dates, recap_label
 
+_TRAVEL_DATES_KEY = "travel_dates"
 _RECAP_LABELS = {
     "origin_city": "Coming from",
     "num_travelers": "Travellers",
     "trip_duration": "Trip length",
-    "travel_dates": "When",
+    _TRAVEL_DATES_KEY: "When",
     "budget": "Budget",
     DESTINATIONS_KEY: "Destination",
 }
@@ -148,9 +149,13 @@ class TripViewService:
         for key in _RECAP_KEYS:
             if key not in trip_context or trip_context[key] in (None, "", []):
                 continue
-            items.append(
-                ContextRecapItem(key=key, label=_RECAP_LABELS[key], value=_coerce_display(trip_context[key]))
+            # The "When" row shows a composed label, so it stays readable
+            # whether `travel_dates` was stored as ISO or the traveler's prose.
+            value = (
+                (key == _TRAVEL_DATES_KEY and recap_label(trip_context))
+                or _coerce_display(trip_context[key])
             )
+            items.append(ContextRecapItem(key=key, label=_RECAP_LABELS[key], value=value))
         return items
 
     def _compose_plan(self, planner_state: dict[str, Any]) -> Optional[TripViewPlan]:

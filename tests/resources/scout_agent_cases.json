@@ -84,7 +84,7 @@
   },
   {
     "id": "extracts-fixed-shared-keys-verbatim",
-    "scenario": "Traveler gives origin, party size, duration, tentative dates, and a flexible budget in one message",
+    "scenario": "Traveler gives origin, party size, duration, a month, and a flexible budget in one message",
     "input": {
       "trip_state": {
         "stage": "new",
@@ -100,10 +100,29 @@
         "origin_city": "Delhi",
         "num_travelers": "me and my partner",
         "trip_duration": 5,
-        "travel_dates": "sometime in October",
+        "travel_dates": "October",
         "budget": "flexible"
       },
       "must_not_invent_synonym_keys": ["origin", "travelers", "party_size", "dates"]
+    }
+  },
+  {
+    "id": "travel-dates-non-specific-stays-verbatim",
+    "scenario": "Timing is a season with no specific dates — kept as the traveler said it",
+    "input": {
+      "trip_state": {
+        "stage": "new",
+        "trip_context": {},
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        }
+      },
+      "message": "Thinking Kerala, the two of us, sometime in spring — flexible on the exact dates."
+    },
+    "invariants": {
+      "fixed_keys_present_verbatim": {
+        "travel_dates": "sometime in spring"
+      }
     }
   }
 ]
