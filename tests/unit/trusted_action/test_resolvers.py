@@ -240,6 +240,7 @@ def _request_like(
     return_date=None,
     trip_shape="one_way",
     traveler_count=None,
+    traveler_party=None,
 ):
     class RequestLike:
         pass
@@ -252,6 +253,7 @@ def _request_like(
     request.return_date = return_date
     request.trip_shape = trip_shape
     request.traveler_count = traveler_count
+    request.traveler_party = traveler_party
     return request
 
 

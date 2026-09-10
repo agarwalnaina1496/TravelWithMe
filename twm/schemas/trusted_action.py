@@ -110,6 +110,7 @@ from urllib.parse import quote, urlencode
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field, model_validator
 
 from .atlas import AtlasReference, VerificationStatus
+from .trip_context import TravelerComposition
 
 TrustedActionText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -346,6 +347,11 @@ class TrustedAction(BaseModel):
     return_date: Optional[date] = None
     trip_shape: Optional[TrustedActionTripType] = None
     traveler_count: Optional[int] = Field(default=None, ge=1)
+    # The structured party, when the caller has one. ``traveler_count`` stays
+    # the single-total fallback for callers that don't; a provider deep link
+    # prefers this so it can fill adults / children / infants separately
+    # rather than collapsing everyone into the adult count.
+    traveler_party: Optional[TravelerComposition] = None
 
     generated_at: datetime
     expires_at: Optional[datetime] = None
@@ -450,6 +456,11 @@ class TrustedActionRequest(BaseModel):
     # requires a return_date.
     trip_shape: TrustedActionTripType = "one_way"
     traveler_count: Optional[int] = Field(default=None, ge=1)
+    # The structured party (adults / children / infants), when the caller has
+    # one. ``traveler_count`` remains the single-total fallback; provider deep
+    # links use this to fill the per-type occupancy fields instead of folding
+    # everyone into the adult count.
+    traveler_party: Optional[TravelerComposition] = None
     # A caller preference only — final partner selection for a resolved
     # action is still validated against _ALLOWED_PARTNERS_BY_DOMAIN.
     preferred_partner: Optional[PartnerName] = None
