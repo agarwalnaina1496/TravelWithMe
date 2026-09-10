@@ -145,14 +145,19 @@ def _attach_hub_feasibility(
     from_city, to_city = item["from_city"], item["to_city"]
     from_hubless = resolve_airport(from_city) is None
     to_hubless = resolve_airport(to_city) is None
-    candidate_hubs = [
-        hub for hub in (hubs or [])
-        if str(hub.get("city", "")).strip().casefold() not in itinerary_locations
-    ]
+    suppressed_hubs = []
+    candidate_hubs = []
+    for hub in hubs or []:
+        if str(hub.get("city", "")).strip().casefold() in itinerary_locations:
+            suppressed_hubs.append(hub)
+            continue
+        candidate_hubs.append(hub)
     suppressed_count = len(hubs or []) - len(candidate_hubs)
-    requested_access_gaps = {hub.get("access_gap") for hub in (hubs or [])}
+    requested_access_gaps = {hub.get("access_gap") for hub in candidate_hubs}
+    suppressed_access_gaps = {hub.get("access_gap") for hub in suppressed_hubs}
     transport_options = _resolve_transport_options(
-        from_city, to_city, from_hubless, to_hubless, candidate_hubs, requested_access_gaps
+        from_city, to_city, from_hubless, to_hubless, candidate_hubs,
+        requested_access_gaps, suppressed_access_gaps
     )
     _log_hub_resolution(
         trip_id, item, len(hubs or []), transport_options, suppressed_count, logger
@@ -176,6 +181,7 @@ def _resolve_transport_options(
     to_hubless: bool,
     hubs: list[dict[str, Any]],
     requested_access_gaps: set[Any] | None = None,
+    suppressed_access_gaps: set[Any] | None = None,
 ) -> list[dict[str, Any]]:
     direct_modes = _modes_from_assessment(from_city, to_city)
     options: list[dict[str, Any]] = []
@@ -183,6 +189,8 @@ def _resolve_transport_options(
         access_gap = "air" if mode == "flight" else "rail"
         mode_hubs = [hub for hub in hubs if hub.get("access_gap") == access_gap]
         if not mode_hubs:
+            if suppressed_access_gaps and access_gap in suppressed_access_gaps:
+                continue
             if requested_access_gaps and access_gap in requested_access_gaps:
                 options.append({"mode": mode, "direct": False, "hubs": []})
                 continue

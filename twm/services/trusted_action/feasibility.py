@@ -161,6 +161,7 @@ def assess_trip_feasibility(
         if long_haul_distance_km is None or long_haul_distance_km <= 0:
             return TripFeasibilityAssessment(modes=[])
         distance_km = float(long_haul_distance_km)
+    assert distance_km is not None
 
     modes: list[ModeFeasibility] = []
     if flight_assessable and distance_km >= _FLIGHT_INFEASIBLE_BELOW_KM:

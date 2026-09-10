@@ -217,6 +217,19 @@ def test_gateway_leg_suppresses_hub_that_is_an_itinerary_city():
     assert [hub["city"] for hub in flight["hubs"]] == ["Udaipur"]
 
 
+def test_gateway_leg_drops_mode_when_all_hubs_for_access_gap_are_suppressed():
+    hubs = [
+        {"city": "Ahmedabad", "side": "destination", "access_gap": "air", "last_mile_km": 220,
+         "last_mile_duration_minutes": 300, "long_haul_distance_km": 800},
+    ]
+    days = [
+        _day(1, [_travel("Bengaluru", "Sumerpur", hubs=hubs)], primary="Sumerpur"),
+        _day(2, [_travel("Sumerpur", "Ahmedabad")], primary="Ahmedabad"),
+    ]
+    options = _enrich(days)["days"][0]["timeline"][0]["transport_options"]
+    assert "flight" not in {option["mode"] for option in options}
+
+
 def test_hub_resolution_emits_a_structured_event_with_trip_id():
     logger, sink = _logger()
     _enrich([_day(1, [_travel("Bengaluru", "Sumerpur", hubs=_HUBS)])], logger=logger)
