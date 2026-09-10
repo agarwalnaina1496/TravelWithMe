@@ -659,7 +659,7 @@ def test_feasibility_endpoint_excludes_route_absurd_flight_for_a_short_hop(api_c
     body = response.json()
     modes = {mode["mode"]: mode for mode in body["modes"]}
     assert modes["flight"]["status"] == "not_feasible"
-    assert "Too short for flight" in modes["flight"]["reason"]
+    assert "Too short for a useful flight" in modes["flight"]["reason"]
     assert modes["train"]["status"] == "feasible"
     assert modes["bus"]["status"] == "feasible"
     assert modes["drive"]["status"] == "feasible"
@@ -683,7 +683,7 @@ def test_feasibility_endpoint_returns_not_feasible_modes_for_unknown_cities(
     assert set(modes) == {"flight", "train", "bus", "drive"}
     assert {mode["status"] for mode in modes.values()} == {"not_feasible"}
     assert {mode["reason"] for mode in modes.values()} == {
-        "This mode cannot be assessed because this route has no resolved distance."
+        "No reliable distance is available for this route yet."
     }
 
 
@@ -727,11 +727,11 @@ def test_feasibility_endpoint_uses_distance_fallback_for_an_unresolvable_gateway
     assert response.status_code == 200
     modes = {mode["mode"]: mode for mode in response.json()["modes"]}
     assert modes["flight"]["status"] == "not_feasible"
-    assert "no resolved airport" in modes["flight"]["reason"]
+    assert "No resolved airport" in modes["flight"]["reason"]
     assert modes["train"]["status"] == "feasible"
-    assert "approximate long-haul distance rules" in modes["train"]["reason"]
+    assert "rough distance" in modes["train"]["reason"]
     assert modes["bus"]["status"] == "feasible"
-    assert "approximate long-haul distance rules" in modes["bus"]["reason"]
+    assert "rough distance" in modes["bus"]["reason"]
     assert modes["drive"]["status"] == "feasible"  # 420km is within the drive cutoff
 
 
@@ -803,7 +803,7 @@ def test_feasibility_resolved_is_logged_with_returned_mode_names(api_client: Tes
     assert resolved["fields"]["returned_mode_count"] == 4
     assert resolved["fields"]["feasible_mode_count"] == 3
     assert resolved["fields"]["not_feasible_modes"] == ["flight"]
-    assert "Too short for flight" in resolved["fields"]["ruled_out_reasons"]["flight"]
+    assert "Too short for a useful flight" in resolved["fields"]["ruled_out_reasons"]["flight"]
     app.dependency_overrides.pop(get_logger, None)
 
 

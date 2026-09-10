@@ -176,6 +176,15 @@ def _assessment_by_mode(origin: str, destination: str, long_haul_distance_km: An
     }
 
 
+def _rough_hub_distance(hubs: list[dict[str, Any]]) -> float | None:
+    distances = [
+        float(distance)
+        for hub in hubs
+        if (distance := hub.get("long_haul_distance_km")) is not None and distance > 0
+    ]
+    return max(distances, default=None)
+
+
 def _long_journey_note(distance_km: Any) -> str | None:
     if distance_km is None:
         return None
@@ -224,6 +233,7 @@ def _resolve_transport_options(
     suppressed_access_gaps: set[Any] | None = None,
 ) -> list[dict[str, Any]]:
     direct_assessment = _assessment_by_mode(from_city, to_city)
+    rough_direct_assessment = _assessment_by_mode(from_city, to_city, _rough_hub_distance(hubs)) if hubs else {}
     options: list[dict[str, Any]] = []
     for mode in ("flight", "train", "bus", "drive"):
         # Drive is surfaced only so UI can explain why it is not bookable in
@@ -233,7 +243,7 @@ def _resolve_transport_options(
         if not mode_hubs:
             if suppressed_access_gaps and access_gap in suppressed_access_gaps:
                 continue
-            entry = direct_assessment[mode]
+            entry = rough_direct_assessment.get(mode, direct_assessment[mode]) if mode == "drive" else direct_assessment[mode]
             options.append(_option_from_assessment(mode, entry, direct=True, hubs=[]))
             continue
         resolved_hubs: list[dict[str, Any]] = []

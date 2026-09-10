@@ -72,28 +72,24 @@ _FLIGHT_INFEASIBLE_BELOW_KM = 150.0
 _DRIVE_INFEASIBLE_ABOVE_KM = 800.0
 _BUS_INFEASIBLE_ABOVE_KM = 1000.0
 
-_FLIGHT_INCLUDED_REASON = "Distance supports flight as a practical long-haul option (~{distance_km:,.0f} km)."
-_FLIGHT_SHORT_REASON = "Too short for flight under TWM's distance rule (~{distance_km:,.0f} km)."
-_DRIVE_INCLUDED_REASON = "Within TWM's single-trip drive distance rule (~{distance_km:,.0f} km)."
-_DRIVE_LONG_REASON = "Too far for a single-trip drive under TWM's distance rule (~{distance_km:,.0f} km)."
+_FLIGHT_INCLUDED_REASON = "Flight is practical for this distance (~{distance_km:,.0f} km)."
+_FLIGHT_SHORT_REASON = "Too short for a useful flight (~{distance_km:,.0f} km)."
+_DRIVE_INCLUDED_REASON = "Reasonable as a single road trip (~{distance_km:,.0f} km)."
+_DRIVE_LONG_REASON = "Too far for a single road trip (~{distance_km:,.0f} km)."
 _TRAIN_REASON = (
-    "Train remains feasible under TWM's deterministic distance rules (~{distance_km:,.0f} km); "
-    "route frequency is not checked here."
+    "Train is plausible for this distance (~{distance_km:,.0f} km); check timings before booking."
 )
 _TRAIN_FALLBACK_REASON = (
-    "Train remains feasible under TWM's approximate long-haul distance rules (~{distance_km:,.0f} km); "
-    "route frequency is not checked here."
+    "Train is plausible for this rough distance (~{distance_km:,.0f} km); check timings before booking."
 )
 _BUS_REASON = (
-    "Bus remains feasible under TWM's deterministic distance rules (~{distance_km:,.0f} km); "
-    "operator service is not checked here."
+    "Bus is plausible for this distance (~{distance_km:,.0f} km); check operators before booking."
 )
 _BUS_FALLBACK_REASON = (
-    "Bus remains feasible under TWM's approximate long-haul distance rules (~{distance_km:,.0f} km); "
-    "operator service is not checked here."
+    "Bus is plausible for this rough distance (~{distance_km:,.0f} km); check operators before booking."
 )
-_BUS_LONG_REASON = "Too far for bus under TWM's distance rule (~{distance_km:,.0f} km)."
-_ROUTE_UNASSESSABLE_REASON = "This mode cannot be assessed because this route has no resolved distance."
+_BUS_LONG_REASON = "Too far for a bus (~{distance_km:,.0f} km)."
+_ROUTE_UNASSESSABLE_REASON = "No reliable distance is available for this route yet."
 
 
 def _haversine_km(origin: tuple[float, float], destination: tuple[float, float]) -> float:
@@ -134,8 +130,7 @@ def _mode(
 
 
 _DISTANCE_FALLBACK_FLIGHT_EXCLUDED_REASON = (
-    "Flight cannot be assessed because this gateway has no resolved airport; "
-    "the rest uses an approximate long-haul distance (~{distance_km:,.0f} km)."
+    "No resolved airport for this gateway; using a rough long-haul distance (~{distance_km:,.0f} km) for other modes."
 )
 
 

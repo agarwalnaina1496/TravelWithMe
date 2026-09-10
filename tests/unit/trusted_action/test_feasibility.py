@@ -45,7 +45,7 @@ def test_short_hop_route_excludes_flight_but_includes_train_bus_drive():
     result = assess_trip_feasibility("Bhubaneswar", "Puri")
     modes = {entry.mode: entry for entry in result.modes}
     assert modes["flight"].status == "not_feasible"
-    assert "Too short for flight" in modes["flight"].reason
+    assert "Too short for a useful flight" in modes["flight"].reason
     assert {mode for mode, entry in modes.items() if entry.status == "feasible"} == {"train", "bus", "drive"}
 
 
@@ -85,7 +85,7 @@ def test_long_distance_route_excludes_drive_but_includes_flight():
     assert modes["flight"].status == "feasible"
     assert modes["train"].status == "feasible"
     assert modes["bus"].status == "not_feasible"
-    assert "Too far for bus" in modes["bus"].reason
+    assert "Too far for a bus" in modes["bus"].reason
 
 
 def test_returned_modes_carry_general_guidance_verification_and_computed_source():
@@ -156,4 +156,6 @@ def test_ruled_out_reasons_are_distance_based_without_service_claims():
     bus = next(entry for entry in result.modes if entry.mode == "bus")
     assert bus.status == "not_feasible"
     assert "km" in bus.reason
+    assert "Too far for a bus" in bus.reason
+    assert "TWM" not in bus.reason
     assert "no service" not in bus.reason.lower()
