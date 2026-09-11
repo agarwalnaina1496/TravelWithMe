@@ -255,6 +255,26 @@ def test_ixigo_train_uses_confirmed_station_code_path_for_exact_search():
     assert target.target_url == "https://www.ixigo.com/trains/search-pwa/from/NDLS/to/AGC/10-09-2026"
 
 
+def test_ixigo_train_resolves_stations_from_the_bundled_dataset_not_a_hardcoded_table():
+    # A hubless-town/railhead pair with no reason to be in any short curated
+    # list -- proves station resolution comes from the bundled ~8,700-row
+    # dataset (twm.services.station_resolution), not a hand-maintained
+    # place -> code table scoped to a handful of demo cities.
+    target = resolve_partner_target(
+        _request_like(
+            domain="train",
+            origin="Bhubaneswar",
+            destination="Pathankot",
+            departure_date=date(2026, 9, 10),
+        ),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "trains/search-pwa/from/BBS/to/PTK/10-09-2026"
+    assert target.query_params == {}
+
+
 def test_ixigo_train_degrades_when_station_or_date_is_missing():
     target = resolve_partner_target(
         _request_like(domain="train", origin="Delhi", destination="Unknown City"),

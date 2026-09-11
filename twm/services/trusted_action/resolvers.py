@@ -74,6 +74,7 @@ from ...schemas.trusted_action import (
     TrustedActionTripType,
 )
 from ..airport_resolution import resolve_airport
+from ..station_resolution import resolve_station
 from .settings import TrustedActionSettings
 
 # Generic, domain-scoped search path segment per partner. Aviasales,
@@ -173,28 +174,14 @@ def _ixigo_destination_slug(destination: str) -> str:
     return slug.strip("-") or "stay"
 
 
-_IXIGO_STATION_CODES: dict[str, str] = {
-    "agra": "AGC",
-    "alappuzha": "ALLP",
-    "alleppey": "ALLP",
-    "bangalore": "SBC",
-    "bengaluru": "SBC",
-    "bhubaneswar": "BBS",
-    "delhi": "NDLS",
-    "falna": "FA",
-    "jaipur": "JP",
-    "kochi": "ERS",
-    "mumbai": "BCT",
-    "new delhi": "NDLS",
-    "rishikesh": "RKSH",
-    "udaipur": "UDZ",
-}
-
-
 def _ixigo_station_code(place: Optional[str]) -> Optional[str]:
-    if not place:
-        return None
-    return _IXIGO_STATION_CODES.get(_ixigo_destination_slug(place).replace("-", " "))
+    """The IRCTC station code ixigo's train search-form deep link needs,
+    resolved from the bundled Indian Railways station dataset (TWM-230) --
+    never a hand-maintained place -> code table. Returns ``None`` (never a
+    guessed code) when the dataset cannot confidently place ``place``."""
+
+    resolution = resolve_station(place)
+    return resolution.code if resolution is not None else None
 
 
 def _redbus_city_slug(place: str) -> str:
