@@ -37,7 +37,7 @@ partner later is a contract change), all verified this session:
 - flight (SEARCH_REDIRECT alternative only, alongside the Aviasales
   CHECK_PRICES offer): aviasales (TWM-196 — same Travelpayouts-brand
   partner as the live-data path, replacing the earlier ixigo placeholder)
-- train: ixigo, irctc
+- train: ixigo
 - bus: redbus
 - stay: booking_com, agoda, ixigo
 
@@ -130,7 +130,6 @@ TrustedActionCapability = Literal[
 PartnerName = Literal[
     "aviasales",
     "ixigo",
-    "irctc",
     "redbus",
     "hotellook",
     "booking_com",
@@ -146,7 +145,6 @@ _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
     # documentation), not the marketing site's www.* domain.
     "aviasales": "search.aviasales.com",
     "ixigo": "www.ixigo.com",
-    "irctc": "www.irctc.co.in",
     "redbus": "www.redbus.in",
     "hotellook": "search.hotellook.com",
     "booking_com": "www.booking.com",
@@ -163,11 +161,11 @@ _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
 # TrustedAction.validate_domain_partner) — shown as a second, alternative
 # option alongside the live Aviasales PROVIDER offer (reached via
 # CHECK_PRICES's internal_capability, not this generic partner-target
-# mechanism), never as a PROVIDER itself. Train returns ixigo plus IRCTC;
-# bus returns redBus only.
+# mechanism), never as a PROVIDER itself. Train returns ixigo; bus returns
+# redBus only.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] = {
     "flight": frozenset({"aviasales"}),
-    "train": frozenset({"ixigo", "irctc"}),
+    "train": frozenset({"ixigo"}),
     "bus": frozenset({"redbus"}),
     "stay": frozenset({"booking_com", "agoda", "ixigo"}),
 }

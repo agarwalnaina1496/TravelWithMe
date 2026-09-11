@@ -266,29 +266,28 @@ def test_unsupported_preferred_partner_returns_typed_unsupported_partner(api_cli
     assert body["action"] is None
 
 
-def test_train_domain_allows_ixigo_and_irctc(api_client: TestClient):
+def test_train_domain_allows_ixigo(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_persistence(repository)
     trip_id = _create_trip(api_client)
 
-    for partner, expected_domain in (("ixigo", "www.ixigo.com"), ("irctc", "www.irctc.co.in")):
-        response = api_client.post(
-            f"/trips/{trip_id}/trusted-action",
-            json={
-                "action_type": "SEARCH_REDIRECT",
-                "domain": "train",
-                "origin": "Kochi",
-                "destination": "Alleppey",
-                "trip_shape": "one_way",
-                "departure_date": "2026-09-10",
-                "traveler_count": 1,
-                "preferred_partner": partner,
-            },
-        )
-        assert response.status_code == 200
-        body = response.json()
-        assert body["status"] == "resolved"
-        assert body["action"]["target"]["target_url"].startswith(f"https://{expected_domain}/")
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "train",
+            "origin": "Kochi",
+            "destination": "Alleppey",
+            "trip_shape": "one_way",
+            "departure_date": "2026-09-10",
+            "traveler_count": 1,
+            "preferred_partner": "ixigo",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "resolved"
+    assert body["action"]["target"]["target_url"].startswith("https://www.ixigo.com/")
 
 
 def test_bus_domain_allows_redbus(api_client: TestClient):

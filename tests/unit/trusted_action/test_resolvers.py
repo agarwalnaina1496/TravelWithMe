@@ -21,7 +21,7 @@ _NO_TRACKING = TrustedActionSettings(ixigo_affiliate_id=None, travelpayouts_mark
 _WITH_TRACKING = TrustedActionSettings(ixigo_affiliate_id="ek-123", travelpayouts_marker="marker-456")
 
 
-def test_query_params_include_route_dates_and_travelers():
+def test_ixigo_train_exact_search_uses_path_not_query_params():
     params = build_query_params(
         domain="train",
         origin="Delhi",
@@ -33,12 +33,7 @@ def test_query_params_include_route_dates_and_travelers():
         partner="ixigo",
         settings=_NO_TRACKING,
     )
-    assert params["domain"] == "train"
-    assert params["origin"] == "Delhi"
-    assert params["destination"] == "Agra"
-    assert params["depart_date"] == "2026-09-10"
-    assert params["return_date"] == "2026-09-17"
-    assert params["travelers"] == "2"
+    assert params == {}
 
 
 def test_query_params_omit_absent_optional_fields():
@@ -226,30 +221,61 @@ def test_transport_capability_metadata_is_provider_specific():
         _request_like(domain="train", origin="Delhi", destination="Agra", departure_date=date(2026, 9, 10)),
         partner="ixigo",
     )
-    irctc = action_capability_metadata(
-        _request_like(domain="train", origin="Delhi", destination="Agra", departure_date=date(2026, 9, 10)),
-        partner="irctc",
-    )
     redbus = action_capability_metadata(
         _request_like(domain="bus", origin="Delhi", destination="Agra", departure_date=date(2026, 9, 10)),
         partner="redbus",
     )
 
     assert ixigo == (
-        "destination_search",
+        "prefilled_search",
         "Search ixigo trains",
-        "ixigo trains opens with the route context; confirm schedule, seats, and fare on ixigo.",
-    )
-    assert irctc == (
-        "destination_redirect",
-        "Open IRCTC",
-        "Official IRCTC train search opens; enter route and date on IRCTC before booking.",
+        "Station codes and date open prefilled on ixigo trains; confirm schedule, seats, and fare on ixigo.",
     )
     assert redbus == (
-        "destination_search",
+        "prefilled_search",
         "Search redBus",
-        "redBus opens a bus search surface; confirm route, date, seats, and fare on redBus.",
+        "Route and date open prefilled on redBus; confirm seats and fare on redBus.",
     )
+
+
+def test_ixigo_train_uses_confirmed_station_code_path_for_exact_search():
+    target = resolve_partner_target(
+        _request_like(
+            domain="train",
+            origin="Delhi",
+            destination="Agra",
+            departure_date=date(2026, 9, 10),
+        ),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "trains/search-pwa/from/NDLS/to/AGC/10-09-2026"
+    assert target.query_params == {}
+    assert target.target_url == "https://www.ixigo.com/trains/search-pwa/from/NDLS/to/AGC/10-09-2026"
+
+
+def test_ixigo_train_degrades_when_station_or_date_is_missing():
+    target = resolve_partner_target(
+        _request_like(domain="train", origin="Delhi", destination="Unknown City"),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "trains"
+    assert target.query_params == {"domain": "train", "origin": "Delhi", "destination": "Unknown City"}
+
+
+def test_redbus_uses_confirmed_route_path_and_onward_date():
+    target = resolve_partner_target(
+        _request_like(domain="bus", origin="Delhi", destination="Manali", departure_date=date(2026, 9, 15)),
+        partner="redbus",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "bus-tickets/delhi-to-manali"
+    assert target.query_params == {"onward": "15-Sep-2026"}
+    assert target.target_url == "https://www.redbus.in/bus-tickets/delhi-to-manali?onward=15-Sep-2026"
 
 
 def test_ixigo_stay_slug_never_turns_url_like_text_into_url_syntax():

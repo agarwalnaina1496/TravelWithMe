@@ -16,8 +16,8 @@ def test_flight_only_allows_aviasales():
     assert allowed_partners("flight") == ("aviasales",)
 
 
-def test_train_allows_ixigo_and_irctc():
-    assert allowed_partners("train") == ("ixigo", "irctc")
+def test_train_only_allows_ixigo():
+    assert allowed_partners("train") == ("ixigo",)
 
 
 def test_bus_only_allows_redbus():

@@ -104,7 +104,6 @@ def test_transport_batch_resolves_every_target_in_one_request(api_client: TestCl
     assert [(r["target"]["value"], r["provider"]) for r in results] == [
         ("flight", "aviasales"),
         ("train", "ixigo"),
-        ("train", "irctc"),
         ("bus", "redbus"),
     ]
     assert all(r["status"] == "resolved" for r in results)
@@ -202,7 +201,6 @@ def test_all_targets_can_fail_and_the_batch_still_returns_200(api_client: TestCl
     results = response.json()["results"]
     assert [(r["target"]["value"], r["provider"]) for r in results] == [
         ("train", "ixigo"),
-        ("train", "irctc"),
         ("bus", "redbus"),
     ]
     assert all(r["status"] == "missing_input" for r in results)
@@ -284,11 +282,11 @@ def test_batch_boundary_and_per_resolve_events_are_both_emitted(api_client: Test
     assert response.status_code == 200
 
     events = [e["event"] for e in sink.events]
-    assert events.count("be.trusted_action.resolved") == 3
+    assert events.count("be.trusted_action.resolved") == 2
     [batch] = [e for e in sink.events if e["event"] == "be.trip.booking_options.batch"]
     assert batch["fields"]["domain"] == "transport"
     assert batch["fields"]["target_count"] == 2
-    assert batch["fields"]["resolved_count"] == 3
+    assert batch["fields"]["resolved_count"] == 2
     assert batch["fields"]["trip_id"] == trip_id
 
 
