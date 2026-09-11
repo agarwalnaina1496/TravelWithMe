@@ -27,7 +27,7 @@ from .trusted_action import (
 
 BookingOptionsDomain = Literal["transport", "stay"]
 BookingModeValue = Literal["flight", "train", "bus"]
-BookingPartnerValue = Literal["booking_com", "agoda", "ixigo"]
+BookingPartnerValue = Literal["booking_com", "agoda", "ixigo", "redbus", "aviasales"]
 
 _VALID_TARGET_VALUES: dict[str, frozenset[str]] = {
     "mode": frozenset({"flight", "train", "bus"}),
@@ -91,9 +91,15 @@ class BookingOptionsRequest(BaseModel):
 
 
 class BookingOptionResult(TrustedActionResult):
-    """A single ``TrustedActionResult`` tagged with the target it resolves."""
+    """A single ``TrustedActionResult`` tagged with the target it resolves.
+
+    ``provider`` is populated for transport fan-out results so clients can
+    render one card per provider while preserving the public mode-target
+    request envelope.
+    """
 
     target: BookingOptionTarget
+    provider: Optional[BookingPartnerValue] = None
 
 
 class BookingOptionsResponse(BaseModel):

@@ -133,7 +133,7 @@ def test_search_redirect_resolves_to_an_allowlisted_partner_target(api_client: T
     # itself (Travelpayouts) — the same brand as the live-price path —
     # replacing the earlier ixigo placeholder.
     assert action["target"]["partner"] == "aviasales"
-    assert action["affiliate_disclosure"] is True
+    assert action["affiliate_disclosure"] is False
     target_url = action["target"]["target_url"]
     # Aviasales' documented search-form deep link (TWM-196 P1 fix):
     # search.aviasales.com/flights/, IATA-based origin_iata/destination_iata
@@ -266,29 +266,52 @@ def test_unsupported_preferred_partner_returns_typed_unsupported_partner(api_cli
     assert body["action"] is None
 
 
-def test_bus_domain_allows_ixigo_and_redbus(api_client: TestClient):
+def test_train_domain_allows_ixigo(api_client: TestClient):
     repository = MemoryTripRepository()
     _override_persistence(repository)
     trip_id = _create_trip(api_client)
 
-    for partner, expected_domain in (("ixigo", "www.ixigo.com"), ("redbus", "www.redbus.in")):
-        response = api_client.post(
-            f"/trips/{trip_id}/trusted-action",
-            json={
-                "action_type": "SEARCH_REDIRECT",
-                "domain": "bus",
-                "origin": "Kochi",
-                "destination": "Alleppey",
-                "trip_shape": "one_way",
-                "departure_date": "2026-09-10",
-                "traveler_count": 1,
-                "preferred_partner": partner,
-            },
-        )
-        assert response.status_code == 200
-        body = response.json()
-        assert body["status"] == "resolved"
-        assert body["action"]["target"]["target_url"].startswith(f"https://{expected_domain}/")
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "train",
+            "origin": "Kochi",
+            "destination": "Alleppey",
+            "trip_shape": "one_way",
+            "departure_date": "2026-09-10",
+            "traveler_count": 1,
+            "preferred_partner": "ixigo",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "resolved"
+    assert body["action"]["target"]["target_url"].startswith("https://www.ixigo.com/")
+
+
+def test_bus_domain_allows_redbus(api_client: TestClient):
+    repository = MemoryTripRepository()
+    _override_persistence(repository)
+    trip_id = _create_trip(api_client)
+
+    response = api_client.post(
+        f"/trips/{trip_id}/trusted-action",
+        json={
+            "action_type": "SEARCH_REDIRECT",
+            "domain": "bus",
+            "origin": "Kochi",
+            "destination": "Alleppey",
+            "trip_shape": "one_way",
+            "departure_date": "2026-09-10",
+            "traveler_count": 1,
+            "preferred_partner": "redbus",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "resolved"
+    assert body["action"]["target"]["target_url"].startswith("https://www.redbus.in/")
 
 
 def test_stay_domain_resolves_each_allowlisted_partner(api_client: TestClient):

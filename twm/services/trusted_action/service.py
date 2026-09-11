@@ -204,6 +204,6 @@ class TrustedActionService:
 def _has_affiliate_disclosure(
     request: TrustedActionRequest, *, partner: str, target_query_params: dict[str, str]
 ) -> bool:
-    if request.domain == "stay" and partner in {"booking_com", "agoda", "ixigo"}:
+    if partner in {"booking_com", "agoda", "ixigo", "aviasales"}:
         return any(key in target_query_params for key in ("marker", "affiliate_id"))
-    return True
+    return False

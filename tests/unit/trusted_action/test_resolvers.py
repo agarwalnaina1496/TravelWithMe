@@ -21,7 +21,7 @@ _NO_TRACKING = TrustedActionSettings(ixigo_affiliate_id=None, travelpayouts_mark
 _WITH_TRACKING = TrustedActionSettings(ixigo_affiliate_id="ek-123", travelpayouts_marker="marker-456")
 
 
-def test_query_params_include_route_dates_and_travelers():
+def test_ixigo_train_exact_search_uses_path_not_query_params():
     params = build_query_params(
         domain="train",
         origin="Delhi",
@@ -33,12 +33,7 @@ def test_query_params_include_route_dates_and_travelers():
         partner="ixigo",
         settings=_NO_TRACKING,
     )
-    assert params["domain"] == "train"
-    assert params["origin"] == "Delhi"
-    assert params["destination"] == "Agra"
-    assert params["depart_date"] == "2026-09-10"
-    assert params["return_date"] == "2026-09-17"
-    assert params["travelers"] == "2"
+    assert params == {}
 
 
 def test_query_params_omit_absent_optional_fields():
@@ -219,6 +214,114 @@ def test_stay_capability_metadata_is_provider_specific():
     assert booking[0] == "prefilled_search"
     assert agoda[0] == "known_destination_search"
     assert ixigo[0] == "destination_redirect"
+
+
+def test_transport_capability_metadata_is_provider_specific():
+    ixigo = action_capability_metadata(
+        _request_like(domain="train", origin="Delhi", destination="Agra", departure_date=date(2026, 9, 10)),
+        partner="ixigo",
+    )
+    redbus = action_capability_metadata(
+        _request_like(domain="bus", origin="Delhi", destination="Agra", departure_date=date(2026, 9, 10)),
+        partner="redbus",
+    )
+
+    assert ixigo == (
+        "prefilled_search",
+        "Search ixigo trains",
+        "Station codes and date open prefilled on ixigo trains; confirm schedule, seats, and fare on ixigo.",
+    )
+    assert redbus == (
+        "prefilled_search",
+        "Search redBus",
+        "Route and date open prefilled on redBus; confirm seats and fare on redBus.",
+    )
+
+
+def test_aviasales_capability_is_prefilled_only_when_both_airports_resolve():
+    resolvable = action_capability_metadata(
+        _request_like(domain="flight", origin="Delhi", destination="Mumbai", departure_date=date(2026, 9, 10)),
+        partner="aviasales",
+    )
+    assert resolvable[0] == "prefilled_search"
+
+
+def test_aviasales_capability_degrades_without_a_route():
+    # A date alone is not enough to prefill Aviasales -- _aviasales_query_params
+    # needs a resolvable origin and destination to build origin_iata/
+    # destination_iata. Claiming "prefilled_search" here would overpromise
+    # exactly like the bug this test guards against.
+    no_route = action_capability_metadata(
+        _request_like(domain="flight", origin=None, destination=None, departure_date=date(2026, 9, 10)),
+        partner="aviasales",
+    )
+    assert no_route[0] == "destination_search"
+
+    unresolvable_route = action_capability_metadata(
+        _request_like(domain="flight", origin="Nowhereville", destination="Nowhereland", departure_date=date(2026, 9, 10)),
+        partner="aviasales",
+    )
+    assert unresolvable_route[0] == "destination_search"
+
+
+def test_ixigo_train_uses_confirmed_station_code_path_for_exact_search():
+    target = resolve_partner_target(
+        _request_like(
+            domain="train",
+            origin="Delhi",
+            destination="Agra",
+            departure_date=date(2026, 9, 10),
+        ),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "trains/search-pwa/from/NDLS/to/AGC/10-09-2026"
+    assert target.query_params == {}
+    assert target.target_url == "https://www.ixigo.com/trains/search-pwa/from/NDLS/to/AGC/10-09-2026"
+
+
+def test_ixigo_train_resolves_stations_from_the_bundled_dataset_not_a_hardcoded_table():
+    # A hubless-town/railhead pair with no reason to be in any short curated
+    # list -- proves station resolution comes from the bundled ~8,700-row
+    # dataset (twm.services.station_resolution), not a hand-maintained
+    # place -> code table scoped to a handful of demo cities.
+    target = resolve_partner_target(
+        _request_like(
+            domain="train",
+            origin="Bhubaneswar",
+            destination="Pathankot",
+            departure_date=date(2026, 9, 10),
+        ),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "trains/search-pwa/from/BBS/to/PTK/10-09-2026"
+    assert target.query_params == {}
+
+
+def test_ixigo_train_degrades_when_station_or_date_is_missing():
+    target = resolve_partner_target(
+        _request_like(domain="train", origin="Delhi", destination="Unknown City"),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "trains"
+    assert target.query_params == {"domain": "train", "origin": "Delhi", "destination": "Unknown City"}
+
+
+def test_redbus_uses_confirmed_route_path_and_onward_date():
+    target = resolve_partner_target(
+        _request_like(domain="bus", origin="Delhi", destination="Manali", departure_date=date(2026, 9, 15)),
+        partner="redbus",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "bus-tickets/delhi-to-manali"
+    assert target.query_params == {"onward": "15-Sep-2026"}
+    assert target.target_url == "https://www.redbus.in/bus-tickets/delhi-to-manali?onward=15-Sep-2026"
 
 
 def test_ixigo_stay_slug_never_turns_url_like_text_into_url_syntax():

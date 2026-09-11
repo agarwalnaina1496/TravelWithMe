@@ -38,7 +38,7 @@ partner later is a contract change), all verified this session:
   CHECK_PRICES offer): aviasales (TWM-196 — same Travelpayouts-brand
   partner as the live-data path, replacing the earlier ixigo placeholder)
 - train: ixigo
-- bus: ixigo, redbus
+- bus: redbus
 - stay: booking_com, agoda, ixigo
 
 ixigo's affiliate program (via EarnKaro/Cuelinks, confirmed category-wise
@@ -161,12 +161,12 @@ _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
 # TrustedAction.validate_domain_partner) — shown as a second, alternative
 # option alongside the live Aviasales PROVIDER offer (reached via
 # CHECK_PRICES's internal_capability, not this generic partner-target
-# mechanism), never as a PROVIDER itself. ixigo remains the approved
-# partner for train (unchanged by this story).
+# mechanism), never as a PROVIDER itself. Train returns ixigo; bus returns
+# redBus only.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] = {
     "flight": frozenset({"aviasales"}),
     "train": frozenset({"ixigo"}),
-    "bus": frozenset({"ixigo", "redbus"}),
+    "bus": frozenset({"redbus"}),
     "stay": frozenset({"booking_com", "agoda", "ixigo"}),
 }
 

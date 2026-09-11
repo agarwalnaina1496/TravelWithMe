@@ -74,16 +74,17 @@ from ...schemas.trusted_action import (
     TrustedActionTripType,
 )
 from ..airport_resolution import resolve_airport
+from ..station_resolution import resolve_station
 from .settings import TrustedActionSettings
 
-# Generic, domain-scoped search path segment per partner (see module
-# docstring — every partner except Aviasales uses the same unconfirmed
-# generic "search" path today). aviasales uses its documented
-# "flights/" search-form path.
+# Generic, domain-scoped search path segment per partner. Aviasales,
+# ixigo trains, and redBus use confirmed public deep-link shapes when the
+# inputs are specific enough; otherwise they degrade to these safe search
+# surfaces without pretending the route was prefilled.
 _SEARCH_PATH: dict[PartnerName, str] = {
     "aviasales": "flights/",
-    "ixigo": "search",
-    "redbus": "search",
+    "ixigo": "trains",
+    "redbus": "bus-tickets",
     "hotellook": "search",
     "booking_com": "searchresults.html",
     "agoda": "search",
@@ -113,7 +114,9 @@ def resolve_partner_target(
         partner=partner,
         path=_target_path(
             domain=request.domain,
+            origin=request.origin,
             destination=request.destination,
+            departure_date=request.departure_date,
             partner=partner,
         ),
         query_params=build_query_params(
@@ -138,11 +141,23 @@ def resolve_partner_target(
 def _target_path(
     *,
     domain: TrustedActionDomain,
+    origin: Optional[str],
     destination: Optional[str],
+    departure_date: Optional[date],
     partner: PartnerName,
 ) -> str:
     if partner == "ixigo" and domain == "stay":
         return f"hotels/hotels-in-{_ixigo_destination_slug(destination or '')}"
+    if partner == "ixigo" and domain == "train":
+        origin_station = _ixigo_station_code(origin)
+        destination_station = _ixigo_station_code(destination)
+        if origin_station is not None and destination_station is not None and departure_date is not None:
+            return (
+                "trains/search-pwa/from/"
+                f"{origin_station}/to/{destination_station}/{departure_date.strftime('%d-%m-%Y')}"
+            )
+    if partner == "redbus" and domain == "bus" and origin and destination:
+        return f"bus-tickets/{_redbus_city_slug(origin)}-to-{_redbus_city_slug(destination)}"
     if partner == "agoda" and domain == "stay":
         metadata = _agoda_destination_metadata(destination)
         if metadata is not None and "city" not in metadata:
@@ -157,6 +172,20 @@ def _ixigo_destination_slug(destination: str) -> str:
     ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_text.strip().lower())
     return slug.strip("-") or "stay"
+
+
+def _ixigo_station_code(place: Optional[str]) -> Optional[str]:
+    """The IRCTC station code ixigo's train search-form deep link needs,
+    resolved from the bundled Indian Railways station dataset (TWM-230) --
+    never a hand-maintained place -> code table. Returns ``None`` (never a
+    guessed code) when the dataset cannot confidently place ``place``."""
+
+    resolution = resolve_station(place)
+    return resolution.code if resolution is not None else None
+
+
+def _redbus_city_slug(place: str) -> str:
+    return _ixigo_destination_slug(place)
 
 
 Party = tuple[int, int, int]  # (adults, children, infants)
@@ -225,6 +254,17 @@ def build_query_params(
             occupancy=occupancy,
         )
 
+    if partner == "redbus" and domain == "bus":
+        return _redbus_bus_query_params(departure_date=departure_date)
+
+    if partner == "ixigo" and domain == "train":
+        return _ixigo_train_query_params(
+            origin=origin,
+            destination=destination,
+            departure_date=departure_date,
+            settings=settings,
+        )
+
     params: dict[str, str] = {"domain": domain}
     if origin:
         params["origin"] = origin
@@ -238,6 +278,34 @@ def build_query_params(
         params["travelers"] = str(traveler_count)
 
     params.update(tracking_params(partner, settings))
+    return params
+
+
+def _redbus_bus_query_params(*, departure_date: Optional[date]) -> dict[str, str]:
+    if departure_date is None:
+        return {}
+    return {"onward": departure_date.strftime("%d-%b-%Y")}
+
+
+def _ixigo_train_query_params(
+    *,
+    origin: Optional[str],
+    destination: Optional[str],
+    departure_date: Optional[date],
+    settings: TrustedActionSettings,
+) -> dict[str, str]:
+    if (
+        _ixigo_station_code(origin) is not None
+        and _ixigo_station_code(destination) is not None
+        and departure_date is not None
+    ):
+        return tracking_params("ixigo", settings)
+    params: dict[str, str] = {"domain": "train"}
+    if origin:
+        params["origin"] = origin
+    if destination:
+        params["destination"] = destination
+    params.update(tracking_params("ixigo", settings))
     return params
 
 
@@ -315,7 +383,42 @@ def action_capability_metadata(
     request: TrustedActionRequest, *, partner: PartnerName
 ) -> tuple[TrustedActionCapability, TrustedActionText, TrustedActionText]:
     if request.domain != "stay":
-        return ("prefilled_search", "Search options", "Search opens on the selected provider.")
+        has_route = request.origin is not None and request.destination is not None
+        has_date = request.departure_date is not None
+        if partner == "aviasales":
+            has_prefill = (
+                has_route
+                and has_date
+                and resolve_airport(request.origin) is not None
+                and resolve_airport(request.destination) is not None
+            )
+            note = (
+                "Route, date, and traveler count open on Aviasales when airport resolution succeeds."
+                if has_prefill
+                else "Aviasales opens this route search; choose exact dates there if needed."
+            )
+            return ("prefilled_search" if has_prefill else "destination_search", "Search Aviasales", note)
+        if partner == "ixigo":
+            has_prefill = (
+                _ixigo_station_code(request.origin) is not None
+                and _ixigo_station_code(request.destination) is not None
+                and has_date
+            )
+            note = (
+                "Station codes and date open prefilled on ixigo trains; confirm schedule, seats, and fare on ixigo."
+                if has_prefill
+                else "ixigo trains opens as a search surface; choose the exact stations and date there."
+            )
+            return ("prefilled_search" if has_prefill else "destination_search", "Search ixigo trains", note)
+        if partner == "redbus":
+            has_prefill = has_route and has_date
+            note = (
+                "Route and date open prefilled on redBus; confirm seats and fare on redBus."
+                if has_prefill
+                else "redBus opens as a search surface; choose the route and date there."
+            )
+            return ("prefilled_search" if has_prefill else "destination_search", "Search redBus", note)
+        return ("destination_search", "Search options", "Search opens on the selected provider.")
 
     destination = request.destination or "stays"
     has_dates = request.departure_date is not None and request.return_date is not None

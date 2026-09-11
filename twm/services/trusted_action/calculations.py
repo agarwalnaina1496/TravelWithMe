@@ -25,7 +25,7 @@ from ..booking_readiness import route_readiness
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, tuple[PartnerName, ...]] = {
     "flight": ("aviasales",),
     "train": ("ixigo",),
-    "bus": ("ixigo", "redbus"),
+    "bus": ("redbus",),
     "stay": ("booking_com", "agoda", "ixigo"),
 }
 

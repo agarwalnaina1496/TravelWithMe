@@ -21,11 +21,12 @@ from ...schemas.booking_options import (
     BookingOptionsResponse,
 )
 from ...schemas.trusted_action import TrustedActionRequest
+from .calculations import allowed_partners
 from .service import TrustedActionService
 
 
 def _request_for_target(
-    payload: BookingOptionsRequest, target: BookingOptionTarget
+    payload: BookingOptionsRequest, target: BookingOptionTarget, *, partner: str | None = None
 ) -> TrustedActionRequest:
     common = {
         "action_type": "SEARCH_REDIRECT",
@@ -40,6 +41,7 @@ def _request_for_target(
             domain=target.value,
             origin=payload.from_city,
             destination=payload.to_city,
+            preferred_partner=partner,
             **common,
         )
     return TrustedActionRequest(
@@ -55,22 +57,25 @@ def resolve_booking_options(
 ) -> BookingOptionsResponse:
     results: list[BookingOptionResult] = []
     for target in payload.targets:
-        outcome = service.resolve(trip_id, _request_for_target(payload, target))
-        # Pass the already-validated nested model instances straight through
-        # rather than round-tripping a dump — re-validating a dumped
-        # ``ActionTarget`` would trip its ``extra="forbid"`` on the computed
-        # ``target_url`` key.
-        results.append(
-            BookingOptionResult(
-                target=target,
-                status=outcome.status,
-                generated_at=outcome.generated_at,
-                action=outcome.action,
-                missing_input=outcome.missing_input,
-                unsupported_partner=outcome.unsupported_partner,
-                disabled=outcome.disabled,
+        providers = allowed_partners(target.value) if target.kind == "mode" else (None,)
+        for provider in providers:
+            outcome = service.resolve(trip_id, _request_for_target(payload, target, partner=provider))
+            # Pass the already-validated nested model instances straight through
+            # rather than round-tripping a dump — re-validating a dumped
+            # ``ActionTarget`` would trip its ``extra="forbid"`` on the computed
+            # ``target_url`` key.
+            results.append(
+                BookingOptionResult(
+                    target=target,
+                    provider=provider,
+                    status=outcome.status,
+                    generated_at=outcome.generated_at,
+                    action=outcome.action,
+                    missing_input=outcome.missing_input,
+                    unsupported_partner=outcome.unsupported_partner,
+                    disabled=outcome.disabled,
+                )
             )
-        )
 
     resolved_count = sum(1 for r in results if r.status == "resolved")
     service.logger.info(

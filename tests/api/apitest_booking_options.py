@@ -101,9 +101,15 @@ def test_transport_batch_resolves_every_target_in_one_request(api_client: TestCl
 
     assert response.status_code == 200
     results = response.json()["results"]
-    assert [r["target"]["value"] for r in results] == ["flight", "train", "bus"]
+    assert [(r["target"]["value"], r["provider"]) for r in results] == [
+        ("flight", "aviasales"),
+        ("train", "ixigo"),
+        ("bus", "redbus"),
+    ]
     assert all(r["status"] == "resolved" for r in results)
     assert all(r["action"]["action_type"] == "SEARCH_REDIRECT" for r in results)
+    assert all(r["action"]["capability"] for r in results)
+    assert all(r["action"]["cta_label"] for r in results)
 
 
 def test_structured_party_fills_the_flight_occupancy_fields_separately(api_client: TestClient):
@@ -193,6 +199,10 @@ def test_all_targets_can_fail_and_the_batch_still_returns_200(api_client: TestCl
 
     assert response.status_code == 200
     results = response.json()["results"]
+    assert [(r["target"]["value"], r["provider"]) for r in results] == [
+        ("train", "ixigo"),
+        ("bus", "redbus"),
+    ]
     assert all(r["status"] == "missing_input" for r in results)
     assert all(set(r["missing_input"]["missing_fields"]) == {"origin", "destination"} for r in results)
 
