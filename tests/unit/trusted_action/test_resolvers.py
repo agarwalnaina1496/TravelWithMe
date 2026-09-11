@@ -461,3 +461,33 @@ def test_aviasales_params_fall_back_to_raw_label_when_airport_unresolvable():
     assert params["origin"] == "Nowhereville"
     assert "origin_iata" not in params
     assert params["destination_iata"] == "BBI"
+
+
+def test_aviasales_params_fall_back_to_raw_label_for_a_non_scheduled_airstrip():
+    # TWM-230 plausibility hardening: "Diego Garcia" resolves to a real
+    # airport (NKW) but ourairports tags it scheduled_service=False -- a
+    # non-scheduled airstrip's IATA code is as useless to a live Aviasales
+    # search as no code at all, so this must degrade the same way an
+    # unresolvable place does, not claim a working code.
+    params = build_query_params(
+        domain="flight",
+        origin="Diego Garcia",
+        destination="Bhubaneswar",
+        departure_date=None,
+        return_date=None,
+        trip_shape="one_way",
+        traveler_count=1,
+        partner="aviasales",
+        settings=_NO_TRACKING,
+    )
+    assert params["origin"] == "Diego Garcia"
+    assert "origin_iata" not in params
+    assert params["destination_iata"] == "BBI"
+
+
+def test_aviasales_capability_degrades_for_a_non_scheduled_airstrip():
+    degraded = action_capability_metadata(
+        _request_like(domain="flight", origin="Diego Garcia", destination="Bhubaneswar", departure_date=date(2026, 9, 10)),
+        partner="aviasales",
+    )
+    assert degraded[0] == "destination_search"

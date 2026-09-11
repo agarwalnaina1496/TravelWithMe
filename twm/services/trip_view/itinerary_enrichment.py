@@ -40,7 +40,19 @@ from .trip_dates import TripDates
 logger = logging.getLogger(__name__)
 
 DateSource = str  # "search_pref" | "trip_dates" | "none"
-_LONG_JOURNEY_AVG_SPEED_KMH = 45.0
+# Rough average effective speed for a long-haul gateway leg, by mode --
+# judgement calls (TWM-230 plausibility hardening), not measured. A flat
+# cross-mode constant understated buses (which run slower than a
+# corresponding train over the same distance -- more stops, road quality)
+# and overstated neither meaningfully -- this at least separates the two
+# rather than treating "long-haul by train" and "long-haul by bus" as the
+# same journey. Still a first-slice estimate: neither constant accounts for
+# a specific route's terrain (a hill/ghat section runs well under either
+# number; a fast intercity corridor can run well over).
+_LONG_JOURNEY_AVG_SPEED_KMH_BY_MODE: dict[str, float] = {
+    "train": 50.0,
+    "bus": 35.0,
+}
 _LONG_JOURNEY_THRESHOLD_HOURS = 20
 _LONG_JOURNEY_ROUND_TO_HOURS = 6
 
@@ -193,10 +205,11 @@ def _rough_hub_distance(hubs: list[dict[str, Any]]) -> float | None:
     return max(distances, default=None)
 
 
-def _long_journey_note(distance_km: Any) -> str | None:
+def _long_journey_note(distance_km: Any, *, mode: str) -> str | None:
     if distance_km is None:
         return None
-    hours = float(distance_km) / _LONG_JOURNEY_AVG_SPEED_KMH
+    avg_speed_kmh = _LONG_JOURNEY_AVG_SPEED_KMH_BY_MODE[mode]
+    hours = float(distance_km) / avg_speed_kmh
     if hours < _LONG_JOURNEY_THRESHOLD_HOURS:
         return None
     rounded_hours = int(round(hours / _LONG_JOURNEY_ROUND_TO_HOURS) * _LONG_JOURNEY_ROUND_TO_HOURS)
@@ -205,10 +218,11 @@ def _long_journey_note(distance_km: Any) -> str | None:
 
 
 def _long_journey_note_for_mode(mode: str, hubs: list[dict[str, Any]]) -> str | None:
-    if mode not in {"train", "bus"}:
+    if mode not in _LONG_JOURNEY_AVG_SPEED_KMH_BY_MODE:
         return None
     return _long_journey_note(
-        max((hub.get("long_haul_distance_km") or 0 for hub in hubs), default=0) or None
+        max((hub.get("long_haul_distance_km") or 0 for hub in hubs), default=0) or None,
+        mode=mode,
     )
 
 
