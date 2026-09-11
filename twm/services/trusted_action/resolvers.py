@@ -386,12 +386,18 @@ def action_capability_metadata(
         has_route = request.origin is not None and request.destination is not None
         has_date = request.departure_date is not None
         if partner == "aviasales":
+            has_prefill = (
+                has_route
+                and has_date
+                and resolve_airport(request.origin) is not None
+                and resolve_airport(request.destination) is not None
+            )
             note = (
                 "Route, date, and traveler count open on Aviasales when airport resolution succeeds."
-                if has_date
+                if has_prefill
                 else "Aviasales opens this route search; choose exact dates there if needed."
             )
-            return ("prefilled_search" if has_date else "destination_search", "Search Aviasales", note)
+            return ("prefilled_search" if has_prefill else "destination_search", "Search Aviasales", note)
         if partner == "ixigo":
             has_prefill = (
                 _ixigo_station_code(request.origin) is not None

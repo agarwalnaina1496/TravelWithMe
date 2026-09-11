@@ -238,6 +238,32 @@ def test_transport_capability_metadata_is_provider_specific():
     )
 
 
+def test_aviasales_capability_is_prefilled_only_when_both_airports_resolve():
+    resolvable = action_capability_metadata(
+        _request_like(domain="flight", origin="Delhi", destination="Mumbai", departure_date=date(2026, 9, 10)),
+        partner="aviasales",
+    )
+    assert resolvable[0] == "prefilled_search"
+
+
+def test_aviasales_capability_degrades_without_a_route():
+    # A date alone is not enough to prefill Aviasales -- _aviasales_query_params
+    # needs a resolvable origin and destination to build origin_iata/
+    # destination_iata. Claiming "prefilled_search" here would overpromise
+    # exactly like the bug this test guards against.
+    no_route = action_capability_metadata(
+        _request_like(domain="flight", origin=None, destination=None, departure_date=date(2026, 9, 10)),
+        partner="aviasales",
+    )
+    assert no_route[0] == "destination_search"
+
+    unresolvable_route = action_capability_metadata(
+        _request_like(domain="flight", origin="Nowhereville", destination="Nowhereland", departure_date=date(2026, 9, 10)),
+        partner="aviasales",
+    )
+    assert unresolvable_route[0] == "destination_search"
+
+
 def test_ixigo_train_uses_confirmed_station_code_path_for_exact_search():
     target = resolve_partner_target(
         _request_like(
