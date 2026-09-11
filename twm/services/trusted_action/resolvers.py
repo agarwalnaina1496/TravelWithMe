@@ -268,21 +268,15 @@ def build_query_params(
         )
 
     if partner == "redbus" and domain == "bus":
-        params: dict[str, str] = {}
-        if departure_date is not None:
-            params["onward"] = departure_date.strftime("%d-%b-%Y")
-        return params
+        return _redbus_bus_query_params(departure_date=departure_date)
 
     if partner == "ixigo" and domain == "train":
-        if _ixigo_station_code(origin) is not None and _ixigo_station_code(destination) is not None and departure_date is not None:
-            return tracking_params(partner, settings)
-        params = {"domain": domain}
-        if origin:
-            params["origin"] = origin
-        if destination:
-            params["destination"] = destination
-        params.update(tracking_params(partner, settings))
-        return params
+        return _ixigo_train_query_params(
+            origin=origin,
+            destination=destination,
+            departure_date=departure_date,
+            settings=settings,
+        )
 
     params: dict[str, str] = {"domain": domain}
     if origin:
@@ -297,6 +291,34 @@ def build_query_params(
         params["travelers"] = str(traveler_count)
 
     params.update(tracking_params(partner, settings))
+    return params
+
+
+def _redbus_bus_query_params(*, departure_date: Optional[date]) -> dict[str, str]:
+    if departure_date is None:
+        return {}
+    return {"onward": departure_date.strftime("%d-%b-%Y")}
+
+
+def _ixigo_train_query_params(
+    *,
+    origin: Optional[str],
+    destination: Optional[str],
+    departure_date: Optional[date],
+    settings: TrustedActionSettings,
+) -> dict[str, str]:
+    if (
+        _ixigo_station_code(origin) is not None
+        and _ixigo_station_code(destination) is not None
+        and departure_date is not None
+    ):
+        return tracking_params("ixigo", settings)
+    params: dict[str, str] = {"domain": "train"}
+    if origin:
+        params["origin"] = origin
+    if destination:
+        params["destination"] = destination
+    params.update(tracking_params("ixigo", settings))
     return params
 
 
