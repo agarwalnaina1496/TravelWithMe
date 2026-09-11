@@ -77,13 +77,14 @@ from ..airport_resolution import resolve_airport
 from .settings import TrustedActionSettings
 
 # Generic, domain-scoped search path segment per partner (see module
-# docstring — every partner except Aviasales uses the same unconfirmed
-# generic "search" path today). aviasales uses its documented
-# "flights/" search-form path.
+# docstring — exact transport route/date parameter names for ixigo, IRCTC,
+# and redBus are not treated as stable public contracts here). aviasales
+# uses its documented "flights/" search-form path.
 _SEARCH_PATH: dict[PartnerName, str] = {
     "aviasales": "flights/",
-    "ixigo": "search",
-    "redbus": "search",
+    "ixigo": "trains",
+    "irctc": "nget/train-search",
+    "redbus": "bus-tickets",
     "hotellook": "search",
     "booking_com": "searchresults.html",
     "agoda": "search",
@@ -315,7 +316,36 @@ def action_capability_metadata(
     request: TrustedActionRequest, *, partner: PartnerName
 ) -> tuple[TrustedActionCapability, TrustedActionText, TrustedActionText]:
     if request.domain != "stay":
-        return ("prefilled_search", "Search options", "Search opens on the selected provider.")
+        has_route = request.origin is not None and request.destination is not None
+        has_date = request.departure_date is not None
+        if partner == "aviasales":
+            note = (
+                "Route, date, and traveler count open on Aviasales when airport resolution succeeds."
+                if has_date
+                else "Aviasales opens this route search; choose exact dates there if needed."
+            )
+            return ("prefilled_search" if has_date else "destination_search", "Search Aviasales", note)
+        if partner == "ixigo":
+            note = (
+                "ixigo trains opens with the route context; confirm schedule, seats, and fare on ixigo."
+                if has_route
+                else "ixigo trains opens so you can search and confirm availability there."
+            )
+            return ("destination_search", "Search ixigo trains", note)
+        if partner == "irctc":
+            return (
+                "destination_redirect",
+                "Open IRCTC",
+                "Official IRCTC train search opens; enter route and date on IRCTC before booking.",
+            )
+        if partner == "redbus":
+            note = (
+                "redBus opens a bus search surface; confirm route, date, seats, and fare on redBus."
+                if has_route
+                else "redBus opens so you can search and confirm bus availability there."
+            )
+            return ("destination_search", "Search redBus", note)
+        return ("destination_search", "Search options", "Search opens on the selected provider.")
 
     destination = request.destination or "stays"
     has_dates = request.departure_date is not None and request.return_date is not None

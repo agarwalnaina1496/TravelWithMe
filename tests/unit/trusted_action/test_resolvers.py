@@ -221,6 +221,37 @@ def test_stay_capability_metadata_is_provider_specific():
     assert ixigo[0] == "destination_redirect"
 
 
+def test_transport_capability_metadata_is_provider_specific():
+    ixigo = action_capability_metadata(
+        _request_like(domain="train", origin="Delhi", destination="Agra", departure_date=date(2026, 9, 10)),
+        partner="ixigo",
+    )
+    irctc = action_capability_metadata(
+        _request_like(domain="train", origin="Delhi", destination="Agra", departure_date=date(2026, 9, 10)),
+        partner="irctc",
+    )
+    redbus = action_capability_metadata(
+        _request_like(domain="bus", origin="Delhi", destination="Agra", departure_date=date(2026, 9, 10)),
+        partner="redbus",
+    )
+
+    assert ixigo == (
+        "destination_search",
+        "Search ixigo trains",
+        "ixigo trains opens with the route context; confirm schedule, seats, and fare on ixigo.",
+    )
+    assert irctc == (
+        "destination_redirect",
+        "Open IRCTC",
+        "Official IRCTC train search opens; enter route and date on IRCTC before booking.",
+    )
+    assert redbus == (
+        "destination_search",
+        "Search redBus",
+        "redBus opens a bus search surface; confirm route, date, seats, and fare on redBus.",
+    )
+
+
 def test_ixigo_stay_slug_never_turns_url_like_text_into_url_syntax():
     target = resolve_partner_target(
         _request_like(domain="stay", destination="https://evil.example.com"),
