@@ -73,7 +73,7 @@ from ...schemas.trusted_action import (
     TrustedActionText,
     TrustedActionTripType,
 )
-from ..airport_resolution import resolve_airport
+from ..airport_resolution import AirportResolution, resolve_airport
 from ..station_resolution import resolve_station
 from .settings import TrustedActionSettings
 
@@ -163,6 +163,29 @@ def _target_path(
         if metadata is not None and "city" not in metadata:
             return metadata["city_path"]
     return _SEARCH_PATH[partner]
+
+
+def _is_scheduled_airport(resolution: Optional[AirportResolution]) -> bool:
+    """Whether ``resolution`` names a real, currently-scheduled commercial
+    airport -- not merely *an* airport (TWM-230 plausibility hardening).
+
+    ``resolve_airport``'s "ourairports" match path already ties its
+    confidence tier directly to the dataset's own ``scheduled_service``
+    flag (``confidence="high" if best.scheduled_service else "low"``) --
+    a small/non-scheduled airstrip resolves but is tagged ``"low"``. Using
+    an airstrip's IATA code in a live Aviasales search is the same
+    overclaim this story fixed for ixigo train stations: a real code that
+    still returns nothing useful. Curated overrides/fallback are trusted
+    regardless of their tag -- they're hand-vetted major-city airports, not
+    a dataset-ranked candidate, so their "low" tag doesn't carry this
+    meaning.
+    """
+
+    if resolution is None:
+        return False
+    if resolution.source != "ourairports":
+        return True
+    return resolution.confidence == "high"
 
 
 def _ixigo_destination_slug(destination: str) -> str:
@@ -389,8 +412,8 @@ def action_capability_metadata(
             has_prefill = (
                 has_route
                 and has_date
-                and resolve_airport(request.origin) is not None
-                and resolve_airport(request.destination) is not None
+                and _is_scheduled_airport(resolve_airport(request.origin))
+                and _is_scheduled_airport(resolve_airport(request.destination))
             )
             note = (
                 "Route, date, and traveler count open on Aviasales when airport resolution succeeds."
@@ -465,23 +488,27 @@ def _aviasales_query_params(
     """Aviasales' documented search-form query shape (see module docstring
     for the confirmed source). Backend-owned IATA resolution (TWM-196):
     ``origin_iata``/``destination_iata`` carry a validated code whenever
-    ``resolve_airport`` succeeds — never a raw/guessed city string when a
-    real code is available. If resolution genuinely fails for a side, this
-    falls back to the plain place label under the generic ``origin``/
-    ``destination`` keys instead, so the link still degrades to a safe (if
-    less prefilled) Aviasales search rather than being blocked entirely.
+    ``resolve_airport`` succeeds **and names a real, currently-scheduled
+    airport** (TWM-230 plausibility hardening — a resolved-but-unscheduled
+    airstrip's IATA code is as useless to a live flight search as no code
+    at all; see ``_is_scheduled_airport``) — never a raw/guessed city
+    string when a real, useful code is available. If resolution genuinely
+    fails, or resolves to a non-scheduled airstrip, this falls back to the
+    plain place label under the generic ``origin``/``destination`` keys
+    instead, so the link still degrades to a safe (if less prefilled)
+    Aviasales search rather than being blocked entirely.
     """
 
     params: dict[str, str] = {}
 
     origin_match = resolve_airport(origin) if origin else None
-    if origin_match is not None:
+    if _is_scheduled_airport(origin_match):
         params["origin_iata"] = origin_match.iata
     elif origin:
         params["origin"] = origin
 
     destination_match = resolve_airport(destination) if destination else None
-    if destination_match is not None:
+    if _is_scheduled_airport(destination_match):
         params["destination_iata"] = destination_match.iata
     elif destination:
         params["destination"] = destination

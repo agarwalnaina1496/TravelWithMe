@@ -249,11 +249,27 @@ def test_gateway_leg_adds_ruled_out_reasons_and_long_journey_note():
     assert options["flight"]["long_journey_note"] is None
     assert options["train"]["feasible"] is True
     assert options["train"]["direct"] is False
-    assert options["train"]["long_journey_note"] == "Roughly 36 h long-haul journey before the local transfer."
+    assert options["train"]["long_journey_note"] == "Roughly 30 h long-haul journey before the local transfer."
     assert options["bus"]["feasible"] is False
     assert "Too far for a bus" in options["bus"]["ruled_out_reason"]
     assert options["drive"]["feasible"] is False
     assert options["drive"]["ruled_out_reason"] == "Too far for a single road trip (~1,600 km)."
+
+
+def test_long_journey_note_uses_a_slower_average_speed_for_bus_than_train():
+    # TWM-230 plausibility hardening: a flat cross-mode speed constant
+    # understated how much slower a long-haul bus runs than a train over the
+    # same distance. Same hub distance, mode-specific note.
+    hubs = [
+        {"city": "Falna", "side": "destination", "access_gap": "rail", "last_mile_km": 15,
+         "last_mile_duration_minutes": 25, "long_haul_distance_km": 900},
+    ]
+    days = [_day(1, [_travel("Bhubaneswar", "Sumerpur", hubs=hubs)])]
+    options = {option["mode"]: option for option in _enrich(days)["days"][0]["timeline"][0]["transport_options"]}
+    # 900km / 50 km/h (train) = 18h -- below the 20h threshold, no note.
+    assert options["train"]["long_journey_note"] is None
+    # 900km / 35 km/h (bus) = ~25.7h -- above threshold, note present.
+    assert options["bus"]["long_journey_note"] == "Roughly 24 h long-haul journey before the local transfer."
 
 
 def test_hub_resolution_emits_a_structured_event_with_trip_id():
