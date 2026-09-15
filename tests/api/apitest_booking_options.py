@@ -156,33 +156,6 @@ def test_structured_party_fills_stay_group_adults_and_group_children(api_client:
     assert "group_adults=2" in url and "group_children=1" in url
 
 
-def test_one_target_failing_does_not_fail_the_batch(api_client: TestClient):
-    repository = MemoryTripRepository()
-    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
-    trip_id = _create_trip(api_client)
-
-    # Agoda has no confirmed capability for an obscure destination (see
-    # apitest_trusted_action.py) -> that one target is `disabled`; the other
-    # two still resolve.
-    response = api_client.post(
-        f"/trips/{trip_id}/booking-options",
-        json={
-            "domain": "stay",
-            "destination": "Coorg",
-            "party": {"adults": 2, "children": 0, "infants": 0},
-            "targets": [
-                {"kind": "partner", "value": "booking_com"},
-                {"kind": "partner", "value": "agoda"},
-                {"kind": "partner", "value": "ixigo"},
-            ],
-        },
-    )
-
-    assert response.status_code == 200
-    by_partner = {r["target"]["value"]: r["status"] for r in response.json()["results"]}
-    assert by_partner == {"booking_com": "resolved", "agoda": "disabled", "ixigo": "resolved"}
-
-
 def test_all_targets_can_fail_and_the_batch_still_returns_200(api_client: TestClient):
     repository = MemoryTripRepository()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)

@@ -27,11 +27,18 @@ specifically enough; otherwise both degrade to a plain, generic search
 surface — never a guessed partner-specific path/param scheme.
 
 Stay redirects (TWM-216) now use the confirmed capability matrix:
-Booking.com gets its native ``searchresults.html`` query shape, Agoda gets
-a native ``city=`` search only when Backend has verified destination
-metadata, and ixigo gets its destination hotel listing path
+Booking.com gets its native ``searchresults.html`` query shape, and ixigo
+gets its destination hotel listing path
 ``hotels/hotels-in-{destination-slug}``. None of these direct stay links
 claims affiliate tracking unless a real tracking param is present.
+
+Agoda was dropped entirely (TWM-230 Increment 2b): its search needs an
+internal numeric city ID, not a place name, and the only entry TWM ever
+held was a single hand-curated one for Goa -- the exact hardcoded
+place->ID anti-pattern this story rejected elsewhere (the original
+``_IXIGO_STATION_CODES`` dict, ixigo-as-a-bus-partner). Revisit only if a
+real city-ID resolution mechanism turns up (e.g. Travelpayouts' own
+deep-link generator, if it resolves a destination automatically).
 
 Tracking parameters:
 
@@ -80,13 +87,7 @@ _SEARCH_PATH: dict[PartnerName, str] = {
     "ixigo": "trains",
     "redbus": "bus-tickets",
     "booking_com": "searchresults.html",
-    "agoda": "search",
 }
-
-_AGODA_DESTINATIONS: dict[str, dict[str, str]] = {
-    "goa": {"city": "11304", "city_path": "city/goa-in.html", "label": "Goa"},
-}
-
 
 def resolve_partner_target(
     request: TrustedActionRequest,
@@ -150,10 +151,6 @@ def _target_path(
             )
     if partner == "redbus" and domain == "bus" and origin and destination:
         return f"bus-tickets/{_redbus_city_slug(origin)}-to-{_redbus_city_slug(destination)}"
-    if partner == "agoda" and domain == "stay":
-        metadata = _agoda_destination_metadata(destination)
-        if metadata is not None and "city" not in metadata:
-            return metadata["city_path"]
     return _SEARCH_PATH[partner]
 
 
@@ -261,14 +258,6 @@ def build_query_params(
             return_date=return_date,
             occupancy=occupancy,
         )
-    if partner == "agoda" and domain == "stay":
-        return _agoda_stay_query_params(
-            destination=destination,
-            departure_date=departure_date,
-            return_date=return_date,
-            occupancy=occupancy,
-        )
-
     if partner == "redbus" and domain == "bus":
         return _redbus_bus_query_params(departure_date=departure_date)
 
@@ -353,44 +342,7 @@ def _booking_stay_query_params(
     return params
 
 
-def _agoda_stay_query_params(
-    *,
-    destination: Optional[str],
-    departure_date: Optional[date],
-    return_date: Optional[date],
-    occupancy: Optional[Party],
-) -> dict[str, str]:
-    metadata = _agoda_destination_metadata(destination)
-    if metadata is None or "city" not in metadata:
-        return {}
-    params: dict[str, str] = {
-        "city": metadata["city"],
-        "rooms": "1",
-        "children": "0",
-        "locale": "en-us",
-        "currency": "INR",
-        "textToSearch": metadata["label"],
-    }
-    if departure_date is not None:
-        params["checkIn"] = departure_date.isoformat()
-    if return_date is not None:
-        params["checkOut"] = return_date.isoformat()
-    if occupancy is not None:
-        adults, children, infants = occupancy
-        params["adults"] = str(max(1, adults))
-        params["children"] = str(children + infants)
-    return params
-
-
-def _agoda_destination_metadata(destination: Optional[str]) -> Optional[dict[str, str]]:
-    if not destination:
-        return None
-    return _AGODA_DESTINATIONS.get(_ixigo_destination_slug(destination))
-
-
 def partner_has_capability(request: TrustedActionRequest, *, partner: PartnerName) -> bool:
-    if request.domain == "stay" and partner == "agoda":
-        return _agoda_destination_metadata(request.destination) is not None
     return True
 
 
@@ -435,7 +387,6 @@ def action_capability_metadata(
             return ("prefilled_search" if has_prefill else "destination_search", "Search redBus", note)
         return ("destination_search", "Search options", "Search opens on the selected provider.")
 
-    destination = request.destination or "stays"
     has_dates = request.departure_date is not None and request.return_date is not None
     if partner == "booking_com":
         note = (
@@ -444,20 +395,6 @@ def action_capability_metadata(
             else "Destination search opens on Booking.com; choose exact dates there if needed."
         )
         return ("prefilled_search" if has_dates else "destination_search", "Search Booking.com", note)
-    if partner == "agoda":
-        metadata = _agoda_destination_metadata(request.destination)
-        if metadata is not None and "city" in metadata:
-            note = (
-                "Known Agoda city metadata lets us prefill this stay search."
-                if has_dates
-                else "Known Agoda city metadata opens the correct destination search; choose exact dates there if needed."
-            )
-            return (
-                "known_destination_search",
-                "Search Agoda",
-                note,
-            )
-        return ("destination_redirect", "Browse Agoda", f"Browse Agoda stays for {destination}.")
     if partner == "ixigo":
         return (
             "destination_redirect",
@@ -541,7 +478,7 @@ def tracking_params(partner: PartnerName, settings: TrustedActionSettings) -> di
         return {"affiliate_id": settings.ixigo_affiliate_id}
     if partner in _TRAVELPAYOUTS_PARTNERS and settings.travelpayouts_marker:
         return {"marker": settings.travelpayouts_marker}
-    # redbus, booking_com, agoda: no wired tracking parameter -- all three
-    # need a link-wrapping integration, not a param (see
+    # redbus, booking_com: no wired tracking parameter -- both need a
+    # link-wrapping integration, not a param (see
     # TWM_Docs/BOOKING_HANDOFF.md).
     return {}

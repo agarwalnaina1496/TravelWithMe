@@ -39,11 +39,12 @@ partner later is a contract change), all verified this session:
   partner as the live-data path, replacing the earlier ixigo placeholder)
 - train: ixigo
 - bus: redbus
-- stay: booking_com, agoda, ixigo
+- stay: booking_com, ixigo
 
 ixigo's affiliate program (via EarnKaro/Cuelinks, confirmed category-wise
-payouts) is separate from Travelpayouts (which covers Aviasales, Booking.com,
-Agoda) — a distinct credential/integration in TWM-131, not the same account.
+payouts) is separate from Travelpayouts (which covers Aviasales and
+Booking.com) — a distinct credential/integration in TWM-131, not the same
+account.
 
 Drive has no action of any kind here — its feasibility is purely computed
 (distance/routing), never a partner handoff.
@@ -131,7 +132,6 @@ PartnerName = Literal[
     "ixigo",
     "redbus",
     "booking_com",
-    "agoda",
 ]
 
 # Every base domain here is a fixed constant, never derived from caller
@@ -144,7 +144,6 @@ _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
     "ixigo": "www.ixigo.com",
     "redbus": "www.redbus.in",
     "booking_com": "www.booking.com",
-    "agoda": "www.agoda.com",
 }
 
 # Which partners are approved for which domain, for PROVIDER/SEARCH_REDIRECT
@@ -162,7 +161,7 @@ _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] =
     "flight": frozenset({"aviasales"}),
     "train": frozenset({"ixigo"}),
     "bus": frozenset({"redbus"}),
-    "stay": frozenset({"booking_com", "agoda", "ixigo"}),
+    "stay": frozenset({"booking_com", "ixigo"}),
 }
 
 _UNSAFE_VALUE_MARKERS = ("://", "//", "javascript:", "data:", "vbscript:")

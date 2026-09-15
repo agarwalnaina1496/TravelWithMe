@@ -321,7 +321,6 @@ def test_stay_domain_resolves_each_allowlisted_partner(api_client: TestClient):
 
     partner_domains = {
         "booking_com": "www.booking.com",
-        "agoda": "www.agoda.com",
         "ixigo": "www.ixigo.com",
     }
     for partner, expected_domain in partner_domains.items():
@@ -407,27 +406,6 @@ def test_booking_stay_resolves_to_confirmed_prefilled_search_url(api_client: Tes
     assert target["query_params"]["group_adults"] == "2"
     assert "marker" not in target["query_params"]
 
-
-def test_agoda_unknown_destination_returns_disabled_not_generic_search(api_client: TestClient):
-    repository = MemoryTripRepository()
-    _override_persistence(repository)
-    trip_id = _create_trip(api_client)
-
-    response = api_client.post(
-        f"/trips/{trip_id}/trusted-action",
-        json={
-            "action_type": "SEARCH_REDIRECT",
-            "domain": "stay",
-            "destination": "Coorg",
-            "preferred_partner": "agoda",
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "disabled"
-    assert body["action"] is None
-    assert body["disabled"]["reason"] == "No confirmed useful provider redirect is available for this stay yet."
 
 
 def test_stay_domain_resolves_without_origin_or_traveler_count(api_client: TestClient):

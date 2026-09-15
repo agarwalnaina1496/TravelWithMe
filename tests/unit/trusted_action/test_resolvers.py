@@ -74,8 +74,7 @@ def test_aviasales_tracking_omitted_when_marker_unset():
 
 
 def test_non_travelpayouts_partners_omit_marker_when_unconfigured():
-    for partner in ("booking_com", "agoda"):
-        assert tracking_params(partner, _NO_TRACKING) == {}
+    assert tracking_params("booking_com", _NO_TRACKING) == {}
 
 
 def test_redbus_never_carries_a_tracking_param():
@@ -160,40 +159,6 @@ def test_booking_stay_falls_back_to_destination_search_without_dates():
     assert "checkout" not in target.query_params
 
 
-def test_agoda_stay_uses_known_city_metadata_for_exact_search():
-    target = resolve_partner_target(
-        _request_like(
-            domain="stay",
-            destination="Goa",
-            departure_date=date(2026, 9, 15),
-            return_date=date(2026, 9, 16),
-            trip_shape="round_trip",
-            traveler_count=2,
-        ),
-        partner="agoda",
-        settings=_WITH_TRACKING,
-    )
-
-    assert target.path == "search"
-    assert target.query_params == {
-        "city": "11304",
-        "rooms": "1",
-        "children": "0",
-        "locale": "en-us",
-        "currency": "INR",
-        "textToSearch": "Goa",
-        "checkIn": "2026-09-15",
-        "checkOut": "2026-09-16",
-        "adults": "2",
-    }
-    assert "marker" not in target.query_params
-
-
-def test_agoda_unknown_destination_has_no_confirmed_capability():
-    request = _request_like(domain="stay", destination="Coorg")
-    assert partner_has_capability(request, partner="agoda") is False
-
-
 def test_stay_capability_metadata_is_provider_specific():
     booking = action_capability_metadata(
         _request_like(
@@ -205,11 +170,9 @@ def test_stay_capability_metadata_is_provider_specific():
         ),
         partner="booking_com",
     )
-    agoda = action_capability_metadata(_request_like(domain="stay", destination="Goa"), partner="agoda")
     ixigo = action_capability_metadata(_request_like(domain="stay", destination="Goa"), partner="ixigo")
 
     assert booking[0] == "prefilled_search"
-    assert agoda[0] == "known_destination_search"
     assert ixigo[0] == "destination_redirect"
 
 
