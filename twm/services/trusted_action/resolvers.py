@@ -21,13 +21,10 @@ raw/guessed city string when a real code is available), and degrades to
 the plain place label only if resolution genuinely fails — a less
 prefilled but still safe search, never a blocked one.
 
-Judgement call (documented, not fabricated) for non-stay partners here:
-redBus/Hostelworld/ixigo transport exact public deep-link path conventions
-were not confirmed this session beyond the generic, safe ``search`` path
-used below. Rather than guess an undocumented partner-specific transport
-path/param naming scheme, those unresolved transport partners still use
-clearly-named generic query parameters (``origin``, ``destination``,
-``depart_date``, ``return_date``, ``travelers``).
+ixigo (train) and redBus (bus) each have a confirmed, real deep-link shape
+(TWM-230 Increment 2, browser-verified) built when their inputs resolve
+specifically enough; otherwise both degrade to a plain, generic search
+surface — never a guessed partner-specific path/param scheme.
 
 Stay redirects (TWM-216) now use the confirmed capability matrix:
 Booking.com gets its native ``searchresults.html`` query shape, Agoda gets
@@ -42,21 +39,18 @@ Tracking parameters:
   (EarnKaro/Cuelinks-style attribution, a separate account from
   Travelpayouts). Omitted entirely when unset — never fails, never a fake
   placeholder.
-- aviasales / hotellook (confirmed Travelpayouts redirect shapes here):
-  ``marker``, sourced from
-  ``TrustedActionSettings.travelpayouts_marker`` — the *same* Travelpayouts
-  partner/marker ID the Aviasales adapter already uses for its live-price
-  calls (twm/services/flight_search/aviasales.py, same account), injected
-  at call-site wiring time rather than duplicated here. flight's
-  SEARCH_REDIRECT fallback (TWM-196) therefore shares tracking identity
-  with its own live-data path, not with ixigo's separate program.
-- redbus: no tracking parameter is wired. redBus has a confirmed
-  EarnKaro-based affiliate program, but no deep-link parameter format was
-  researched/confirmed this session, so the resolver produces a safe,
-  un-tracked search URL only. Wiring redBus tracking is a follow-up, not
-  fabricated here.
-- hostelworld: no affiliate program was researched this session; un-tracked
-  only, same reasoning as redbus.
+- aviasales (confirmed Travelpayouts redirect shape): ``marker``, sourced
+  from ``TrustedActionSettings.travelpayouts_marker`` — the *same*
+  Travelpayouts partner/marker ID the Aviasales adapter already uses for
+  its live-price calls (twm/services/flight_search/aviasales.py, same
+  account), injected at call-site wiring time rather than duplicated here.
+  flight's SEARCH_REDIRECT fallback (TWM-196) therefore shares tracking
+  identity with its own live-data path, not with ixigo's separate program.
+- redbus: no tracking parameter is wired yet. redBus has a confirmed
+  EarnKaro-based affiliate program, but wiring it needs submitting the
+  built link through EarnKaro's own link-generation tool (a "Shape B"
+  link-wrapping integration, TWM_Docs/BOOKING_HANDOFF.md) — appending a
+  param to redBus's own URL does not earn commission. Not fabricated here.
 """
 
 import re
@@ -85,10 +79,8 @@ _SEARCH_PATH: dict[PartnerName, str] = {
     "aviasales": "flights/",
     "ixigo": "trains",
     "redbus": "bus-tickets",
-    "hotellook": "search",
     "booking_com": "searchresults.html",
     "agoda": "search",
-    "hostelworld": "search",
 }
 
 _AGODA_DESTINATIONS: dict[str, dict[str, str]] = {
@@ -541,9 +533,7 @@ def _aviasales_query_params(
     return params
 
 
-_TRAVELPAYOUTS_PARTNERS: frozenset[PartnerName] = frozenset(
-    {"aviasales", "hotellook"}
-)
+_TRAVELPAYOUTS_PARTNERS: frozenset[PartnerName] = frozenset({"aviasales"})
 
 
 def tracking_params(partner: PartnerName, settings: TrustedActionSettings) -> dict[str, str]:
@@ -551,5 +541,7 @@ def tracking_params(partner: PartnerName, settings: TrustedActionSettings) -> di
         return {"affiliate_id": settings.ixigo_affiliate_id}
     if partner in _TRAVELPAYOUTS_PARTNERS and settings.travelpayouts_marker:
         return {"marker": settings.travelpayouts_marker}
-    # redbus, hostelworld: no confirmed tracking parameter this session.
+    # redbus, booking_com, agoda: no wired tracking parameter -- all three
+    # need a link-wrapping integration, not a param (see
+    # TWM_Docs/BOOKING_HANDOFF.md).
     return {}

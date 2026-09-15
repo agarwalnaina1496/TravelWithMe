@@ -73,19 +73,16 @@ def test_aviasales_tracking_omitted_when_marker_unset():
     assert tracking_params("aviasales", _NO_TRACKING) == {}
 
 
-def test_travelpayouts_partners_get_marker_when_configured():
-    for partner in ("hotellook",):
-        assert tracking_params(partner, _WITH_TRACKING) == {"marker": "marker-456"}
-
-
-def test_travelpayouts_partners_omit_marker_when_unconfigured():
-    for partner in ("hotellook", "booking_com", "agoda"):
+def test_non_travelpayouts_partners_omit_marker_when_unconfigured():
+    for partner in ("booking_com", "agoda"):
         assert tracking_params(partner, _NO_TRACKING) == {}
 
 
-def test_redbus_and_hostelworld_never_carry_a_tracking_param():
+def test_redbus_never_carries_a_tracking_param():
+    # redBus's confirmed EarnKaro program needs a link-wrapping integration
+    # (see TWM_Docs/BOOKING_HANDOFF.md), not a query param -- appending one
+    # to redBus's own URL would not earn commission, so this never happens.
     assert tracking_params("redbus", _WITH_TRACKING) == {}
-    assert tracking_params("hostelworld", _WITH_TRACKING) == {}
 
 
 def test_no_query_param_value_ever_looks_like_a_url():
@@ -97,7 +94,7 @@ def test_no_query_param_value_ever_looks_like_a_url():
         return_date=None,
         trip_shape=None,
         traveler_count=1,
-        partner="hotellook",
+        partner="booking_com",
         settings=_WITH_TRACKING,
     )
     for value in params.values():

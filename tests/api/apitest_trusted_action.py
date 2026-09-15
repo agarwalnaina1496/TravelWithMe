@@ -463,7 +463,7 @@ def test_stay_domain_still_requires_destination(api_client: TestClient):
 
     response = api_client.post(
         f"/trips/{trip_id}/trusted-action",
-        json={"action_type": "SEARCH_REDIRECT", "domain": "stay", "preferred_partner": "hotellook"},
+        json={"action_type": "SEARCH_REDIRECT", "domain": "stay", "preferred_partner": "booking_com"},
     )
 
     assert response.status_code == 200
