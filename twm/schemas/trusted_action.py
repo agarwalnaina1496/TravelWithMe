@@ -140,10 +140,15 @@ PartnerName = Literal[
 # Every base domain here is a fixed constant, never derived from caller
 # input. This is the only place a real hostname is allowed to appear.
 _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
-    # Aviasales' actual search-form deep link lives on the search.*
-    # subdomain (confirmed via Travelpayouts' own "Aviasales search form"
-    # documentation), not the marketing site's www.* domain.
-    "aviasales": "search.aviasales.com",
+    # TWM-230 Increment 2d: the earlier "search.aviasales.com" domain +
+    # query-param shape (from an older Travelpayouts support article) was
+    # browser-verified broken -- params were dropped and the link
+    # redirected to the .ru marketing homepage. The real, currently
+    # confirmed shape (Travelpayouts "Aviasales affiliate links" article)
+    # lives on the plain www.* domain, with the route/date/passengers
+    # encoded as a compact path segment, not query params -- see
+    # _target_path's aviasales+flight branch.
+    "aviasales": "www.aviasales.com",
     "ixigo": "www.ixigo.com",
     "redbus": "www.redbus.in",
     "booking_com": "www.booking.com",

@@ -6,6 +6,7 @@ request/response schema models directly in unit tests.
 """
 
 from datetime import date
+from types import SimpleNamespace
 
 from twm.services.trusted_action.resolvers import (
     action_capability_metadata,
@@ -410,122 +411,117 @@ def _request_like(
 # infants, trip_class, locale, plus the shared travelpayouts marker.
 
 
-def test_aviasales_params_resolve_known_cities_to_iata():
-    params = build_query_params(
-        domain="flight",
-        origin="Bangalore",
-        destination="Bhubaneswar",
-        departure_date=date(2026, 9, 10),
-        return_date=None,
-        trip_shape="one_way",
-        traveler_count=2,
+def test_aviasales_path_embeds_iata_date_and_passengers_for_exact_search():
+    # TWM-230 Increment 2d: the real, browser-verified Aviasales shape
+    # (Travelpayouts "Aviasales affiliate links" article) packs
+    # origin+date+destination+passengers into the *path*, not query
+    # params -- corrects the earlier origin_iata=/destination_iata= shape,
+    # which was browser-verified broken (dropped every param).
+    target = resolve_partner_target(
+        _request_like(
+            domain="flight",
+            origin="Delhi",
+            destination="Mumbai",
+            departure_date=date(2026, 9, 10),
+            traveler_count=3,
+        ),
         partner="aviasales",
         settings=_NO_TRACKING,
     )
-    assert params["origin_iata"] == "BLR"
-    assert params["destination_iata"] == "BBI"
-    assert "origin" not in params
-    assert "destination" not in params
+    assert target.path == "search/DEL1009BOM3"
+    assert target.query_params == {}
+    assert target.target_url == "https://www.aviasales.com/search/DEL1009BOM3"
 
 
-def test_aviasales_params_include_exact_date_route_shape_and_passengers():
-    params = build_query_params(
-        domain="flight",
-        origin="Delhi",
-        destination="Mumbai",
-        departure_date=date(2026, 9, 10),
-        return_date=date(2026, 9, 17),
-        trip_shape="round_trip",
-        traveler_count=3,
-        partner="aviasales",
-        settings=_WITH_TRACKING,
-    )
-    assert params == {
-        "origin_iata": "DEL",
-        "destination_iata": "BOM",
-        "depart_date": "2026-09-10",
-        "return_date": "2026-09-17",
-        "one_way": "false",
-        "adults": "3",
-        "children": "0",
-        "infants": "0",
-        "trip_class": "0",
-        "locale": "en",
-        "marker": "marker-456",
-    }
-
-
-def test_aviasales_params_omit_dates_for_a_flexible_no_date_search():
-    params = build_query_params(
-        domain="flight",
-        origin="Bangalore",
-        destination="Bhubaneswar",
-        departure_date=None,
-        return_date=None,
-        trip_shape="one_way",
-        traveler_count=1,
+def test_aviasales_path_adds_return_date_segment_for_round_trip():
+    target = resolve_partner_target(
+        _request_like(
+            domain="flight",
+            origin="Delhi",
+            destination="Mumbai",
+            departure_date=date(2026, 9, 10),
+            return_date=date(2026, 9, 17),
+            trip_shape="round_trip",
+            traveler_count=1,
+        ),
         partner="aviasales",
         settings=_NO_TRACKING,
     )
-    assert "depart_date" not in params
-    assert "return_date" not in params
-    assert params["one_way"] == "true"
+    assert target.path == "search/DEL1009BOM17091"
 
 
-def test_aviasales_params_omit_passenger_fields_when_traveler_count_unknown():
-    params = build_query_params(
-        domain="flight",
-        origin="Bangalore",
-        destination="Bhubaneswar",
-        departure_date=None,
-        return_date=None,
-        trip_shape="one_way",
-        traveler_count=None,
+def test_aviasales_passenger_suffix_positional_encoding():
+    # Adults digit always present; children digit present only if there
+    # are children *or* infants (an infant digit needs a children
+    # placeholder before it, even when children is 0); infants digit only
+    # if there are infants. Mirrors the Travelpayouts-documented examples
+    # exactly (e.g. "w101" = 1 adult, 0 children, 1 infant).
+    base = dict(domain="flight", origin="Delhi", destination="Mumbai", departure_date=date(2026, 9, 10))
+    party = lambda a, c, i: SimpleNamespace(adults=a, children=c, infants=i)  # noqa: E731
+    one_adult = resolve_partner_target(_request_like(**base, traveler_party=party(1, 0, 0)), partner="aviasales", settings=_NO_TRACKING)
+    two_adults_one_child = resolve_partner_target(_request_like(**base, traveler_party=party(2, 1, 0)), partner="aviasales", settings=_NO_TRACKING)
+    one_adult_one_infant = resolve_partner_target(_request_like(**base, traveler_party=party(1, 0, 1)), partner="aviasales", settings=_NO_TRACKING)
+    assert one_adult.path.endswith("BOM1")
+    assert two_adults_one_child.path.endswith("BOM21")
+    assert one_adult_one_infant.path.endswith("BOM101")
+
+
+def test_aviasales_degrades_to_prefilled_form_when_date_is_missing():
+    # The compact search-*results* path 404s without a date (browser-
+    # verified); a resolved route with no date degrades to the root path
+    # with a "params=" query carrying just the dateless route -- the
+    # pre-filled *form*, not a broken results page.
+    target = resolve_partner_target(
+        _request_like(domain="flight", origin="Bangalore", destination="Bhubaneswar"),
         partner="aviasales",
         settings=_NO_TRACKING,
     )
-    assert "adults" not in params
-    assert "children" not in params
-    assert "infants" not in params
+    assert target.path == "/"
+    assert target.query_params == {"params": "BLRBBI1"}
+    assert target.target_url == "https://www.aviasales.com/?params=BLRBBI1"
 
 
-def test_aviasales_params_fall_back_to_raw_label_when_airport_unresolvable():
-    params = build_query_params(
-        domain="flight",
-        origin="Nowhereville",
-        destination="Bhubaneswar",
-        departure_date=None,
-        return_date=None,
-        trip_shape="one_way",
-        traveler_count=1,
+def test_aviasales_degrades_to_bare_homepage_when_airport_unresolvable():
+    target = resolve_partner_target(
+        _request_like(domain="flight", origin="Nowhereville", destination="Bhubaneswar", departure_date=date(2026, 9, 10)),
         partner="aviasales",
         settings=_NO_TRACKING,
     )
-    assert params["origin"] == "Nowhereville"
-    assert "origin_iata" not in params
-    assert params["destination_iata"] == "BBI"
+    assert target.path == "/"
+    assert target.query_params == {}
+    assert target.target_url == "https://www.aviasales.com/"
 
 
-def test_aviasales_params_fall_back_to_raw_label_for_a_non_scheduled_airstrip():
+def test_aviasales_degrades_for_a_non_scheduled_airstrip():
     # TWM-230 plausibility hardening: "Diego Garcia" resolves to a real
     # airport (NKW) but ourairports tags it scheduled_service=False -- a
     # non-scheduled airstrip's IATA code is as useless to a live Aviasales
     # search as no code at all, so this must degrade the same way an
     # unresolvable place does, not claim a working code.
-    params = build_query_params(
-        domain="flight",
-        origin="Diego Garcia",
-        destination="Bhubaneswar",
-        departure_date=None,
-        return_date=None,
-        trip_shape="one_way",
-        traveler_count=1,
+    target = resolve_partner_target(
+        _request_like(domain="flight", origin="Diego Garcia", destination="Bhubaneswar", departure_date=date(2026, 9, 10)),
         partner="aviasales",
         settings=_NO_TRACKING,
     )
-    assert params["origin"] == "Diego Garcia"
-    assert "origin_iata" not in params
-    assert params["destination_iata"] == "BBI"
+    assert target.path == "/"
+    assert target.query_params == {}
+
+
+def test_aviasales_marker_is_attached_as_a_real_query_param_on_any_shape():
+    # Browser-verified this session: appending ?marker=... on top of the
+    # compact search-results path does not break the page.
+    prefilled = resolve_partner_target(
+        _request_like(domain="flight", origin="Delhi", destination="Mumbai", departure_date=date(2026, 9, 10)),
+        partner="aviasales",
+        settings=_WITH_TRACKING,
+    )
+    assert prefilled.query_params == {"marker": "marker-456"}
+    degraded = resolve_partner_target(
+        _request_like(domain="flight", origin="Nowhereville", destination="Bhubaneswar"),
+        partner="aviasales",
+        settings=_WITH_TRACKING,
+    )
+    assert degraded.query_params == {"marker": "marker-456"}
 
 
 def test_aviasales_capability_degrades_for_a_non_scheduled_airstrip():

@@ -8,18 +8,22 @@ externally-reachable URL gets assembled (fixed base domain + validated path
 *which* params a given partner/domain pair gets, then hands them to
 ``ActionTarget``.
 
-Aviasales (TWM-196) is the one partner with a confirmed, documented deep
-link: Travelpayouts' own "Aviasales search form" documentation
-(https://support.travelpayouts.com/hc/en-us/articles/8505942823954) gives
-``https://search.aviasales.com/flights/?origin_iata=...&destination_iata=...
-&depart_date=...&return_date=...&adults=...&children=...&infants=...
-&trip_class=...&locale=...&one_way=...`` — IATA-based, not a raw city
-label. ``_aviasales_query_params`` below builds exactly that shape, using
+Aviasales (TWM-196, corrected TWM-230 Increment 2d) has a confirmed, real
+deep link: Travelpayouts' "Aviasales affiliate links" article
+(https://support.travelpayouts.com/hc/en-us/articles/5711895629714) gives
+``https://www.aviasales.com/search/{ORIGIN_IATA}{DDMM}{DEST_IATA}
+[{RETURN_DDMM}]{PASSENGERS}`` — IATA-based, route/date/passengers packed
+into a compact *path* segment, browser-verified. An earlier support
+article documented a ``search.aviasales.com/flights/?origin_iata=...``
+query-param shape that this story built against first; browser-verifying
+it this session showed it drops every param and redirects to the
+marketing homepage — corrected to the real shape in
+``_target_path``/``_aviasales_query_params`` below, using
 ``twm.services.airport_resolution.resolve_airport`` so the link always
-carries Backend-validated IATA codes when resolution succeeds (never a
-raw/guessed city string when a real code is available), and degrades to
-the plain place label only if resolution genuinely fails — a less
-prefilled but still safe search, never a blocked one.
+carries Backend-validated IATA codes when resolution succeeds, and
+degrades to a dateless pre-filled *form* (route only) or the bare
+homepage when resolution or the date is missing — never a guessed code,
+never a broken results page.
 
 ixigo (train, flight) and redBus (bus) each have a confirmed, real
 deep-link shape (TWM-230 Increment 2/2c, browser-verified) built when
@@ -82,6 +86,7 @@ from ...schemas.trusted_action import (
 )
 from ..airport_resolution import AirportResolution, resolve_airport
 from ..station_resolution import resolve_station
+from . import aviasales_link
 from .settings import TrustedActionSettings
 
 # Generic, domain-scoped search path segment per partner. Aviasales,
@@ -89,7 +94,6 @@ from .settings import TrustedActionSettings
 # inputs are specific enough; otherwise they degrade to these safe search
 # surfaces without pretending the route was prefilled.
 _SEARCH_PATH: dict[PartnerName, str] = {
-    "aviasales": "flights/",
     "ixigo": "trains",
     "redbus": "bus-tickets",
     "booking_com": "searchresults.html",
@@ -109,6 +113,11 @@ def resolve_partner_target(
     separate, prior concern, not this function's job.
     """
 
+    party = (
+        (request.traveler_party.adults, request.traveler_party.children, request.traveler_party.infants)
+        if request.traveler_party is not None
+        else None
+    )
     return ActionTarget(
         partner=partner,
         path=_target_path(
@@ -116,6 +125,10 @@ def resolve_partner_target(
             origin=request.origin,
             destination=request.destination,
             departure_date=request.departure_date,
+            return_date=request.return_date,
+            trip_shape=request.trip_shape,
+            traveler_count=request.traveler_count,
+            party=party,
             partner=partner,
         ),
         query_params=build_query_params(
@@ -126,11 +139,7 @@ def resolve_partner_target(
             return_date=request.return_date,
             trip_shape=request.trip_shape,
             traveler_count=request.traveler_count,
-            party=(
-                (request.traveler_party.adults, request.traveler_party.children, request.traveler_party.infants)
-                if request.traveler_party is not None
-                else None
-            ),
+            party=party,
             partner=partner,
             settings=settings,
         ),
@@ -143,8 +152,28 @@ def _target_path(
     origin: Optional[str],
     destination: Optional[str],
     departure_date: Optional[date],
+    return_date: Optional[date] = None,
+    trip_shape: Optional[TrustedActionTripType] = None,
+    traveler_count: Optional[int] = None,
+    party: Optional[Party] = None,
     partner: PartnerName,
 ) -> str:
+    if partner == "aviasales" and domain == "flight":
+        origin_iata = _scheduled_airport_iata(origin)
+        destination_iata = _scheduled_airport_iata(destination)
+        if origin_iata is None or destination_iata is None or departure_date is None:
+            # No route/date to embed -- the compact search-results path
+            # (below) 404s without a date (browser-verified, TWM-230
+            # Increment 2d); "/" degrades to either the bare homepage or
+            # the pre-filled *form* (build_query_params' "params" query,
+            # which does accept a dateless route) rather than a broken
+            # results page.
+            return "/"
+        suffix = aviasales_link.aviasales_passenger_suffix(_occupancy(party, traveler_count))
+        segment = aviasales_link.aviasales_route_segment(
+            origin_iata, destination_iata, departure_date, return_date, trip_shape
+        )
+        return f"search/{segment}{suffix}"
     if partner == "ixigo" and domain == "stay":
         return f"hotels/hotels-in-{_ixigo_destination_slug(destination or '')}"
     if partner == "ixigo" and domain == "train":
@@ -264,13 +293,11 @@ def build_query_params(
 
     occupancy = _occupancy(party, traveler_count)
 
-    if partner == "aviasales":
+    if partner == "aviasales" and domain == "flight":
         return _aviasales_query_params(
             origin=origin,
             destination=destination,
             departure_date=departure_date,
-            return_date=return_date,
-            trip_shape=trip_shape,
             occupancy=occupancy,
             settings=settings,
         )
@@ -442,7 +469,7 @@ def action_capability_metadata(
             note = (
                 "Route, date, and traveler count open on Aviasales when airport resolution succeeds."
                 if has_prefill
-                else "Aviasales opens this route search; choose exact dates there if needed."
+                else "Aviasales opens as a search surface; enter the route and date there."
             )
             return ("prefilled_search" if has_prefill else "destination_search", "Search Aviasales", note)
         if partner == "ixigo" and request.domain == "train":
@@ -467,7 +494,7 @@ def action_capability_metadata(
             note = (
                 "Route, date, and traveler count open on ixigo when airport resolution succeeds."
                 if has_prefill
-                else "ixigo opens this route search; choose exact dates there if needed."
+                else "ixigo opens as a search surface; enter the route and date there."
             )
             return ("prefilled_search" if has_prefill else "destination_search", "Search ixigo flights", note)
         if partner == "redbus":
@@ -502,63 +529,17 @@ def _aviasales_query_params(
     origin: Optional[str],
     destination: Optional[str],
     departure_date: Optional[date],
-    return_date: Optional[date],
-    trip_shape: Optional[TrustedActionTripType],
     occupancy: Optional[Party],
     settings: TrustedActionSettings,
 ) -> dict[str, str]:
-    """Aviasales' documented search-form query shape (see module docstring
-    for the confirmed source). Backend-owned IATA resolution (TWM-196):
-    ``origin_iata``/``destination_iata`` carry a validated code whenever
-    ``resolve_airport`` succeeds **and names a real, currently-scheduled
-    airport** (TWM-230 plausibility hardening — a resolved-but-unscheduled
-    airstrip's IATA code is as useless to a live flight search as no code
-    at all; see ``_is_scheduled_airport``) — never a raw/guessed city
-    string when a real, useful code is available. If resolution genuinely
-    fails, or resolves to a non-scheduled airstrip, this falls back to the
-    plain place label under the generic ``origin``/``destination`` keys
-    instead, so the link still degrades to a safe (if less prefilled)
-    Aviasales search rather than being blocked entirely.
-    """
-
-    params: dict[str, str] = {}
-
     origin_iata = _scheduled_airport_iata(origin)
-    if origin_iata is not None:
-        params["origin_iata"] = origin_iata
-    elif origin:
-        params["origin"] = origin
-
     destination_iata = _scheduled_airport_iata(destination)
-    if destination_iata is not None:
-        params["destination_iata"] = destination_iata
-    elif destination:
-        params["destination"] = destination
-
-    if departure_date is not None:
-        params["depart_date"] = departure_date.isoformat()
-    if return_date is not None:
-        params["return_date"] = return_date.isoformat()
-    # trip_shape defaults to one_way on the request (TWM-196); only an
-    # explicit round_trip ever sends one_way=false.
-    params["one_way"] = "false" if trip_shape == "round_trip" else "true"
-
-    # Aviasales' search form treats a missing passenger param as an ambiguous
-    # default, so all three are always sent when the party is known. A caller
-    # with only a single total (no structured party) lands here as an
-    # all-adults occupancy.
-    if occupancy is not None:
-        adults, children, infants = occupancy
-        params["adults"] = str(max(1, adults))
-        params["children"] = str(children)
-        params["infants"] = str(infants)
-
-    # Economy-class default (documented judgement call, not researched
-    # further this session) and English locale, matching the rest of this
-    # product's copy.
-    params["trip_class"] = "0"
-    params["locale"] = "en"
-
+    params = aviasales_link.aviasales_form_params(
+        origin_iata=origin_iata,
+        destination_iata=destination_iata,
+        departure_date=departure_date,
+        occupancy=occupancy,
+    )
     params.update(tracking_params("aviasales", settings))
     return params
 

@@ -135,17 +135,11 @@ def test_search_redirect_resolves_to_an_allowlisted_partner_target(api_client: T
     assert action["target"]["partner"] == "aviasales"
     assert action["affiliate_disclosure"] is False
     target_url = action["target"]["target_url"]
-    # Aviasales' documented search-form deep link (TWM-196 P1 fix):
-    # search.aviasales.com/flights/, IATA-based origin_iata/destination_iata
-    # (Delhi/Mumbai resolve via Backend airport resolution), not a raw city
-    # label or the generic resolver shape.
-    assert target_url.startswith("https://search.aviasales.com/flights/?")
-    assert "origin_iata=DEL" in target_url
-    assert "destination_iata=BOM" in target_url
-    assert "depart_date=2026-09-10" in target_url
-    assert "return_date=2026-09-17" in target_url
-    assert "one_way=false" in target_url
-    assert "adults=2" in target_url
+    # Aviasales' real, browser-verified deep link (TWM-230 Increment 2d
+    # correction): www.aviasales.com/search/{IATA}{DDMM}{IATA}{DDMM}{pax},
+    # not the earlier origin_iata=/destination_iata= query shape (browser-
+    # verified broken).
+    assert target_url == "https://www.aviasales.com/search/DEL1009BOM17092"
     assert "://" not in target_url[len("https://") :]
 
 
@@ -192,10 +186,10 @@ def test_affiliate_redirect_resolves_without_a_departure_date(api_client: TestCl
     body = response.json()
     assert body["status"] == "resolved"
     target_url = body["action"]["target"]["target_url"]
-    assert target_url.startswith("https://search.aviasales.com/flights/?")
-    assert "origin_iata=BLR" in target_url
-    assert "destination_iata=BBI" in target_url
-    assert "depart_date" not in target_url
+    # No date -> degrades to the pre-filled *form* (root path, "params="
+    # query), not the compact search-results path (which 404s without a
+    # date, browser-verified).
+    assert target_url == "https://www.aviasales.com/?params=BLRBBI2"
 
 
 def test_round_trip_still_requires_return_date(api_client: TestClient):

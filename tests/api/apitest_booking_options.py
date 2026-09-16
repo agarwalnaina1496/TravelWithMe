@@ -128,10 +128,21 @@ def test_structured_party_fills_the_flight_occupancy_fields_separately(api_clien
     assert response.status_code == 200
     results = response.json()["results"]
     assert {r["provider"] for r in results} == {"aviasales", "ixigo"}
+    by_provider = {r["provider"]: r for r in results}
+
+    # Aviasales encodes passengers positionally in the path (TWM-230
+    # Increment 2d, real/browser-verified shape) -- "21" = 2 adults, 1
+    # child, 0 infants (no trailing infant digit since infants is 0).
+    aviasales_url = by_provider["aviasales"]["action"]["target"]["target_url"]
+    assert aviasales_url.endswith("21")
+    assert "31" not in aviasales_url  # never folds the child into the adult count
+
+    # ixigo keeps adults/children/infants as separate query params.
+    ixigo_url = by_provider["ixigo"]["action"]["target"]["target_url"]
+    assert "adults=2" in ixigo_url and "children=1" in ixigo_url and "infants=0" in ixigo_url
+    assert "adults=3" not in ixigo_url
+
     for flight in results:
-        url = flight["action"]["target"]["target_url"]
-        assert "adults=2" in url and "children=1" in url and "infants=0" in url
-        assert "adults=3" not in url
         assert flight["action"]["traveler_count"] == 3  # single-total fallback still carried
 
 
