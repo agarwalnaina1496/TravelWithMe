@@ -103,6 +103,7 @@ def test_transport_batch_resolves_every_target_in_one_request(api_client: TestCl
     results = response.json()["results"]
     assert [(r["target"]["value"], r["provider"]) for r in results] == [
         ("flight", "aviasales"),
+        ("flight", "ixigo"),
         ("train", "ixigo"),
         ("bus", "redbus"),
     ]
@@ -125,11 +126,13 @@ def test_structured_party_fills_the_flight_occupancy_fields_separately(api_clien
     )
 
     assert response.status_code == 200
-    [flight] = response.json()["results"]
-    url = flight["action"]["target"]["target_url"]
-    assert "adults=2" in url and "children=1" in url and "infants=0" in url
-    assert "adults=3" not in url
-    assert flight["action"]["traveler_count"] == 3  # single-total fallback still carried
+    results = response.json()["results"]
+    assert {r["provider"] for r in results} == {"aviasales", "ixigo"}
+    for flight in results:
+        url = flight["action"]["target"]["target_url"]
+        assert "adults=2" in url and "children=1" in url and "infants=0" in url
+        assert "adults=3" not in url
+        assert flight["action"]["traveler_count"] == 3  # single-total fallback still carried
 
 
 def test_structured_party_fills_stay_group_adults_and_group_children(api_client: TestClient):
@@ -255,11 +258,13 @@ def test_batch_boundary_and_per_resolve_events_are_both_emitted(api_client: Test
     assert response.status_code == 200
 
     events = [e["event"] for e in sink.events]
-    assert events.count("be.trusted_action.resolved") == 2
+    # 2 targets (flight, train), but flight fans out to 2 providers
+    # (aviasales, ixigo) -- 3 individual resolutions in total.
+    assert events.count("be.trusted_action.resolved") == 3
     [batch] = [e for e in sink.events if e["event"] == "be.trip.booking_options.batch"]
     assert batch["fields"]["domain"] == "transport"
     assert batch["fields"]["target_count"] == 2
-    assert batch["fields"]["resolved_count"] == 2
+    assert batch["fields"]["resolved_count"] == 3
     assert batch["fields"]["trip_id"] == trip_id
 
 

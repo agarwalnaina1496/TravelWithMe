@@ -36,7 +36,10 @@ partner later is a contract change), all verified this session:
 
 - flight (SEARCH_REDIRECT alternative only, alongside the Aviasales
   CHECK_PRICES offer): aviasales (TWM-196 — same Travelpayouts-brand
-  partner as the live-data path, replacing the earlier ixigo placeholder)
+  partner as the live-data path) and ixigo (TWM-230 Increment 2c —
+  ixigo's own confirmed IATA-based flight search deep link, browser-
+  verified; a real second option, not a live-price path — the CHECK_PRICES
+  live offer stays Aviasales-only)
 - train: ixigo
 - bus: redbus
 - stay: booking_com, ixigo
@@ -147,18 +150,18 @@ _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
 }
 
 # Which partners are approved for which domain, for PROVIDER/SEARCH_REDIRECT
-# action types. flight's only approved partner is Aviasales/Travelpayouts
-# (TWM-196: confirmed product direction — flights use Aviasales for both
-# the live/cached price path, CHECK_PRICES/twm/services/flight_search, and
-# the affiliate search-redirect fallback, replacing the earlier ixigo
-# placeholder), and only for SEARCH_REDIRECT (see
-# TrustedAction.validate_domain_partner) — shown as a second, alternative
-# option alongside the live Aviasales PROVIDER offer (reached via
-# CHECK_PRICES's internal_capability, not this generic partner-target
-# mechanism), never as a PROVIDER itself. Train returns ixigo; bus returns
+# action types. flight's live/cached price path (CHECK_PRICES,
+# twm/services/flight_search) stays Aviasales-only (TWM-196); this table
+# governs the separate SEARCH_REDIRECT fallback only (see
+# TrustedAction.validate_domain_partner), which flight approves both
+# Aviasales and ixigo for (TWM-230 Increment 2c — ixigo's own confirmed
+# flight search deep link) — shown as second/third alternative options
+# alongside the live Aviasales offer (reached via CHECK_PRICES's
+# internal_capability, not this generic partner-target mechanism), never
+# as a PROVIDER itself. Train returns ixigo; bus returns
 # redBus only.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] = {
-    "flight": frozenset({"aviasales"}),
+    "flight": frozenset({"aviasales", "ixigo"}),
     "train": frozenset({"ixigo"}),
     "bus": frozenset({"redbus"}),
     "stay": frozenset({"booking_com", "ixigo"}),

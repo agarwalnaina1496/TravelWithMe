@@ -198,6 +198,28 @@ def test_transport_capability_metadata_is_provider_specific():
     )
 
 
+def test_ixigo_flight_capability_is_evaluated_separately_from_ixigo_train():
+    # TWM-230 Increment 2c: action_capability_metadata's ixigo branch must
+    # check domain, not just partner -- ixigo now serves both train and
+    # flight, and a flight request must never be evaluated against
+    # station-code resolution (the train branch's logic).
+    flight = action_capability_metadata(
+        _request_like(domain="flight", origin="Delhi", destination="Mumbai", departure_date=date(2026, 9, 10)),
+        partner="ixigo",
+    )
+    assert flight == (
+        "prefilled_search",
+        "Search ixigo flights",
+        "Route, date, and traveler count open on ixigo when airport resolution succeeds.",
+    )
+
+    no_route = action_capability_metadata(
+        _request_like(domain="flight", origin=None, destination=None, departure_date=date(2026, 9, 10)),
+        partner="ixigo",
+    )
+    assert no_route[0] == "destination_search"
+
+
 def test_aviasales_capability_is_prefilled_only_when_both_airports_resolve():
     resolvable = action_capability_metadata(
         _request_like(domain="flight", origin="Delhi", destination="Mumbai", departure_date=date(2026, 9, 10)),
@@ -270,6 +292,67 @@ def test_ixigo_train_degrades_when_station_or_date_is_missing():
 
     assert target.path == "trains"
     assert target.query_params == {"domain": "train", "origin": "Delhi", "destination": "Unknown City"}
+
+
+def test_ixigo_flight_uses_confirmed_iata_query_shape_for_exact_search():
+    target = resolve_partner_target(
+        _request_like(
+            domain="flight",
+            origin="Delhi",
+            destination="Mumbai",
+            departure_date=date(2026, 9, 10),
+            traveler_count=2,
+        ),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+
+    assert target.path == "search/result/flight"
+    assert target.query_params == {
+        "from": "DEL",
+        "to": "BOM",
+        "date": "10092026",
+        "class": "e",
+        "adults": "2",
+        "children": "0",
+        "infants": "0",
+    }
+    assert target.target_url == (
+        "https://www.ixigo.com/search/result/flight"
+        "?from=DEL&to=BOM&date=10092026&class=e&adults=2&children=0&infants=0"
+    )
+
+
+def test_ixigo_flight_round_trip_adds_return_date():
+    target = resolve_partner_target(
+        _request_like(
+            domain="flight",
+            origin="Delhi",
+            destination="Mumbai",
+            departure_date=date(2026, 9, 10),
+            return_date=date(2026, 9, 17),
+            trip_shape="round_trip",
+        ),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+    assert target.query_params["returnDate"] == "17092026"
+
+
+def test_ixigo_flight_degrades_to_the_landing_page_without_a_scheduled_route():
+    # ixigo's flight search-result path 404s without a resolvable route --
+    # unlike trains, there is no bare, always-safe search surface there, so
+    # this must fall back to the "flights" landing page, not a generic
+    # query-param page under the search-result path (TWM-230 Increment 2c,
+    # browser-verified).
+    target = resolve_partner_target(
+        _request_like(domain="flight", origin="Delhi", destination="Nowhereville"),
+        partner="ixigo",
+        settings=_NO_TRACKING,
+    )
+    assert target.path == "flights"
+    assert target.query_params == {}
+    assert target.target_url == "https://www.ixigo.com/flights"
 
 
 def test_redbus_uses_confirmed_route_path_and_onward_date():

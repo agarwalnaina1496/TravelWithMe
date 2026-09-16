@@ -21,10 +21,16 @@ raw/guessed city string when a real code is available), and degrades to
 the plain place label only if resolution genuinely fails — a less
 prefilled but still safe search, never a blocked one.
 
-ixigo (train) and redBus (bus) each have a confirmed, real deep-link shape
-(TWM-230 Increment 2, browser-verified) built when their inputs resolve
-specifically enough; otherwise both degrade to a plain, generic search
-surface — never a guessed partner-specific path/param scheme.
+ixigo (train, flight) and redBus (bus) each have a confirmed, real
+deep-link shape (TWM-230 Increment 2/2c, browser-verified) built when
+their inputs resolve specifically enough; otherwise each degrades to a
+plain, generic search surface — never a guessed partner-specific
+path/param scheme. ixigo flight is a second SEARCH_REDIRECT alternative
+alongside Aviasales (TWM-196's live CHECK_PRICES path stays
+Aviasales-only); it uses the same IATA-code resolution as Aviasales
+(``_scheduled_airport_iata``), just its own confirmed query shape
+(``https://www.ixigo.com/search/result/flight?from=...&to=...&date=
+DDMMYYYY&...``).
 
 Stay redirects (TWM-216) now use the confirmed capability matrix:
 Booking.com gets its native ``searchresults.html`` query shape, and ixigo
@@ -151,6 +157,16 @@ def _target_path(
             )
     if partner == "redbus" and domain == "bus" and origin and destination:
         return f"bus-tickets/{_redbus_city_slug(origin)}-to-{_redbus_city_slug(destination)}"
+    if partner == "ixigo" and domain == "flight":
+        origin_iata = _scheduled_airport_iata(origin)
+        destination_iata = _scheduled_airport_iata(destination)
+        if origin_iata is not None and destination_iata is not None and departure_date is not None:
+            return "search/result/flight"
+        # ixigo's flight search-result page 404s without a route -- unlike
+        # ixigo trains, there is no bare, always-safe search surface at
+        # this path; "flights" (the landing page with its own search form)
+        # is the honest fallback, browser-verified (TWM-230 Increment 2c).
+        return "flights"
     return _SEARCH_PATH[partner]
 
 
@@ -175,6 +191,15 @@ def _is_scheduled_airport(resolution: Optional[AirportResolution]) -> bool:
     if resolution.source != "ourairports":
         return True
     return resolution.confidence == "high"
+
+
+def _scheduled_airport_iata(place: Optional[str]) -> Optional[str]:
+    """The IATA code for ``place`` when it resolves to a real, currently-
+    scheduled airport -- never a non-scheduled airstrip's code, never a
+    guess. Shared by every flight-search partner (Aviasales, ixigo)."""
+
+    resolution = resolve_airport(place) if place else None
+    return resolution.iata if _is_scheduled_airport(resolution) else None
 
 
 def _ixigo_destination_slug(destination: str) -> str:
@@ -268,6 +293,16 @@ def build_query_params(
             departure_date=departure_date,
             settings=settings,
         )
+    if partner == "ixigo" and domain == "flight":
+        return _ixigo_flight_query_params(
+            origin=origin,
+            destination=destination,
+            departure_date=departure_date,
+            return_date=return_date,
+            trip_shape=trip_shape,
+            occupancy=occupancy,
+            settings=settings,
+        )
 
     params: dict[str, str] = {"domain": domain}
     if origin:
@@ -309,6 +344,51 @@ def _ixigo_train_query_params(
         params["origin"] = origin
     if destination:
         params["destination"] = destination
+    params.update(tracking_params("ixigo", settings))
+    return params
+
+
+def _ixigo_flight_query_params(
+    *,
+    origin: Optional[str],
+    destination: Optional[str],
+    departure_date: Optional[date],
+    return_date: Optional[date],
+    trip_shape: Optional[TrustedActionTripType],
+    occupancy: Optional[Party],
+    settings: TrustedActionSettings,
+) -> dict[str, str]:
+    """ixigo's flight search-result query shape, browser-verified
+    (TWM-230 Increment 2c): ``https://www.ixigo.com/search/result/flight
+    ?from=...&to=...&date=DDMMYYYY&adults=...&children=...&infants=...
+    &class=e`` (plus ``returnDate=DDMMYYYY`` for a round trip). Unlike
+    ixigo trains, the query params -- not the path -- carry the whole
+    prefill, so an unresolved route/date degrades to tracking params only
+    on the ``flights`` landing-page fallback (see ``_target_path``) rather
+    than a labelled generic param set nobody reads there.
+    """
+
+    origin_iata = _scheduled_airport_iata(origin)
+    destination_iata = _scheduled_airport_iata(destination)
+    if origin_iata is None or destination_iata is None or departure_date is None:
+        return tracking_params("ixigo", settings)
+
+    params: dict[str, str] = {
+        "from": origin_iata,
+        "to": destination_iata,
+        "date": departure_date.strftime("%d%m%Y"),
+        # Economy-class default (documented judgement call, not researched
+        # further this session) -- same posture as Aviasales' trip_class.
+        "class": "e",
+    }
+    if trip_shape == "round_trip" and return_date is not None:
+        params["returnDate"] = return_date.strftime("%d%m%Y")
+
+    adults, children, infants = occupancy if occupancy is not None else (1, 0, 0)
+    params["adults"] = str(max(1, adults))
+    params["children"] = str(children)
+    params["infants"] = str(infants)
+
     params.update(tracking_params("ixigo", settings))
     return params
 
@@ -356,8 +436,8 @@ def action_capability_metadata(
             has_prefill = (
                 has_route
                 and has_date
-                and _is_scheduled_airport(resolve_airport(request.origin))
-                and _is_scheduled_airport(resolve_airport(request.destination))
+                and _scheduled_airport_iata(request.origin) is not None
+                and _scheduled_airport_iata(request.destination) is not None
             )
             note = (
                 "Route, date, and traveler count open on Aviasales when airport resolution succeeds."
@@ -365,7 +445,7 @@ def action_capability_metadata(
                 else "Aviasales opens this route search; choose exact dates there if needed."
             )
             return ("prefilled_search" if has_prefill else "destination_search", "Search Aviasales", note)
-        if partner == "ixigo":
+        if partner == "ixigo" and request.domain == "train":
             has_prefill = (
                 _ixigo_station_code(request.origin) is not None
                 and _ixigo_station_code(request.destination) is not None
@@ -377,6 +457,19 @@ def action_capability_metadata(
                 else "ixigo trains opens as a search surface; choose the exact stations and date there."
             )
             return ("prefilled_search" if has_prefill else "destination_search", "Search ixigo trains", note)
+        if partner == "ixigo" and request.domain == "flight":
+            has_prefill = (
+                has_route
+                and has_date
+                and _scheduled_airport_iata(request.origin) is not None
+                and _scheduled_airport_iata(request.destination) is not None
+            )
+            note = (
+                "Route, date, and traveler count open on ixigo when airport resolution succeeds."
+                if has_prefill
+                else "ixigo opens this route search; choose exact dates there if needed."
+            )
+            return ("prefilled_search" if has_prefill else "destination_search", "Search ixigo flights", note)
         if partner == "redbus":
             has_prefill = has_route and has_date
             note = (
@@ -430,15 +523,15 @@ def _aviasales_query_params(
 
     params: dict[str, str] = {}
 
-    origin_match = resolve_airport(origin) if origin else None
-    if _is_scheduled_airport(origin_match):
-        params["origin_iata"] = origin_match.iata
+    origin_iata = _scheduled_airport_iata(origin)
+    if origin_iata is not None:
+        params["origin_iata"] = origin_iata
     elif origin:
         params["origin"] = origin
 
-    destination_match = resolve_airport(destination) if destination else None
-    if _is_scheduled_airport(destination_match):
-        params["destination_iata"] = destination_match.iata
+    destination_iata = _scheduled_airport_iata(destination)
+    if destination_iata is not None:
+        params["destination_iata"] = destination_iata
     elif destination:
         params["destination"] = destination
 

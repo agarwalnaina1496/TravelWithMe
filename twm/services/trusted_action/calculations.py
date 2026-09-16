@@ -23,7 +23,7 @@ from ..booking_readiness import route_readiness
 # service could only become *more* restrictive than the schema, never
 # silently permit something the schema would reject.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, tuple[PartnerName, ...]] = {
-    "flight": ("aviasales",),
+    "flight": ("aviasales", "ixigo"),
     "train": ("ixigo",),
     "bus": ("redbus",),
     "stay": ("booking_com", "ixigo"),
