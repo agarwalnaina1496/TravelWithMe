@@ -36,15 +36,18 @@ partner later is a contract change), all verified this session:
 
 - flight (SEARCH_REDIRECT alternative only, alongside the Aviasales
   CHECK_PRICES offer): aviasales (TWM-196 — same Travelpayouts-brand
-  partner as the live-data path, replacing the earlier ixigo placeholder)
+  partner as the live-data path) and ixigo (TWM-230 Increment 2c —
+  ixigo's own confirmed IATA-based flight search deep link, browser-
+  verified; a real second option, not a live-price path — the CHECK_PRICES
+  live offer stays Aviasales-only)
 - train: ixigo
 - bus: redbus
-- stay: booking_com, agoda, ixigo
+- stay: booking_com, ixigo
 
 ixigo's affiliate program (via EarnKaro/Cuelinks, confirmed category-wise
-payouts) is separate from Travelpayouts (which covers Aviasales, Hotellook,
-Booking.com, Agoda) — a distinct credential/integration in TWM-131, not the
-same account.
+payouts) is separate from Travelpayouts (which covers Aviasales and
+Booking.com) — a distinct credential/integration in TWM-131, not the same
+account.
 
 Drive has no action of any kind here — its feasibility is purely computed
 (distance/routing), never a partner handoff.
@@ -120,7 +123,6 @@ TrustedActionDomain = Literal["flight", "train", "bus", "stay"]
 TrustedActionTripType = Literal["one_way", "round_trip"]
 TrustedActionCapability = Literal[
     "prefilled_search",
-    "known_destination_search",
     "destination_search",
     "destination_redirect",
 ]
@@ -131,43 +133,42 @@ PartnerName = Literal[
     "aviasales",
     "ixigo",
     "redbus",
-    "hotellook",
     "booking_com",
-    "agoda",
-    "hostelworld",
 ]
 
 # Every base domain here is a fixed constant, never derived from caller
 # input. This is the only place a real hostname is allowed to appear.
 _PARTNER_BASE_DOMAIN: dict[PartnerName, str] = {
-    # Aviasales' actual search-form deep link lives on the search.*
-    # subdomain (confirmed via Travelpayouts' own "Aviasales search form"
-    # documentation), not the marketing site's www.* domain.
-    "aviasales": "search.aviasales.com",
+    # TWM-230 Increment 2d: the earlier "search.aviasales.com" domain +
+    # query-param shape (from an older Travelpayouts support article) was
+    # browser-verified broken -- params were dropped and the link
+    # redirected to the .ru marketing homepage. The real, currently
+    # confirmed shape (Travelpayouts "Aviasales affiliate links" article)
+    # lives on the plain www.* domain, with the route/date/passengers
+    # encoded as a compact path segment, not query params -- see
+    # _target_path's aviasales+flight branch.
+    "aviasales": "www.aviasales.com",
     "ixigo": "www.ixigo.com",
     "redbus": "www.redbus.in",
-    "hotellook": "search.hotellook.com",
     "booking_com": "www.booking.com",
-    "agoda": "www.agoda.com",
-    "hostelworld": "www.hostelworld.com",
 }
 
 # Which partners are approved for which domain, for PROVIDER/SEARCH_REDIRECT
-# action types. flight's only approved partner is Aviasales/Travelpayouts
-# (TWM-196: confirmed product direction — flights use Aviasales for both
-# the live/cached price path, CHECK_PRICES/twm/services/flight_search, and
-# the affiliate search-redirect fallback, replacing the earlier ixigo
-# placeholder), and only for SEARCH_REDIRECT (see
-# TrustedAction.validate_domain_partner) — shown as a second, alternative
-# option alongside the live Aviasales PROVIDER offer (reached via
-# CHECK_PRICES's internal_capability, not this generic partner-target
-# mechanism), never as a PROVIDER itself. Train returns ixigo; bus returns
+# action types. flight's live/cached price path (CHECK_PRICES,
+# twm/services/flight_search) stays Aviasales-only (TWM-196); this table
+# governs the separate SEARCH_REDIRECT fallback only (see
+# TrustedAction.validate_domain_partner), which flight approves both
+# Aviasales and ixigo for (TWM-230 Increment 2c — ixigo's own confirmed
+# flight search deep link) — shown as second/third alternative options
+# alongside the live Aviasales offer (reached via CHECK_PRICES's
+# internal_capability, not this generic partner-target mechanism), never
+# as a PROVIDER itself. Train returns ixigo; bus returns
 # redBus only.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, frozenset[PartnerName]] = {
-    "flight": frozenset({"aviasales"}),
+    "flight": frozenset({"aviasales", "ixigo"}),
     "train": frozenset({"ixigo"}),
     "bus": frozenset({"redbus"}),
-    "stay": frozenset({"booking_com", "agoda", "ixigo"}),
+    "stay": frozenset({"booking_com", "ixigo"}),
 }
 
 _UNSAFE_VALUE_MARKERS = ("://", "//", "javascript:", "data:", "vbscript:")

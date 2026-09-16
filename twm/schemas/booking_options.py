@@ -27,11 +27,11 @@ from .trusted_action import (
 
 BookingOptionsDomain = Literal["transport", "stay"]
 BookingModeValue = Literal["flight", "train", "bus"]
-BookingPartnerValue = Literal["booking_com", "agoda", "ixigo", "redbus", "aviasales"]
+BookingPartnerValue = Literal["booking_com", "ixigo", "redbus", "aviasales"]
 
 _VALID_TARGET_VALUES: dict[str, frozenset[str]] = {
     "mode": frozenset({"flight", "train", "bus"}),
-    "partner": frozenset({"booking_com", "agoda", "ixigo"}),
+    "partner": frozenset({"booking_com", "ixigo"}),
 }
 
 

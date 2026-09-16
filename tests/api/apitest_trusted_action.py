@@ -135,17 +135,11 @@ def test_search_redirect_resolves_to_an_allowlisted_partner_target(api_client: T
     assert action["target"]["partner"] == "aviasales"
     assert action["affiliate_disclosure"] is False
     target_url = action["target"]["target_url"]
-    # Aviasales' documented search-form deep link (TWM-196 P1 fix):
-    # search.aviasales.com/flights/, IATA-based origin_iata/destination_iata
-    # (Delhi/Mumbai resolve via Backend airport resolution), not a raw city
-    # label or the generic resolver shape.
-    assert target_url.startswith("https://search.aviasales.com/flights/?")
-    assert "origin_iata=DEL" in target_url
-    assert "destination_iata=BOM" in target_url
-    assert "depart_date=2026-09-10" in target_url
-    assert "return_date=2026-09-17" in target_url
-    assert "one_way=false" in target_url
-    assert "adults=2" in target_url
+    # Aviasales' real, browser-verified deep link (TWM-230 Increment 2d
+    # correction): www.aviasales.com/search/{IATA}{DDMM}{IATA}{DDMM}{pax},
+    # not the earlier origin_iata=/destination_iata= query shape (browser-
+    # verified broken).
+    assert target_url == "https://www.aviasales.com/search/DEL1009BOM17092"
     assert "://" not in target_url[len("https://") :]
 
 
@@ -192,10 +186,10 @@ def test_affiliate_redirect_resolves_without_a_departure_date(api_client: TestCl
     body = response.json()
     assert body["status"] == "resolved"
     target_url = body["action"]["target"]["target_url"]
-    assert target_url.startswith("https://search.aviasales.com/flights/?")
-    assert "origin_iata=BLR" in target_url
-    assert "destination_iata=BBI" in target_url
-    assert "depart_date" not in target_url
+    # No date -> degrades to the pre-filled *form* (root path, "params="
+    # query), not the compact search-results path (which 404s without a
+    # date, browser-verified).
+    assert target_url == "https://www.aviasales.com/?params=BLRBBI2"
 
 
 def test_round_trip_still_requires_return_date(api_client: TestClient):
@@ -321,7 +315,6 @@ def test_stay_domain_resolves_each_allowlisted_partner(api_client: TestClient):
 
     partner_domains = {
         "booking_com": "www.booking.com",
-        "agoda": "www.agoda.com",
         "ixigo": "www.ixigo.com",
     }
     for partner, expected_domain in partner_domains.items():
@@ -408,27 +401,6 @@ def test_booking_stay_resolves_to_confirmed_prefilled_search_url(api_client: Tes
     assert "marker" not in target["query_params"]
 
 
-def test_agoda_unknown_destination_returns_disabled_not_generic_search(api_client: TestClient):
-    repository = MemoryTripRepository()
-    _override_persistence(repository)
-    trip_id = _create_trip(api_client)
-
-    response = api_client.post(
-        f"/trips/{trip_id}/trusted-action",
-        json={
-            "action_type": "SEARCH_REDIRECT",
-            "domain": "stay",
-            "destination": "Coorg",
-            "preferred_partner": "agoda",
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "disabled"
-    assert body["action"] is None
-    assert body["disabled"]["reason"] == "No confirmed useful provider redirect is available for this stay yet."
-
 
 def test_stay_domain_resolves_without_origin_or_traveler_count(api_client: TestClient):
     # TWM-208: a stay/hotel search has no "origin" or per-leg traveler-count
@@ -463,7 +435,7 @@ def test_stay_domain_still_requires_destination(api_client: TestClient):
 
     response = api_client.post(
         f"/trips/{trip_id}/trusted-action",
-        json={"action_type": "SEARCH_REDIRECT", "domain": "stay", "preferred_partner": "hotellook"},
+        json={"action_type": "SEARCH_REDIRECT", "domain": "stay", "preferred_partner": "booking_com"},
     )
 
     assert response.status_code == 200

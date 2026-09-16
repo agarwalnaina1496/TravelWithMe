@@ -16,11 +16,12 @@ Two distinct tracking identities are modelled, deliberately not shared:
   deliberately does not collide with any existing
   twm/shared/properties/properties.ini key.
 - ``travelpayouts_marker``: the same Travelpayouts "marker" account already
-  used by the Aviasales adapter (twm/services/flight_search/aviasales.py)
-  for hotellook/booking_com/agoda deep links — reused, not duplicated, via
-  constructor injection from ``FlightSearchSettings.partner_id`` at
-  call-site wiring time (see twm/main.py). This module does not re-read the
-  ``aviasales_partner_id`` property key itself.
+  used by the Aviasales adapter (twm/services/flight_search/aviasales.py) —
+  reused, not duplicated, via constructor injection from
+  ``FlightSearchSettings.partner_id`` at call-site wiring time (see
+  twm/main.py). This module does not re-read the ``aviasales_partner_id``
+  property key itself. Booking.com tracking needs a separate link-wrapping
+  integration (see TWM_Docs/BOOKING_HANDOFF.md), not this marker.
 """
 
 from dataclasses import dataclass

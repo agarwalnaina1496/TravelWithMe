@@ -233,7 +233,13 @@ class FlightSearchService:
                 date_precision,
             )
 
-        status = "offer" if len(offers) == len(entries) else "partial"
+        # "partial" means the search's own filters (max_stops/budget) or
+        # dedup dropped a genuine candidate -- comparing against the raw
+        # provider entry count would also count entries normalization
+        # skipped for being malformed/unparseable, which is a data-quality
+        # artifact, not a filtering outcome the traveler should read as
+        # "some options were hidden".
+        status = "offer" if len(offers) == len(normalized) else "partial"
         expiries = [offer.offer_expires_at for offer in offers if offer.offer_expires_at]
         return FlightSearchResponse(
             status=status,
@@ -401,12 +407,21 @@ def _filter_and_dedupe(
             )
         ]
 
-    seen: set[str] = set()
-    deduped: list[NormalizedFlightOffer] = []
+    # Keep the cheapest candidate per (airline, flight_number, departure_at)
+    # key, not just the first one the provider happened to list first --
+    # the cached-candidate endpoint can return more than one entry for the
+    # same flight (different fare class/agency), and picking arbitrarily
+    # could silently drop a genuinely cheaper option before rank_offers
+    # ever runs (dedup happens first).
+    best_by_key: dict[str, NormalizedFlightOffer] = {}
+    key_order: list[str] = []
     for offer in filtered:
         key = offer.provenance.provider_reference
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(offer)
+        current_best = best_by_key.get(key)
+        if current_best is None:
+            key_order.append(key)
+            best_by_key[key] = offer
+        elif offer.money.per_traveler_amount_minor_units < current_best.money.per_traveler_amount_minor_units:
+            best_by_key[key] = offer
+    deduped = [best_by_key[key] for key in key_order]
     return deduped

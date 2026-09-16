@@ -94,7 +94,7 @@ def test_partner_outside_closed_allowlist_enum_is_rejected():
 
 def test_partner_not_approved_for_domain_is_rejected():
     with pytest.raises(ValidationError):
-        _search_redirect_action(domain="train", target=ActionTarget(partner="hotellook", path="search"))
+        _search_redirect_action(domain="train", target=ActionTarget(partner="booking_com", path="search"))
 
 
 def test_flight_search_redirect_via_aviasales_succeeds_as_a_second_alternative():
@@ -127,12 +127,15 @@ def test_ixigo_is_approved_for_stay_alongside_the_dedicated_stay_partners():
 # --- Affiliate disclosure -----------------------------------------------------
 
 
-def test_provider_action_missing_affiliate_disclosure_true_is_rejected():
+def test_provider_action_with_a_partner_not_approved_for_domain_is_rejected():
+    # redbus is a real PartnerName but never approved for domain="stay" --
+    # validate_domain_partner, not affiliate_disclosure, is what rejects
+    # this construction.
     with pytest.raises(ValidationError):
         TrustedAction(
             action_type="PROVIDER",
             domain="stay",
-            target=ActionTarget(partner="hotellook", path="hotels"),
+            target=ActionTarget(partner="redbus", path="hotels"),
             affiliate_disclosure=False,
             generated_at=NOW,
         )

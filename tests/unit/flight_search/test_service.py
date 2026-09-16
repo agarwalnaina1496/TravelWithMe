@@ -220,6 +220,35 @@ def test_duplicate_entries_are_deduped_to_partial():
     assert len(response.offers) == 1
 
 
+def test_dedup_keeps_the_cheapest_duplicate_not_whichever_came_first():
+    # The provider can list more than one cached candidate for the same
+    # flight (different fare class/agency) -- same (airline, flight_number,
+    # departure_at) key, different price. Dedup must never silently pick an
+    # arbitrary one and lose the cheaper option before ranking ever runs.
+    logger, _ = _logger()
+    adapter = _FakeAdapter(entries=[_entry(price=9000), _entry(price=3000)])
+    service = FlightSearchService(logger=logger, adapter=adapter)
+
+    response = asyncio.run(service.search(uuid4(), _ready_request()))
+
+    assert len(response.offers) == 1
+    assert response.offers[0].money.per_traveler_amount_minor_units == 300000
+
+
+def test_status_is_offer_when_only_a_malformed_entry_was_dropped():
+    # A malformed/unparseable entry is a data-quality artifact normalize_
+    # aviasales_offers already silently skips -- it must not itself read as
+    # "some genuine options were filtered out" (status=partial).
+    logger, _ = _logger()
+    adapter = _FakeAdapter(entries=[_entry(), {"price": None, "airline": "AI"}])
+    service = FlightSearchService(logger=logger, adapter=adapter)
+
+    response = asyncio.run(service.search(uuid4(), _ready_request()))
+
+    assert response.status == "offer"
+    assert len(response.offers) == 1
+
+
 def test_offers_are_ranked_cheapest_first_and_top_offer_is_recommended():
     logger, _ = _logger()
     adapter = _FakeAdapter(

@@ -10,10 +10,11 @@ directly here.
 from twm.services.trusted_action.calculations import allowed_partners
 
 
-def test_flight_only_allows_aviasales():
-    # TWM-196: flights use Aviasales/Travelpayouts for both the live-price
-    # and affiliate-redirect paths, replacing the earlier ixigo placeholder.
-    assert allowed_partners("flight") == ("aviasales",)
+def test_flight_allows_aviasales_and_ixigo():
+    # TWM-196: the live-price path stays Aviasales-only (CHECK_PRICES).
+    # TWM-230 Increment 2c: the SEARCH_REDIRECT fallback also approves
+    # ixigo, which has its own confirmed flight search deep link.
+    assert allowed_partners("flight") == ("aviasales", "ixigo")
 
 
 def test_train_only_allows_ixigo():
@@ -25,4 +26,4 @@ def test_bus_only_allows_redbus():
 
 
 def test_stay_allows_current_stay_providers():
-    assert allowed_partners("stay") == ("booking_com", "agoda", "ixigo")
+    assert allowed_partners("stay") == ("booking_com", "ixigo")

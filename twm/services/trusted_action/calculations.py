@@ -23,10 +23,10 @@ from ..booking_readiness import route_readiness
 # service could only become *more* restrictive than the schema, never
 # silently permit something the schema would reject.
 _ALLOWED_PARTNERS_BY_DOMAIN: dict[TrustedActionDomain, tuple[PartnerName, ...]] = {
-    "flight": ("aviasales",),
+    "flight": ("aviasales", "ixigo"),
     "train": ("ixigo",),
     "bus": ("redbus",),
-    "stay": ("booking_com", "agoda", "ixigo"),
+    "stay": ("booking_com", "ixigo"),
 }
 
 
@@ -60,7 +60,7 @@ def missing_required_fields(request: TrustedActionRequest) -> list[TrustedAction
 
     TWM-208/TWM-216: a stay/hotel search has no "origin" concept the way a
     transport leg does, and build_query_params already treats it as fully
-    optional for every approved stay partner (booking_com/agoda/ixigo) --
+    optional for every approved stay partner (booking_com/ixigo) --
     requiring it here made a stay request
     permanently unresolvable regardless of input.
     """
