@@ -20,9 +20,8 @@ Two distinct tracking identities are modelled, deliberately not shared:
   reused, not duplicated, via constructor injection from
   ``FlightSearchSettings.partner_id`` at call-site wiring time (see
   twm/main.py). This module does not re-read the ``aviasales_partner_id``
-  property key itself. Booking.com/Agoda tracking needs a separate
-  link-wrapping integration (see TWM_Docs/BOOKING_HANDOFF.md), not this
-  marker.
+  property key itself. Booking.com tracking needs a separate link-wrapping
+  integration (see TWM_Docs/BOOKING_HANDOFF.md), not this marker.
 """
 
 from dataclasses import dataclass
