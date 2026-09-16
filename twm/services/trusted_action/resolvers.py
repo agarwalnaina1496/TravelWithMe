@@ -70,6 +70,8 @@ Tracking parameters:
   param to redBus's own URL does not earn commission. Not fabricated here.
 """
 
+from __future__ import annotations
+
 import re
 import unicodedata
 from datetime import date
