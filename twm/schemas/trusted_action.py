@@ -123,7 +123,6 @@ TrustedActionDomain = Literal["flight", "train", "bus", "stay"]
 TrustedActionTripType = Literal["one_way", "round_trip"]
 TrustedActionCapability = Literal[
     "prefilled_search",
-    "known_destination_search",
     "destination_search",
     "destination_redirect",
 ]
