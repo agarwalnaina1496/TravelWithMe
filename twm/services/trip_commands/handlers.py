@@ -29,6 +29,7 @@ from .errors import InvalidTripCommandError
 from .matcher_commands import apply_meridian, select_destination
 from .planner_commands import (
     apply_guide,
+    apply_remove_place,
     apply_reopen_fresh,
     apply_reopen_revisit,
     guide_has_started,
@@ -187,6 +188,15 @@ class ApprovePlanHandler(CommandHandler):
         )
 
 
+class RemovePlaceHandler(CommandHandler):
+    async def apply(self, ctx: CommandContext) -> dict[str, Any]:
+        return apply_remove_place(
+            ctx.logger,
+            ctx.state,
+            ctx.payload.place_name or "",
+        )
+
+
 class _ReopenDestinationHandler(CommandHandler):
     def precondition(self, ctx: CommandContext) -> None:
         if not has_pending_reopen_choice(ctx.state):
@@ -270,6 +280,7 @@ COMMAND_HANDLERS: dict[TripCommandName, CommandHandler] = {
     "start_planning": StartPlanningHandler(),
     "approve_plan": ApprovePlanHandler(),
     "more_like_this": MoreLikeThisHandler(),
+    "remove_place": RemovePlaceHandler(),
     "reopen_destination_revisit": ReopenDestinationRevisitHandler(),
     "reopen_destination_fresh": ReopenDestinationFreshHandler(),
     "start_itinerary": StartItineraryHandler(),

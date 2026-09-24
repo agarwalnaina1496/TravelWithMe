@@ -1,9 +1,13 @@
-"""Guide day-plan validation, notably trip_duration coercion (TWM-207)."""
+"""Guide day-plan validation, notably trip_duration coercion (TWM-207),
+and deterministic remove_place command (TWM-232)."""
 
 import pytest
 
 from twm.services.trip_commands.errors import InvalidTripCommandError
-from twm.services.trip_commands.planner_commands import _validate_day_plan
+from twm.services.trip_commands.planner_commands import (
+    _validate_day_plan,
+    apply_remove_place,
+)
 
 
 def _state(trip_duration: object, day_plan: list[dict]) -> dict:
@@ -47,3 +51,61 @@ def test_validate_day_plan_rejects_a_fractional_float_trip_duration() -> None:
 def test_validate_day_plan_rejects_a_boolean_trip_duration() -> None:
     with pytest.raises(InvalidTripCommandError, match="whole number of days"):
         _validate_day_plan(_state(True, _day_plan(1)))
+
+
+# ── apply_remove_place ────────────────────────────────────────────────────────
+
+
+def _plan_state(places: list[str], day_plan: list[dict]) -> dict:
+    from unittest.mock import MagicMock
+    return {
+        "trip_id": "test-trip",
+        "planner_state": {
+            "places": list(places),
+            "day_plan": [dict(d) for d in day_plan],
+            "revision": 1,
+        },
+    }, MagicMock()
+
+
+def test_remove_place_drops_place_from_places_and_day_plan() -> None:
+    state, logger = _plan_state(
+        ["Gwalior Fort", "Orchha"],
+        [
+            {"day_number": 1, "places": ["Gwalior Fort"], "pace": "relaxed"},
+            {"day_number": 2, "places": ["Orchha"], "pace": "balanced"},
+        ],
+    )
+    result = apply_remove_place(logger, state, "Gwalior Fort")
+
+    assert "Gwalior Fort" not in state["planner_state"]["places"]
+    assert state["planner_state"]["places"] == ["Orchha"]
+    assert state["planner_state"]["day_plan"][0]["places"] == []
+    assert state["planner_state"]["day_plan"][1]["places"] == ["Orchha"]
+    assert state["planner_state"]["revision"] == 2
+    assert "Gwalior Fort" in result["message"]
+
+
+def test_remove_place_is_case_insensitive() -> None:
+    state, logger = _plan_state(
+        ["Gwalior Fort"],
+        [{"day_number": 1, "places": ["Gwalior Fort"], "pace": "relaxed"}],
+    )
+    apply_remove_place(logger, state, "gwalior fort")
+    assert state["planner_state"]["places"] == []
+
+
+def test_remove_place_rejects_unknown_place() -> None:
+    state, logger = _plan_state(
+        ["Orchha"],
+        [{"day_number": 1, "places": ["Orchha"], "pace": "relaxed"}],
+    )
+    with pytest.raises(InvalidTripCommandError, match="not in the current plan"):
+        apply_remove_place(logger, state, "Khajuraho")
+
+
+def test_remove_place_rejects_frozen_plan() -> None:
+    state, logger = _plan_state(["Orchha"], [])
+    state["planner_state"]["frozen_plan"] = {"guide_state": {}}
+    with pytest.raises(InvalidTripCommandError, match="frozen"):
+        apply_remove_place(logger, state, "Orchha")

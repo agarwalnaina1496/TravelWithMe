@@ -129,6 +129,7 @@ TripCommandName = Literal[
     "start_planning",
     "approve_plan",
     "more_like_this",
+    "remove_place",
     "reopen_destination_revisit",
     "reopen_destination_fresh",
     "start_itinerary",
@@ -158,6 +159,7 @@ class TripCommandRequest(BaseModel):
     # this trip's first turn or its fiftieth).
     entry_intent: EntryIntent | None = None
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
+    place_name: str | None = Field(default=None, min_length=1, max_length=200)
     refinement: MeridianRefinement | None = None
     # booking_setup command payloads — all post-freeze, deterministic, and
     # never regenerate the itinerary (see twm/schemas/booking_setup.py).
@@ -192,6 +194,10 @@ class TripCommandRequest(BaseModel):
             raise ValueError("option_id is allowed only for select_destination")
         if self.command != "more_like_this" and self.refinement is not None:
             raise ValueError("refinement is allowed only for more_like_this")
+        if self.command == "remove_place" and not self.place_name:
+            raise ValueError("remove_place requires place_name")
+        if self.command != "remove_place" and self.place_name is not None:
+            raise ValueError("place_name is allowed only for remove_place")
         return self
 
 

@@ -13,6 +13,44 @@ from .party_seed import seed_party_from_num_travelers
 from .state import merge_operational_state, merge_trip_context, set_stage
 
 
+def apply_remove_place(
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    place_name: str,
+) -> dict[str, Any]:
+    """Deterministic remove: plucks the named place from places[] and from
+    whichever day it appears in, with no LLM round-trip."""
+    planner = state["planner_state"]
+    if planner.get("frozen_plan"):
+        raise InvalidTripCommandError(
+            "The approved plan is frozen and cannot be changed."
+        )
+    places: list[str] = list(planner.get("places") or [])
+    normalised = place_name.casefold()
+    match = next((p for p in places if p.casefold() == normalised), None)
+    if match is None:
+        raise InvalidTripCommandError(f'"{place_name}" is not in the current plan.')
+    places.remove(match)
+    planner["places"] = places
+
+    day_plan: list[dict[str, Any]] = list(planner.get("day_plan") or [])
+    for day in day_plan:
+        day["places"] = [p for p in day.get("places", []) if p.casefold() != normalised]
+    planner["day_plan"] = day_plan
+    planner["revision"] = int(planner.get("revision", 0)) + 1
+
+    trip_id = str(state.get("trip_id")) if state.get("trip_id") else None
+    logger.info(
+        f'Removed place "{match}" from plan.',
+        event="be.trip.guide.place_removed",
+        source="application",
+        trip_id=trip_id,
+        place=match,
+        remaining_places=len(places),
+    )
+    return {"message": f'Removed "{match}" from the plan.', "agent_meta": None}
+
+
 def guide_has_started(state: dict[str, Any]) -> bool:
     planner = state["planner_state"]
     return bool(
