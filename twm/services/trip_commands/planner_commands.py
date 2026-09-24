@@ -13,6 +13,66 @@ from .party_seed import seed_party_from_num_travelers
 from .state import merge_operational_state, merge_trip_context, set_stage
 
 
+def apply_remove_place(
+    logger: TelemetryLogger,
+    state: dict[str, Any],
+    place_name: str,
+    day_number: int | None = None,
+) -> dict[str, Any]:
+    """Deterministic remove: plucks the named place from places[] and from
+    exactly one day in day_plan[], with no LLM round-trip.
+
+    day_number scopes removal to one specific day — required when the same
+    place name could appear on more than one day (e.g. two "Lunch" entries).
+    When omitted the first occurrence in day_plan order is removed.
+    """
+    planner = state["planner_state"]
+    if planner.get("frozen_plan"):
+        raise InvalidTripCommandError(
+            "The approved plan is frozen and cannot be changed."
+        )
+    places: list[str] = list(planner.get("places") or [])
+    normalised = place_name.casefold()
+    match = next((p for p in places if p.casefold() == normalised), None)
+    if match is None:
+        raise InvalidTripCommandError(f'"{place_name}" is not in the current plan.')
+    places.remove(match)
+    planner["places"] = places
+
+    day_plan: list[dict[str, Any]] = list(planner.get("day_plan") or [])
+    removed_from_day = False
+    for day in day_plan:
+        if day_number is not None and day.get("day_number") != day_number:
+            continue
+        day_places: list[str] = list(day.get("places", []))
+        try:
+            idx = next(i for i, p in enumerate(day_places) if p.casefold() == normalised)
+        except StopIteration:
+            continue
+        day_places.pop(idx)
+        day["places"] = day_places
+        removed_from_day = True
+        break  # remove exactly one occurrence
+    if not removed_from_day and day_number is not None:
+        raise InvalidTripCommandError(
+            f'"{place_name}" is not on Day {day_number}.'
+        )
+    planner["day_plan"] = day_plan
+    planner["revision"] = int(planner.get("revision", 0)) + 1
+
+    trip_id = str(state.get("trip_id")) if state.get("trip_id") else None
+    logger.info(
+        f'Removed place "{match}" from plan.',
+        event="be.trip.guide.place_removed",
+        source="application",
+        trip_id=trip_id,
+        place=match,
+        day_number=day_number,
+        remaining_places=len(places),
+    )
+    return {"message": f'Removed "{match}" from the plan.', "agent_meta": None}
+
+
 def guide_has_started(state: dict[str, Any]) -> bool:
     planner = state["planner_state"]
     return bool(
