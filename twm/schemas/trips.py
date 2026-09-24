@@ -197,13 +197,16 @@ class TripCommandRequest(BaseModel):
             raise ValueError("option_id is allowed only for select_destination")
         if self.command != "more_like_this" and self.refinement is not None:
             raise ValueError("refinement is allowed only for more_like_this")
+        self._validate_remove_place_fields()
+        return self
+
+    def _validate_remove_place_fields(self) -> None:
         if self.command == "remove_place" and not self.place_name:
             raise ValueError("remove_place requires place_name")
         if self.command != "remove_place" and self.place_name is not None:
             raise ValueError("place_name is allowed only for remove_place")
         if self.command != "remove_place" and self.day_number is not None:
             raise ValueError("day_number is allowed only for remove_place")
-        return self
 
 
 class TripCommandResponse(BaseModel):
