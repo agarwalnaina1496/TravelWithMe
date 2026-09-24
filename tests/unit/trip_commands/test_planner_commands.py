@@ -109,3 +109,29 @@ def test_remove_place_rejects_frozen_plan() -> None:
     state["planner_state"]["frozen_plan"] = {"guide_state": {}}
     with pytest.raises(InvalidTripCommandError, match="frozen"):
         apply_remove_place(logger, state, "Orchha")
+
+
+def test_remove_place_with_day_number_removes_only_that_days_occurrence() -> None:
+    # Same place name on two days — day_number scopes removal to day 1 only.
+    state, logger = _plan_state(
+        ["Lunch", "Lunch"],
+        [
+            {"day_number": 1, "places": ["Lunch"], "pace": "relaxed"},
+            {"day_number": 2, "places": ["Lunch"], "pace": "balanced"},
+        ],
+    )
+    apply_remove_place(logger, state, "Lunch", day_number=1)
+
+    assert state["planner_state"]["day_plan"][0]["places"] == []
+    assert state["planner_state"]["day_plan"][1]["places"] == ["Lunch"]
+    # One occurrence removed from places[]
+    assert state["planner_state"]["places"] == ["Lunch"]
+
+
+def test_remove_place_rejects_wrong_day_number() -> None:
+    state, logger = _plan_state(
+        ["Orchha"],
+        [{"day_number": 1, "places": ["Orchha"], "pace": "relaxed"}],
+    )
+    with pytest.raises(InvalidTripCommandError, match="not on Day 2"):
+        apply_remove_place(logger, state, "Orchha", day_number=2)

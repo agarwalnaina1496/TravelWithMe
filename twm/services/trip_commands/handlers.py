@@ -194,6 +194,7 @@ class RemovePlaceHandler(CommandHandler):
             ctx.logger,
             ctx.state,
             ctx.payload.place_name or "",
+            ctx.payload.day_number,
         )
 
 

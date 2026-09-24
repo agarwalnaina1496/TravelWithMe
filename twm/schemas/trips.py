@@ -160,6 +160,9 @@ class TripCommandRequest(BaseModel):
     entry_intent: EntryIntent | None = None
     option_id: str | None = Field(default=None, min_length=1, max_length=200)
     place_name: str | None = Field(default=None, min_length=1, max_length=200)
+    # day_number scopes remove_place to one specific day — required when the
+    # plan could contain the same place name on more than one day.
+    day_number: int | None = Field(default=None, ge=1)
     refinement: MeridianRefinement | None = None
     # booking_setup command payloads — all post-freeze, deterministic, and
     # never regenerate the itinerary (see twm/schemas/booking_setup.py).
@@ -198,6 +201,8 @@ class TripCommandRequest(BaseModel):
             raise ValueError("remove_place requires place_name")
         if self.command != "remove_place" and self.place_name is not None:
             raise ValueError("place_name is allowed only for remove_place")
+        if self.command != "remove_place" and self.day_number is not None:
+            raise ValueError("day_number is allowed only for remove_place")
         return self
 
 
