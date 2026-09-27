@@ -29,6 +29,7 @@ class MemoryTripRepository:
         self.guests = {}
         self.users = {}
         self.trips = {}
+        self.trip_idempotency_keys = {}  # (guest_session_id, idempotency_key) -> trip_id
         self.commands = {}
         self.recommendations = {}  # trip_id -> list[RecommendationRecord], latest last
 
@@ -69,11 +70,24 @@ class MemoryTripRepository:
         owned.sort(key=lambda t: t.updated_at, reverse=True)
         return owned[: max(1, min(limit, 200))]
 
-    async def create_trip(self, guest_id, user_id, title, product_mode, trip_state, ui_state):
+    async def create_trip(
+        self, guest_id, user_id, title, product_mode, trip_state, ui_state,
+        idempotency_key=None, idempotency_request_hash=None, idempotency_response=None,
+    ):
         now = datetime.now(timezone.utc)
         trip = TripRecord(uuid4(), guest_id, user_id, title, product_mode, trip_state, ui_state, 1, now, now)
         self.trips[trip.id] = trip
+        if idempotency_key is not None:
+            self.trip_idempotency_keys[(guest_id, idempotency_key)] = trip.id
+            stored = dict(idempotency_response)
+            stored["trip"] = TripResponse.model_validate(trip, from_attributes=True).model_dump(mode="json")
+            key = (user_id or guest_id, trip.id, idempotency_key)
+            self.commands[key] = TripCommandRecord(idempotency_request_hash, stored)
         return trip
+
+    async def get_trip_by_idempotency_key(self, guest_session_id, idempotency_key):
+        trip_id = self.trip_idempotency_keys.get((guest_session_id, idempotency_key))
+        return self.trips.get(trip_id) if trip_id else None
 
     async def get_trip(self, owner, trip_id):
         trip = self.trips.get(trip_id)
@@ -1639,7 +1653,7 @@ def test_command_response_carries_the_matcher_round_when_a_turn_produced_one(api
     app.dependency_overrides[get_engine] = lambda: engine
     trip = api_client.post(
         "/trips/first-message",
-        json={"entry_intent": "discover", "message": "mountains", "title": "M"},
+        json={"entry_intent": "discover", "message": "mountains", "title": "M", "idempotency_key": str(uuid4())},
     )
     assert trip.status_code == 201
 
@@ -2622,7 +2636,7 @@ def test_first_message_discover_intent_creates_exactly_one_populated_trip(api_cl
 
     response = api_client.post(
         "/trips/first-message",
-        json={"entry_intent": "discover", "message": "Suggest mountains", "title": "Mountains"},
+        json={"entry_intent": "discover", "message": "Suggest mountains", "title": "Mountains", "idempotency_key": str(uuid4())},
     )
 
     assert response.status_code == 201
@@ -2645,7 +2659,7 @@ def test_first_message_known_destination_intent_creates_exactly_one_populated_tr
 
     response = api_client.post(
         "/trips/first-message",
-        json={"entry_intent": "known_destination", "message": "Goa"},
+        json={"entry_intent": "known_destination", "message": "Goa", "idempotency_key": str(uuid4())},
     )
 
     assert response.status_code == 201
@@ -2667,7 +2681,7 @@ def test_first_message_requires_a_message(api_client: TestClient):
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
     app.dependency_overrides[get_engine] = lambda: FakeCommandEngine()
 
-    response = api_client.post("/trips/first-message", json={"entry_intent": "known_destination"})
+    response = api_client.post("/trips/first-message", json={"entry_intent": "known_destination", "idempotency_key": str(uuid4())})
 
     assert response.status_code == 422
     assert repository.trips == {}
@@ -2684,12 +2698,78 @@ def test_first_message_creates_no_trip_when_agent_call_fails(api_client: TestCli
     with pytest.raises(RuntimeError):
         api_client.post(
             "/trips/first-message",
-            json={"entry_intent": "discover", "message": "Suggest mountains"},
+            json={"entry_intent": "discover", "message": "Suggest mountains", "idempotency_key": str(uuid4())},
         )
 
     assert repository.trips == {}
 
 
+def test_first_message_same_idempotency_key_replays_instead_of_creating_a_second_trip(api_client: TestClient):
+    """TWM-233: a client retry after a dropped response (the trip was
+    already committed; the client just never saw it) must replay the
+    original result, not run the agent turn again and create a second,
+    orphaned trip."""
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    key = str(uuid4())
+    payload = {"entry_intent": "discover", "message": "Suggest mountains", "title": "Mountains", "idempotency_key": key}
+
+    first = api_client.post("/trips/first-message", json=payload)
+    replay = api_client.post("/trips/first-message", json=payload)
+
+    assert first.status_code == 201
+    assert replay.status_code == 201
+    assert replay.json() == first.json()
+    assert len(repository.trips) == 1
+    assert [call[0] for call in engine.calls] == ["meridian"]  # agent ran exactly once
+
+
+def test_first_message_same_idempotency_key_different_payload_is_rejected_as_conflict(api_client: TestClient):
+    """TWM-233: reusing an idempotency_key for a genuinely different request
+    (not a retry of the same one) must be rejected with 409, the same
+    IdempotencyConflictError contract /trips/{trip_id}/commands already
+    uses -- not silently replay the wrong trip, and not 500."""
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    key = str(uuid4())
+
+    first = api_client.post(
+        "/trips/first-message",
+        json={"entry_intent": "discover", "message": "Suggest mountains", "title": "Mountains", "idempotency_key": key},
+    )
+    conflicting = api_client.post(
+        "/trips/first-message",
+        json={"entry_intent": "discover", "message": "Suggest beaches instead", "title": "Mountains", "idempotency_key": key},
+    )
+
+    assert first.status_code == 201
+    assert conflicting.status_code == 409
+    assert len(repository.trips) == 1
+
+
+def test_first_message_different_idempotency_keys_create_separate_trips(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+
+    first = api_client.post(
+        "/trips/first-message",
+        json={"entry_intent": "discover", "message": "Suggest mountains", "title": "Mountains", "idempotency_key": str(uuid4())},
+    )
+    second = api_client.post(
+        "/trips/first-message",
+        json={"entry_intent": "discover", "message": "Suggest beaches", "title": "Beaches", "idempotency_key": str(uuid4())},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["trip"]["id"] != second.json()["trip"]["id"]
+    assert len(repository.trips) == 2
 
 
 class FakeMoreLikeThisEngine(FakeCommandEngine):

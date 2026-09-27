@@ -158,6 +158,14 @@ async def start_trip_from_first_message(
     service = TripCommandService(persistence.repository, engine, logger)
     try:
         return await service.execute_first_message(owner, payload)
+    except IdempotencyConflictError as error:
+        logger.warning(
+            "Rejected first-message trip start because its idempotency key was reused.",
+            event="be.trip.first_message.idempotency_conflict",
+            source="http",
+            entry_intent=payload.entry_intent,
+        )
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except InvalidTripCommandError as error:
         logger.warning(
             "Rejected invalid first-message trip start.",

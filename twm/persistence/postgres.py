@@ -240,22 +240,67 @@ class PostgresTripRepository:
         itinerary_status_by_id = {row["trip_id"]: row["status"] for row in itinerary_rows}
         return planner_by_id, itinerary_status_by_id
 
-    async def create_trip(self, guest_id: UUID, user_id: UUID | None, title: str, product_mode: str, trip_state: dict[str, Any], ui_state: dict[str, Any]) -> TripRecord:
+    async def create_trip(
+        self, guest_id: UUID, user_id: UUID | None, title: str, product_mode: str, trip_state: dict[str, Any], ui_state: dict[str, Any],
+        idempotency_key: UUID | None = None, idempotency_request_hash: str | None = None, idempotency_response: dict[str, Any] | None = None,
+    ) -> TripRecord:
+        """`idempotency_key`/`idempotency_request_hash`/`idempotency_response`
+        (TWM-233) are only ever set by `execute_first_message` -- the one
+        path that creates a trip from a request with no trip_id yet to key
+        the usual `trip_commands` ledger off. All land in the SAME
+        transaction as the trips insert: either the trip and its replay row
+        both exist, or neither does. `idempotency_request_hash` is the same
+        request-payload hash `execute()` already computes for every other
+        command, stored so a later replay's `_replay()` can still detect
+        the same key reused for a genuinely different request. A genuinely
+        concurrent double-submit of the same key (as opposed to a
+        sequential retry after a lost response, the case this actually
+        guards) hits the unique index and raises -- the loser's request
+        fails outright rather than risking a mismatched replay; the trip
+        itself is still created exactly once either way.
+        """
         stage, status, active_agent = _lifecycle_values(trip_state)
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
                     f"""INSERT INTO {self.schema}.trips
-                    (guest_session_id,user_id,title,product_mode,trip_state,ui_state,stage,status,active_agent)
-                    VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9) RETURNING *""",
+                    (guest_session_id,user_id,title,product_mode,trip_state,ui_state,stage,status,active_agent,idempotency_key)
+                    VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9,$10) RETURNING *""",
                     guest_id, user_id, title, product_mode,
-                    json.dumps(_blob_state(trip_state)), json.dumps(ui_state), stage, status, active_agent)
+                    json.dumps(_blob_state(trip_state)), json.dumps(ui_state), stage, status, active_agent, idempotency_key)
                 touched = populated_touchable_branches(trip_state)
                 await self._write_branch_tables(connection, row["id"], trip_state, touched)
                 composed = await self._compose_trip_state(
                     connection, row["id"], _record(row).trip_state, with_itinerary_result=True
                 )
-                return replace(_record(row), trip_state=composed)
+                record = replace(_record(row), trip_state=composed)
+                if idempotency_key is not None and idempotency_response is not None:
+                    stored_response = dict(idempotency_response)
+                    stored_response["trip"] = record.__dict__.copy()
+                    await connection.execute(
+                        f"""INSERT INTO {self.schema}.trip_commands
+                        (guest_session_id,user_id,trip_id,idempotency_key,request_hash,response)
+                        VALUES ($1,$2,$3,$4,$5,$6::jsonb)""",
+                        guest_id, user_id, row["id"], idempotency_key, idempotency_request_hash,
+                        json.dumps(stored_response, default=str),
+                    )
+                return record
+
+    async def get_trip_by_idempotency_key(self, guest_session_id: UUID, idempotency_key: UUID) -> TripRecord | None:
+        """Pre-creation replay check for `execute_first_message` (TWM-233):
+        is there already a trip this exact key created? Scoped to
+        `guest_session_id` alone -- every request always carries one
+        (`_resolve_owner`), including an authenticated one, so it's a stable
+        key regardless of login state."""
+        row = await self.pool.fetchrow(
+            f"SELECT * FROM {self.schema}.trips WHERE guest_session_id=$1 AND idempotency_key=$2",
+            guest_session_id, idempotency_key,
+        )
+        if not row:
+            return None
+        record = _record(row)
+        composed = await self._compose_trip_state(self.pool, record.id, record.trip_state, with_itinerary_result=True)
+        return replace(record, trip_state=composed)
 
     async def get_trip(self, owner: TripOwner, trip_id: UUID) -> TripRecord | None:
         """Full compose — includes the itinerary result blob. Used where the
