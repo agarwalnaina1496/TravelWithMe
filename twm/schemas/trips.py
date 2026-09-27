@@ -54,9 +54,14 @@ EntryIntent = Literal["discover", "known_destination"]
 
 class TripFirstMessageRequest(BaseModel):
     """First-turn orchestration input (TWM-189) — no trip exists yet, so
-    there is no expected_version/idempotency replay the way TripCommandRequest
-    has for an established trip. Always a traveler_message-shaped turn;
-    entry_intent decides which specialist receives it."""
+    there is no expected_version the way TripCommandRequest has for an
+    established trip. Always a traveler_message-shaped turn; entry_intent
+    decides which specialist receives it.
+
+    idempotency_key (TWM-233): keyed by guest_session_id instead of a
+    trip_id (none exists yet) — a client retry after a dropped response
+    (the trip was already committed; the client just never saw it) replays
+    the original result instead of creating a second, orphaned trip."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -64,6 +69,7 @@ class TripFirstMessageRequest(BaseModel):
     title: str = Field(default="Untitled Trip", min_length=1, max_length=120)
     product_mode: Literal["self_led", "twm_led"] = "self_led"
     message: BoundedMessage
+    idempotency_key: UUID
 
 
 class TripRenameRequest(BaseModel):

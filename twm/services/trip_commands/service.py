@@ -139,7 +139,20 @@ class TripCommandService:
         (twm/prompts/meridian.md, TWM-189) — so neither can produce a
         recommendation/itinerary archive-table row on a first turn that
         repository.create_trip() would have no path to persist.
+
+        TWM-233: payload.idempotency_key is checked against any trip this
+        exact guest session already created with it *before* running the
+        agent turn at all — a client retry after a dropped response (the
+        trip was already committed; the client just never saw it) replays
+        that original result instead of running Meridian/Guide a second
+        time and creating a second, orphaned trip.
         """
+        request_hash = hashlib.sha256(
+            json.dumps(payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        replay = await self._replay_first_message(owner, payload, request_hash)
+        if replay is not None:
+            return replay
         state = canonical_state({})
         command_payload = TripCommandRequest(
             command="traveler_message",
@@ -171,8 +184,12 @@ class TripCommandService:
                 entry_intent=payload.entry_intent,
                 leaked_key="new_recommendation",
             )
+        idempotency_response = {"message": result["message"], "agent_meta": result.get("agent_meta"), "recommendation": None}
         trip = await self.repository.create_trip(
-            owner.guest_session_id, owner.user_id, payload.title, payload.product_mode, state, {}
+            owner.guest_session_id, owner.user_id, payload.title, payload.product_mode, state, {},
+            idempotency_key=payload.idempotency_key,
+            idempotency_request_hash=request_hash,
+            idempotency_response=idempotency_response,
         )
         self.logger.info(
             "Created trip from first-message orchestration.",
@@ -199,6 +216,32 @@ class TripCommandService:
                 "Idempotency key was already used for a different request."
             )
         return TripCommandResponse.model_validate(record.response)
+
+    async def _replay_first_message(
+        self, owner: TripOwner, payload: TripFirstMessageRequest, request_hash: str
+    ) -> TripCommandResponse | None:
+        """None means "no trip exists for this key yet — proceed normally".
+        A hit always has a matching `trip_commands` row too (both are
+        written in the same transaction, TWM-233) except for a trip created
+        before this feature shipped, which can't happen for a fresh
+        idempotency_key going forward — so the defensive fallback below is
+        unreachable in practice, not a real second replay path to maintain.
+        """
+        existing_trip = await self.repository.get_trip_by_idempotency_key(owner.guest_session_id, payload.idempotency_key)
+        if existing_trip is None:
+            return None
+        prior = await self.repository.get_command(owner, existing_trip.id, payload.idempotency_key)
+        if prior is not None:
+            return self._replay(prior, request_hash)
+        return TripCommandResponse(
+            trip=TripResponse(
+                id=existing_trip.id, title=existing_trip.title, product_mode=existing_trip.product_mode,
+                trip_state=existing_trip.trip_state, ui_state=existing_trip.ui_state, version=existing_trip.version,
+                created_at=existing_trip.created_at, updated_at=existing_trip.updated_at,
+            ),
+            message=None,
+            agent_meta=None,
+        )
 
     async def _apply(
         self,

@@ -167,13 +167,14 @@ class FakeDatabase:
                 return None
             return {"version": trip["version"]}
         if q.startswith(f"INSERT INTO {self.q('trips')}"):
-            guest_id, user_id, title, product_mode, trip_state, ui_state, stage, status, active_agent = args
+            guest_id, user_id, title, product_mode, trip_state, ui_state, stage, status, active_agent, idempotency_key = args
             trip_id = uuid4()
             now = datetime.now(timezone.utc)
             trip = {
                 "id": trip_id, "guest_session_id": guest_id, "user_id": user_id, "title": title, "product_mode": product_mode,
                 "trip_state": trip_state, "ui_state": ui_state,
                 "stage": stage, "status": status, "active_agent": active_agent,
+                "idempotency_key": idempotency_key,
                 "version": 1, "created_at": now, "updated_at": now,
             }
             self.trips[trip_id] = trip
@@ -185,6 +186,13 @@ class FakeDatabase:
             if not trip or not _owned_by(trip, owner_value):
                 return None
             return dict(trip)
+        if q.startswith(f"SELECT * FROM {self.q('trips')} WHERE guest_session_id=$1 AND idempotency_key=$2"):
+            guest_session_id, idempotency_key = args
+            trip = next(
+                (t for t in self.trips.values() if t["guest_session_id"] == guest_session_id and t["idempotency_key"] == idempotency_key),
+                None,
+            )
+            return dict(trip) if trip else None
         if q.startswith(f"SELECT * FROM {self.q('trips')} WHERE "):
             owner_value = args[0]
             limit = args[1] if len(args) > 1 else len(self.trips)
