@@ -3,7 +3,7 @@
 import re
 from typing import Any, Callable
 
-from twm.schemas.trip_context import FIXED_KEYS
+from twm.schemas.trip_context import DESTINATIONS_KEY, FIXED_KEYS
 
 from .fixtures import EvaluationCase
 
@@ -175,9 +175,21 @@ def _meridian_extracts_freeform_context(
     choosing — not just whatever fixed key the ask happened to touch. Since
     the exact key name is Meridian's own judgment call, this checks that
     each expected term appears somewhere in a non-fixed-key value instead of
-    requiring an exact key name."""
+    requiring an exact key name. `destinations` is deliberately excluded from
+    that search too: it is reserved for a settled choice (Guide gates on it,
+    `select_destination` writes it) -- a candidate the traveler is still just
+    considering must land under a free-form key of Meridian's own choosing,
+    never `destinations`, so a case wouldn't pass this check by having the
+    model write an unsettled candidate into that reserved field instead."""
     context = response.get("state_delta", {}).get("trip_context") or {}
-    freeform_text = " ".join(str(value) for key, value in context.items() if key not in FIXED_KEYS).casefold()
+    if DESTINATIONS_KEY in context:
+        raise RubricFailure(
+            f"Meridian must not write a still-just-considered candidate destination "
+            f"into the reserved {DESTINATIONS_KEY!r} key, got {context[DESTINATIONS_KEY]!r}"
+        )
+    freeform_text = " ".join(
+        str(value) for key, value in context.items() if key not in FIXED_KEYS
+    ).casefold()
     missing = [term for term in expected if term.casefold() not in freeform_text]
     if missing:
         raise RubricFailure(

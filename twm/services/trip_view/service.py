@@ -146,12 +146,12 @@ class TripViewService:
 
     def _compose_context_recap(self, trip_context: dict[str, Any]) -> list[ContextRecapItem]:
         """TWM-232 PR 12: every traveler-provided fact surfaces here, not just
-        the 6 fixed/`destinations` keys — Meridian and Guide both now extract
-        free-form preferences and candidate destinations from the raw
-        message, and none of it should be invisible to the traveler. The 6
-        curated keys keep their existing label and order; every other key
-        `trip_context` actually holds follows, in the order Scout/Meridian/
-        Guide first wrote it, with an auto-humanized label.
+        the 6 fixed/`destinations` keys — free-form preferences and candidate
+        destinations extracted from the raw message should never be invisible
+        to the traveler. The 6 curated keys keep their existing label and
+        order; every other key `trip_context` actually holds follows, in the
+        order whichever agent turn first wrote it, with an auto-humanized
+        label.
         """
         items: list[ContextRecapItem] = []
         for key in _RECAP_KEYS:
