@@ -170,18 +170,6 @@ class TripViewService:
             items.append(ContextRecapItem(key=key, label=_humanize_key(key), value=_coerce_display(raw_value)))
         return items
 
-    def _compose_title(self, raw_title: str) -> str:
-        """TWM-232: the stored title defaults to the literal placeholder
-        `_PLACEHOLDER_TITLE` for a fresh trip, never empty/null. A real title
-        arrives either from the traveler naming the trip or (TWM-232
-        follow-up) an LLM-generated title Meridian/Guide produce once the
-        traveler has answered the "anything else?" gating question -- until
-        then this just passes the placeholder through as-is. No deterministic
-        origin/duration string-building here: the LLM is the one source of a
-        synthesized title, this is only ever a thin passthrough.
-        """
-        return raw_title
-
     def _compose_plan(self, planner_state: dict[str, Any]) -> Optional[TripViewPlan]:
         awaiting = (planner_state.get("conversation_context") or {}).get("awaiting")
         places = list(planner_state.get("places") or [])
