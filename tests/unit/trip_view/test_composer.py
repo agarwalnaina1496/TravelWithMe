@@ -1,5 +1,6 @@
 """TWM-217: TripViewService — each _compose_* block in isolation."""
 
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -34,9 +35,9 @@ def _final_itinerary(**overrides):
     return base
 
 
-def _build(*, trip_state=None, itinerary=None, has_recommendation=False):
+def _build(*, trip_state=None, itinerary=None, has_recommendation=False, title="T"):
     return SERVICE.build(
-        trip_id=TRIP_ID, title="T", product_mode="self_led", version=1,
+        trip_id=TRIP_ID, title=title, product_mode="self_led", version=1,
         trip_state=trip_state or {}, ui_state={},
         itinerary_result=None if itinerary is None else {"final_itinerary": itinerary},
         has_recommendation=has_recommendation,
@@ -76,6 +77,61 @@ def test_context_recap_free_form_keys_follow_the_curated_keys_in_order():
         "considered_destinations": "Malta, Cyprus", "origin_city": "Delhi",
     }})
     assert [r.key for r in view.context_recap] == ["origin_city", "considered_destinations"]
+
+
+# ---- title -------------------------------------------------------------
+
+def test_title_passes_through_a_real_stored_title_unchanged():
+    view = _build(title="Kerala unwind", trip_state={"trip_context": {"destinations": ["Goa"]}})
+    assert view.title == "Kerala unwind"
+
+
+def test_title_falls_back_to_destination_once_the_placeholder_is_stored():
+    view = _build(title="Untitled Trip", trip_state={"trip_context": {"destinations": ["Goa"], "origin_city": "Delhi"}})
+    assert view.title == "Goa"
+
+
+def test_title_falls_back_to_origin_and_duration_with_no_destination_yet():
+    view = _build(title="Untitled Trip", trip_state={"trip_context": {"origin_city": "Bangalore", "trip_duration": "5"}})
+    assert view.title == "Bangalore · 5 days"
+
+
+def test_title_does_not_double_the_unit_when_duration_was_extracted_verbatim_with_one_already():
+    # trip_duration is extracted verbatim from the traveler's own words
+    # (twm/prompts/scout.md) -- it can already read "5 days", not just "5".
+    view = _build(title="Untitled Trip", trip_state={"trip_context": {"origin_city": "Bangalore", "trip_duration": "5 days"}})
+    assert view.title == "Bangalore · 5 days"
+
+
+def test_title_falls_back_to_origin_only():
+    view = _build(title="Untitled Trip", trip_state={"trip_context": {"origin_city": "Bangalore"}})
+    assert view.title == "Trip from Bangalore"
+
+
+def test_title_falls_back_to_duration_only():
+    view = _build(title="Untitled Trip", trip_state={"trip_context": {"trip_duration": "5"}})
+    assert view.title == "5-day trip"
+
+
+def test_title_falls_back_to_verbatim_duration_only_when_not_bare_numeric():
+    view = _build(title="Untitled Trip", trip_state={"trip_context": {"trip_duration": "a week"}})
+    assert view.title == "a week"
+
+
+def test_title_stays_the_placeholder_when_nothing_is_extracted_yet():
+    view = _build(title="Untitled Trip", trip_state={"trip_context": {}})
+    assert view.title == "Untitled Trip"
+
+
+def test_list_item_title_uses_the_same_fallback_chain():
+    now = datetime.now(timezone.utc)
+    item = SERVICE.build_list_item(
+        trip_id=TRIP_ID, title="Untitled Trip", product_mode="self_led", version=1,
+        created_at=now, updated_at=now,
+        trip_state={"trip_context": {"origin_city": "Bangalore", "trip_duration": "5"}},
+        has_recommendation=False,
+    )
+    assert item.title == "Bangalore · 5 days"
 
 
 def test_context_recap_omits_an_empty_free_form_value():
