@@ -33,6 +33,7 @@ def test_meridian_evaluation_corpus_covers_status_and_state_ownership() -> None:
         "multi-origin-meeting-point-success",
         "multi-origin-does-not-reask-origin-clarification",
         "dates-answer-recorded-in-iso",
+        "fresh-discover-entry-extracts-freeform-preferences-and-candidates",
     }
     assert cases_by_id["dates-answer-recorded-in-iso"]["invariants"]["travel_dates"] == "2026-12"
     assert cases_by_id["circuit-preference-clarification"]["invariants"] == {

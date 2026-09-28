@@ -461,5 +461,26 @@
       "requires_awaiting_reason": true,
       "no_options_allowed": true
     }
+  },
+  {
+    "id": "fresh-discover-entry-extracts-freeform-preferences-and-candidates",
+    "scenario": "TWM-232 PR 12: a trip's very first message (Discover entry, no upstream extraction, empty trip_context) is detail-dense -- Meridian must extract the fixed-key facts AND the free-form activity preferences AND the named candidate destinations, not just whatever the readiness gate happens to ask about",
+    "input": {
+      "trip_state": {
+        "trip_context": {},
+        "advisor_state": {
+          "conversation_context": { "last_advisor_message": null }
+        },
+        "matcher_state": {}
+      },
+      "message": "Solo travel recs needed for October (25F) I'm looking to go on a solo trip somewhere in mid to end October for 5 days. I want to explore, see some museums, visit cafes and see some beautiful beaches and if I can, go for a swim! I've seen lots of recommendations but I'm stuck I don't know what to choose. I've heard Malta, Spain (Seville, Mallorca), Cyprus, Croatia...etc. Any advice would be appreciated"
+    },
+    "invariants": {
+      "status": "NEEDS_CLARIFICATION",
+      "requires_awaiting_reason": true,
+      "no_options_allowed": true,
+      "travel_dates": "mid to end October",
+      "extracts_freeform_context": ["museum", "beach", "Malta", "Cyprus", "Croatia"]
+    }
   }
 ]

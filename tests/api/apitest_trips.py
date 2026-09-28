@@ -550,7 +550,7 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
         "stage": "matching",
         "status": "free",
         "active_agent": "meridian",
-        "trip_context": {"origin_city": "Delhi", "budget": "₹1,00,000", "not_a_recap_field": "ignored"},
+        "trip_context": {"origin_city": "Delhi", "budget": "₹1,00,000", "activity_preferences": "museums"},
         "matcher_state": {"conversation_context": {"awaiting": None}},
     }
     ui_state = {"destinationsOpenId": "gwalior-orchha-khajuraho-panna"}
@@ -563,8 +563,12 @@ def test_list_trips_returns_a_small_recap_not_the_full_trip_state(
     assert item["lifecycle"] == {
         "stage": "matching", "status": "free", "active_agent": "meridian", "selected_option": None,
     }
+    # TWM-232 PR 12: a free-form trip_context key (activity_preferences) now
+    # surfaces here too, not just the 6 fixed/destinations keys — this test's
+    # actual guarantee is that the full trip_state/matcher_state/planner_state
+    # blobs never leak into the list item, asserted below.
     assert {r["key"]: r["value"] for r in item["context_recap"]} == {
-        "origin_city": "Delhi", "budget": "₹1,00,000",
+        "origin_city": "Delhi", "budget": "₹1,00,000", "activity_preferences": "museums",
     }
     assert item["has_day_plan"] is False
     assert item["has_places"] is False

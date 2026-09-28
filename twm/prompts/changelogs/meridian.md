@@ -1,5 +1,19 @@
 # Meridian prompt changelog
 
+## Meridian 1.15.0 — 2026-09-28
+
+- **Full-message extraction, every turn (TWM-232 PR 12).** Removed the
+  stale opening assumption that traveler context arrives "already
+  extracted" — confirmed no upstream step ever performs that extraction in
+  the live product. Meridian now extracts from `message` first on every
+  turn, regardless of what `awaiting` was asking: a rich message (especially
+  a trip's very first one) can supply several fixed-key facts and free-form
+  preferences or candidate destinations at once, and a short reply still has
+  any unprompted extra it volunteers captured, not just the one field it was
+  asked for. Previously only the field `awaiting` named (or nothing, on a
+  first message with no `awaiting` yet) was captured, silently dropping
+  everything else the traveler said.
+
 ## Meridian 1.14.0 — 2026-09-09
 
 - **`travel_dates` recorded in ISO form (TWM-227 follow-up).** When the
