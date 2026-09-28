@@ -443,6 +443,7 @@ class PostgresTripRepository:
         response_trip_state: dict[str, Any], response: dict[str, Any],
         touched_branches: frozenset[str],
         new_recommendation: dict[str, Any] | None = None,
+        title: str | None = None,
     ) -> TripRecord | TripCommandRecord | None:
         stage, status, active_agent = _lifecycle_values(trip_state)
         async with self.pool.acquire() as connection:
@@ -457,12 +458,19 @@ class PostgresTripRepository:
                         prior["request_hash"],
                         await self._hydrate_command_response(connection, trip_id, _json_object(prior["response"])),
                     )
+                # TWM-232: `title` is only ever a Backend-decided promotion of
+                # an LLM-generated title over the still-unset placeholder
+                # (TripCommandService.execute already made that call) --
+                # COALESCE so a normal command with nothing to promote
+                # (title=NULL) leaves the stored title untouched rather than
+                # requiring the caller to know and re-pass the current value.
                 row = await connection.fetchrow(
                     f"""UPDATE {self.schema}.trips
-                    SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7,version=version+1,updated_at=now()
+                    SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7,
+                        title=COALESCE($8,title),version=version+1,updated_at=now()
                     WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
                     trip_id, _owner_value(owner), expected_version,
-                    json.dumps(_blob_state(trip_state)), stage, status, active_agent,
+                    json.dumps(_blob_state(trip_state)), stage, status, active_agent, title,
                 )
                 if not row:
                     prior = await connection.fetchrow(

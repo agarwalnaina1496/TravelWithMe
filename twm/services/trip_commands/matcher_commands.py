@@ -42,12 +42,14 @@ async def apply_meridian(
     if refinement is not None:
         _validate_refinement_reference(refinement, prior_options)
         matcher_state["refinement"] = refinement
+    previous_awaiting = state["matcher_state"].get("conversation_context", {}).get("awaiting")
     phase = {
         "trip_context": state["trip_context"],
         "advisor_state": {
             "conversation_context": state["advisor_state"].get("conversation_context", {})
         },
         "matcher_state": matcher_state,
+        "current_title": state.get("title"),
     }
     request = MeridianRequest.model_validate({"trip_state": phase, "message": message})
     request_data = request.model_dump(mode="json", exclude_none=True)
@@ -84,6 +86,17 @@ async def apply_meridian(
         "message": response.message,
         "agent_meta": response.agent_meta.model_dump(mode="json"),
     }
+    # TWM-232: same pattern as Guide -- the turn where the final gating
+    # question ("anything_else") clears is the one point Meridian may have
+    # produced a title (gated in meridian.md on `current_title` already
+    # being unset). Promotion into the real `Trip.title` column happens
+    # centrally in TripCommandService.execute, not here.
+    anything_else_just_cleared = (
+        previous_awaiting == "anything_else"
+        and not state["matcher_state"].get("conversation_context", {}).get("awaiting")
+    )
+    if anything_else_just_cleared and matcher_delta.get("generated_title"):
+        result["generated_title"] = matcher_delta["generated_title"]
     if response.status == "NEEDS_CLARIFICATION":
         # No stage write here: apply_meridian only ever runs once stage is
         # already "matching" (set upstream by discover_entry, Scout's

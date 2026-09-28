@@ -25,6 +25,11 @@ class MeridianTripState(BaseModel):
     trip_context: TripContext = Field(default_factory=TripContext)
     advisor_state: ScoutAdvisorState = Field(default_factory=ScoutAdvisorState)
     matcher_state: dict[str, Any] = Field(default_factory=dict)
+    # TWM-232: read-only visibility into the trip's current title so Meridian
+    # can tell whether one is already set -- the same presence check it
+    # already does for any trip_context field -- before deciding whether to
+    # generate one. None/the placeholder both read as "not set yet".
+    current_title: Optional[str] = None
 
 
 class MeridianRequest(BaseModel):

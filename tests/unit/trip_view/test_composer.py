@@ -1,5 +1,6 @@
 """TWM-217: TripViewService — each _compose_* block in isolation."""
 
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -34,9 +35,9 @@ def _final_itinerary(**overrides):
     return base
 
 
-def _build(*, trip_state=None, itinerary=None, has_recommendation=False):
+def _build(*, trip_state=None, itinerary=None, has_recommendation=False, title="T"):
     return SERVICE.build(
-        trip_id=TRIP_ID, title="T", product_mode="self_led", version=1,
+        trip_id=TRIP_ID, title=title, product_mode="self_led", version=1,
         trip_state=trip_state or {}, ui_state={},
         itinerary_result=None if itinerary is None else {"final_itinerary": itinerary},
         has_recommendation=has_recommendation,
@@ -76,6 +77,36 @@ def test_context_recap_free_form_keys_follow_the_curated_keys_in_order():
         "considered_destinations": "Malta, Cyprus", "origin_city": "Delhi",
     }})
     assert [r.key for r in view.context_recap] == ["origin_city", "considered_destinations"]
+
+
+# ---- title -------------------------------------------------------------
+#
+# TWM-232: title composition has no deterministic fallback chain -- a real
+# title (traveler-set or LLM-promoted by trip_commands, see
+# services/trip_commands/{matcher,planner}_commands.py) is written straight
+# to the `Trip.title` column, so the composer is a pure passthrough. There is
+# nothing here to compose; these tests exist so a stray future _compose_title
+# reintroduction doesn't silently change this contract.
+
+def test_title_passes_through_whatever_is_stored_unchanged():
+    view = _build(title="Kerala unwind")
+    assert view.title == "Kerala unwind"
+
+
+def test_title_passes_through_the_placeholder_unchanged():
+    view = _build(title="Untitled Trip")
+    assert view.title == "Untitled Trip"
+
+
+def test_list_item_title_passes_through_unchanged():
+    now = datetime.now(timezone.utc)
+    item = SERVICE.build_list_item(
+        trip_id=TRIP_ID, title="Kerala unwind", product_mode="self_led", version=1,
+        created_at=now, updated_at=now,
+        trip_state={"trip_context": {"origin_city": "Bangalore"}},
+        has_recommendation=False,
+    )
+    assert item.title == "Kerala unwind"
 
 
 def test_context_recap_omits_an_empty_free_form_value():

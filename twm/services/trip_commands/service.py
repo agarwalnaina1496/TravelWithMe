@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from ...persistence.contracts import RecommendationRecord, TripCommandRecord, TripOwner, TripRecord, TripRepository
 from ...schemas.trips import (
+    PLACEHOLDER_TITLE,
     TripCommandRequest,
     TripCommandResponse,
     TripFirstMessageRequest,
@@ -49,12 +50,28 @@ class TripCommandService:
 
         state = canonical_state(trip.trip_state)
         state["trip_id"] = str(trip.id)
+        # Not part of trip_state (title is its own Trip column, never part of
+        # the persisted jsonb blob -- BLOB_STATE_FIELDS excludes it) — set
+        # transiently so apply_guide/apply_meridian can pass it to their
+        # agent as `current_title`, the presence check Guide/Meridian use to
+        # decide whether to generate one (TWM-232).
+        state["title"] = trip.title
         latest_recommendation = await self.repository.get_latest_recommendation(owner, trip.id)
         before = snapshot_touchable_branches(state)
         result = await self._apply(state, payload, latest_recommendation)
         touched = touched_branches(state, before)
         shaped_trip_state = shape_command_trip_state(state, touched)
         new_recommendation = result.pop("new_recommendation", None)
+        # TWM-232: Meridian/Guide may have produced a title this turn (only
+        # on the turn they clear `awaiting` from "anything_else", only when
+        # `current_title` was still unset). Backend -- not the agent --
+        # makes the final "is there really no real title yet" call here,
+        # once, at write time; a title set by rename in the meantime always
+        # wins since this only ever promotes over the placeholder.
+        generated_title = result.pop("generated_title", None)
+        promoted_title = (
+            generated_title if generated_title and trip.title == PLACEHOLDER_TITLE else None
+        )
         recommendation = None
         if new_recommendation is not None:
             # TWM-217: the turn produced a matcher round — return it inline
@@ -81,6 +98,7 @@ class TripCommandService:
             response_without_trip,
             frozenset(touched),
             new_recommendation,
+            promoted_title,
         )
         if committed is None:
             raise LookupError("Trip not found.")

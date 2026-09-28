@@ -1,5 +1,20 @@
 # Guide prompt changelog
 
+## Guide 3.3.0 — 2026-09-28
+
+- **LLM-generated trip title (TWM-232).** On the turn Guide clears the final
+  `"anything_else"` gate and generates the complete plan, it now also checks
+  `current_title` (a new read-only field on `GuideTripState`) with the same
+  presence check it already applies to every other field — empty, missing,
+  or the literal placeholder `"Untitled Trip"` all count as unset. If unset,
+  Guide generates a short, natural trip title and returns it as
+  `state_delta.planner_state.generated_title`; if a real title is already
+  set, it leaves the field out entirely. Backend promotes a returned title
+  into the trip's real title once, deterministically, only over the
+  placeholder — Guide itself never checks who set an existing title, only
+  whether one is set. Replaces the client-side origin+duration string
+  template the UI previously synthesized for a still-untitled trip.
+
 ## Guide 3.2.0 — 2026-09-09
 
 - **`travel_dates` recorded in ISO form (TWM-227 follow-up).** When the

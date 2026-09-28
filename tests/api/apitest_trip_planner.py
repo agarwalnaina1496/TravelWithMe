@@ -33,6 +33,7 @@ def guide_places_output() -> dict:
                     "Neer Garh Waterfall",
                 ],
                 "day_plan": None,
+                "generated_title": None,
             },
         },
     }
@@ -206,6 +207,7 @@ def test_guide_api_forwards_state_and_message_with_no_guide_event(api_client: Te
                 "places": [],
                 "day_plan": [],
             },
+            "current_title": None,
         },
         "Plan a relaxed trip.",
     )

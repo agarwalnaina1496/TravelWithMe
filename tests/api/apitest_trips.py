@@ -169,7 +169,7 @@ class MemoryTripRepository:
             if trip_id in owned and self.recommendations.get(trip_id)
         }
 
-    async def commit_command(self, owner, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches=frozenset(), new_recommendation=None):
+    async def commit_command(self, owner, trip_id, expected_version, idempotency_key, request_hash, trip_state, response_trip_state, response, touched_branches=frozenset(), new_recommendation=None, title=None):
         key = (owner.user_id or owner.guest_session_id, trip_id, idempotency_key)
         if key in self.commands:
             return self.commands[key]
@@ -189,7 +189,10 @@ class MemoryTripRepository:
             if state_key in _BRANCHES and state_key not in touched_branches:
                 continue
             merged[state_key] = state_value
-        updated = replace(trip, trip_state=merged, version=trip.version + 1, updated_at=datetime.now(timezone.utc))
+        updated = replace(
+            trip, trip_state=merged, version=trip.version + 1, updated_at=datetime.now(timezone.utc),
+            title=title if title is not None else trip.title,
+        )
         self.trips[trip_id] = updated
         if new_recommendation is not None:
             self.recommendations.setdefault(trip_id, []).append(RecommendationRecord(
@@ -1124,6 +1127,162 @@ def test_guide_clearing_final_gate_without_a_plan_is_rejected(api_client: TestCl
     persisted = api_client.get(f"/trips/{trip['id']}").json()
     assert persisted["version"] == 1
     assert persisted["plan"]["awaiting"] == "anything_else"
+
+
+class FakeGuideGeneratesTitleEngine(FakeCommandEngine):
+    """Guide clears the terminal `anything_else` gate, returns a day_plan
+    (required by _validate_guide_transition), and also produces a title."""
+
+    async def guide(self, trip_state, message):
+        self.calls.append(("guide", trip_state, message))
+        return AgentExecution(
+            response={
+                "message": "Here's your plan.",
+                "state_delta": {
+                    "planner_state": {
+                        "conversation_context": {"awaiting": None},
+                        "day_plan": [
+                            {
+                                "day_number": 1, "date": None,
+                                "places": ["Triveni Ghat"], "pace": "balanced", "buffer_note": None,
+                            }
+                        ],
+                        "generated_title": "5 days in Rishikesh",
+                    },
+                },
+            },
+            prompt_release=PromptRelease("guide", "1.0.0", "test"),
+        )
+
+
+def _guide_anything_else_state(places=None):
+    return {
+        "stage": "planning",
+        "active_agent": "guide",
+        "trip_context": {"destinations": ["Rishikesh"], "trip_duration": 1},
+        "planner_state": {
+            "conversation_context": {"awaiting": "anything_else"},
+            "places": places or ["Triveni Ghat"],
+            "day_plan": [],
+            "revision": 1,
+        },
+    }
+
+
+def test_guide_promotes_a_generated_title_once_the_placeholder_is_still_stored(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeGuideGeneratesTitleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(
+        api_client, repository, title="Untitled Trip", trip_state=_guide_anything_else_state()
+    )
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Nothing else.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert response.status_code == 200
+    assert response.json()["trip"]["title"] == "5 days in Rishikesh"
+    persisted = api_client.get(f"/trips/{trip['id']}").json()
+    assert persisted["title"] == "5 days in Rishikesh"
+
+
+def test_guide_never_overwrites_a_real_title_even_if_one_is_generated(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeGuideGeneratesTitleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(
+        api_client, repository, title="My Real Trip Name", trip_state=_guide_anything_else_state()
+    )
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Nothing else.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert response.status_code == 200
+    assert response.json()["trip"]["title"] == "My Real Trip Name"
+
+
+class FakeMeridianGeneratesTitleEngine(FakeCommandEngine):
+    """Meridian clears the terminal `anything_else` gate and recommends,
+    also producing a title."""
+
+    async def meridian(self, trip_state, message):
+        self.calls.append(("meridian", trip_state, message))
+        return AgentExecution(
+            response={
+                "status": "SUCCESS",
+                "message": "Here are some options.",
+                "state_delta": {
+                    "trip_context": {},
+                    "matcher_state": {
+                        "conversation_context": {"awaiting": None},
+                        "generated_title": "5 days from Bangalore",
+                    },
+                },
+                "trip_type": "single",
+                "traveler_criteria": [{
+                    "id": "pace", "label": "Relaxed pace",
+                    "requirement_type": "PREFERENCE", "source_context_paths": ["travel_style.pace"],
+                }],
+                "options": [{
+                    "rank": 1, "type": "single", "name": "Goa",
+                    "destination_id": "goa",
+                    "summary": "A relaxed beach getaway.",
+                    "evaluations": [{
+                        "criterion_id": "pace", "outcome": "MATCH",
+                        "conclusion": "Goa keeps a relaxed pace.",
+                        "details": [{"type": "bullets", "items": ["Slow mornings, easy evenings."]}],
+                    }],
+                }],
+            },
+            prompt_release=PromptRelease("meridian", "1.0.0", "test"),
+        )
+
+
+def _meridian_anything_else_state():
+    return {
+        "stage": "matching",
+        "active_agent": "meridian",
+        "trip_context": {"origin_city": "Bangalore", "trip_duration": 5},
+        "matcher_state": {"conversation_context": {"awaiting": "anything_else"}},
+    }
+
+
+def test_meridian_promotes_a_generated_title_once_the_placeholder_is_still_stored(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeMeridianGeneratesTitleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(
+        api_client, repository, title="Untitled Trip", trip_state=_meridian_anything_else_state()
+    )
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Nothing else.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert response.status_code == 200
+    assert response.json()["trip"]["title"] == "5 days from Bangalore"
+
+
+def test_meridian_never_overwrites_a_real_title_even_if_one_is_generated(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeMeridianGeneratesTitleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(
+        api_client, repository, title="My Real Trip Name", trip_state=_meridian_anything_else_state()
+    )
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Nothing else.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert response.status_code == 200
+    assert response.json()["trip"]["title"] == "My Real Trip Name"
 
 
 def test_single_step_generation_logs_plan_generated_with_budget_and_preference_presence(
