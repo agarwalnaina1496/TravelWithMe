@@ -145,6 +145,14 @@ class TripViewService:
         )
 
     def _compose_context_recap(self, trip_context: dict[str, Any]) -> list[ContextRecapItem]:
+        """TWM-232 PR 12: every traveler-provided fact surfaces here, not just
+        the 6 fixed/`destinations` keys — free-form preferences and candidate
+        destinations extracted from the raw message should never be invisible
+        to the traveler. The 6 curated keys keep their existing label and
+        order; every other key `trip_context` actually holds follows, in the
+        order whichever agent turn first wrote it, with an auto-humanized
+        label.
+        """
         items: list[ContextRecapItem] = []
         for key in _RECAP_KEYS:
             if key not in trip_context or trip_context[key] in (None, "", []):
@@ -156,6 +164,10 @@ class TripViewService:
                 or _coerce_display(trip_context[key])
             )
             items.append(ContextRecapItem(key=key, label=_RECAP_LABELS[key], value=value))
+        for key, raw_value in trip_context.items():
+            if key in _RECAP_KEYS or raw_value in (None, "", []):
+                continue
+            items.append(ContextRecapItem(key=key, label=_humanize_key(key), value=_coerce_display(raw_value)))
         return items
 
     def _compose_plan(self, planner_state: dict[str, Any]) -> Optional[TripViewPlan]:
@@ -339,6 +351,12 @@ class TripViewService:
 
 
 # ---- pure helpers -------------------------------------------------------
+
+
+def _humanize_key(key: str) -> str:
+    """Auto-label for a free-form `trip_context` key with no curated
+    `_RECAP_LABELS` entry — `activity_preferences` -> `Activity preferences`."""
+    return key.replace("_", " ").capitalize()
 
 
 def _coerce_display(value: Any) -> str:

@@ -55,12 +55,32 @@ def test_lifecycle_reads_the_columns_and_selected_option():
 @pytest.mark.parametrize("context,expected", [
     ({}, {}),
     ({"origin_city": "Delhi"}, {"origin_city": "Delhi"}),
-    ({"origin_city": "Delhi", "budget": "INR 50000", "destinations": ["Goa"], "junk": "x"},
-     {"origin_city": "Delhi", "budget": "INR 50000", "destinations": "Goa"}),
+    # TWM-232 PR 12: a free-form key (e.g. "activity_preferences") is no
+    # longer dropped — it surfaces too, alongside the 6 curated keys.
+    ({"origin_city": "Delhi", "budget": "INR 50000", "destinations": ["Goa"], "activity_preferences": "museums, beaches"},
+     {"origin_city": "Delhi", "budget": "INR 50000", "destinations": "Goa", "activity_preferences": "museums, beaches"}),
 ])
-def test_context_recap_covers_only_addressable_keys(context, expected):
+def test_context_recap_surfaces_every_present_key(context, expected):
     view = _build(trip_state={"trip_context": context})
     assert {r.key: r.value for r in view.context_recap} == expected
+
+
+def test_context_recap_auto_humanizes_a_free_form_key_label():
+    view = _build(trip_state={"trip_context": {"activity_preferences": "museums, beaches"}})
+    item = next(r for r in view.context_recap if r.key == "activity_preferences")
+    assert item.label == "Activity preferences"
+
+
+def test_context_recap_free_form_keys_follow_the_curated_keys_in_order():
+    view = _build(trip_state={"trip_context": {
+        "considered_destinations": "Malta, Cyprus", "origin_city": "Delhi",
+    }})
+    assert [r.key for r in view.context_recap] == ["origin_city", "considered_destinations"]
+
+
+def test_context_recap_omits_an_empty_free_form_value():
+    view = _build(trip_state={"trip_context": {"origin_city": "Delhi", "notes": ""}})
+    assert "notes" not in {r.key for r in view.context_recap}
 
 
 @pytest.mark.parametrize("stored,shown", [

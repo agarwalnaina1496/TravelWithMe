@@ -1,0 +1,8 @@
+{
+  "agent": "meridian",
+  "case_id": "fresh-discover-entry-extracts-freeform-preferences-and-candidates",
+  "execution_path": "direct",
+  "prompt_version": "1.15.0",
+  "recorded_by": "seed-placeholder",
+  "raw_output": "{\"status\": \"NEEDS_CLARIFICATION\", \"state_delta\": {\"trip_context\": {\"num_travelers\": 1, \"trip_duration\": \"5 days\", \"travel_dates\": \"mid to end October\", \"activity_preferences\": \"explore, museums, cafes, beaches, swim\", \"considered_destinations\": \"Malta, Spain (Seville, Mallorca), Cyprus, Croatia\"}, \"matcher_state\": {\"conversation_context\": {\"awaiting\": \"origin_city\", \"last_meridian_message\": \"A five day solo trip in late October with a mix of culture, cozy cafes, and beach weather sounds wonderful. To make sure we pick a destination with easy travel connections for a short five day visit, where will you be flying or departing from?\"}}}, \"message\": \"A five day solo trip in late October with a mix of culture, cozy cafes, and beach weather sounds wonderful. To make sure we pick a destination with easy travel connections for a short five day visit, where will you be flying or departing from?\", \"options\": []}"
+}
