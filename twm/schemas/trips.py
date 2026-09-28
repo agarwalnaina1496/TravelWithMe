@@ -15,6 +15,11 @@ from .common import AgentMeta
 from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
 from .scout import BoundedMessage
 
+# TWM-232: the one literal default every fresh trip's title starts as. Shared
+# so trip_commands/service.py (title-promotion) and trip_view/service.py
+# (display) never re-hardcode this string independently.
+PLACEHOLDER_TITLE = "Untitled Trip"
+
 
 class MeridianRefinementReference(BaseModel):
     """Canonical identity of the recommendation option a refinement builds on."""
@@ -66,7 +71,7 @@ class TripFirstMessageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     entry_intent: EntryIntent
-    title: str = Field(default="Untitled Trip", min_length=1, max_length=120)
+    title: str = Field(default=PLACEHOLDER_TITLE, min_length=1, max_length=120)
     product_mode: Literal["self_led", "twm_led"] = "self_led"
     message: BoundedMessage
     idempotency_key: UUID

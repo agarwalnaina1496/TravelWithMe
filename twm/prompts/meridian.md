@@ -94,6 +94,8 @@ Once every field the current ask depends on is known, ask the sixth gating quest
 
 This gate fires at most once per trip: once a turn has answered it, later refinements and `more_like_this` calls recommend normally without re-asking. A terminal failure status (`HARD_FAIL`, `BUDGET_FAIL`, `CONFLICT_FAIL`) may still be returned before the gate is answered when the known context already makes success impossible — the gate exists to make room for late-breaking preferences before a real recommendation, not to delay an outcome that already has no viable path.
 
+On the turn that answers this gate, also check `current_title` the same way you check any other already-known field: empty, missing, or the literal placeholder `"Untitled Trip"` all count as unset. If it is unset, generate a short, natural trip title from what you now know and return it as `state_delta.matcher_state.generated_title`; if `current_title` already holds a real value, leave `generated_title` out entirely. This is a plain presence check, nothing more.
+
 ---
 
 ## Recommendation Reasoning

@@ -1,5 +1,20 @@
 # Meridian prompt changelog
 
+## Meridian 1.16.0 — 2026-09-28
+
+- **LLM-generated trip title (TWM-232).** On the turn that answers the final
+  `"anything_else"` gate, Meridian now also checks `current_title` (a new
+  read-only field on `MeridianTripState`) with the same presence check it
+  already applies to every other field — empty, missing, or the literal
+  placeholder `"Untitled Trip"` all count as unset. If unset, Meridian
+  generates a short, natural trip title and returns it as
+  `state_delta.matcher_state.generated_title`; if a real title is already
+  set, it leaves the field out entirely. Backend promotes a returned title
+  into the trip's real title once, deterministically, only over the
+  placeholder — Meridian itself never checks who set an existing title,
+  only whether one is set. Replaces the client-side origin+duration string
+  template the UI previously synthesized for a still-untitled trip.
+
 ## Meridian 1.15.0 — 2026-09-28
 
 - **Full-message extraction, every turn (TWM-232 PR 12).** Removed the

@@ -20,7 +20,7 @@ import re
 from typing import Any, Optional
 from uuid import UUID
 
-from ...schemas.trip_context import DESTINATIONS_KEY, FIXED_KEYS, ORIGIN_CITY_KEY, TRIP_DURATION_KEY
+from ...schemas.trip_context import DESTINATIONS_KEY, FIXED_KEYS
 from ...schemas.trip_view import (
     BeforeYouGoItem,
     BudgetBreakdown,
@@ -53,11 +53,6 @@ _RECAP_LABELS = {
     DESTINATIONS_KEY: "Destination",
 }
 _RECAP_KEYS = (*FIXED_KEYS, DESTINATIONS_KEY)
-
-# `TripFirstMessageRequest.title` (schemas/trips.py) defaults every fresh
-# trip's stored title to this literal string, never empty/null -- treat it
-# as "no real title yet" the same way an empty string would be.
-_PLACEHOLDER_TITLE = "Untitled Trip"
 
 _ASSUMPTION_TITLES = {
     "stay_area": "Where you'll stay",
@@ -92,7 +87,7 @@ class TripViewService:
 
         return TripView(
             id=trip_id,
-            title=self._compose_title(title, trip_context),
+            title=title,
             product_mode=product_mode,
             version=version,
             ui_state=ui_state,
@@ -122,10 +117,9 @@ class TripViewService:
         """`GET /trips` — the thin subset, still composer-owned so the
         derivation stays in one place."""
         planner_state = trip_state.get("planner_state") or {}
-        trip_context = trip_state.get("trip_context") or {}
         return TripListItem(
             id=trip_id,
-            title=self._compose_title(title, trip_context),
+            title=title,
             product_mode=product_mode,
             version=version,
             created_at=created_at,
@@ -176,34 +170,17 @@ class TripViewService:
             items.append(ContextRecapItem(key=key, label=_humanize_key(key), value=_coerce_display(raw_value)))
         return items
 
-    def _compose_title(self, raw_title: str, trip_context: dict[str, Any]) -> str:
+    def _compose_title(self, raw_title: str) -> str:
         """TWM-232: the stored title defaults to the literal placeholder
-        `_PLACEHOLDER_TITLE` for a fresh trip, never empty/null. Until the
-        traveler names it (or a destination is chosen), synthesize a display
-        title from what's been extracted so far -- destination first, then
-        origin/duration -- the same fallback chain the UI used to run
-        client-side. `trip_duration` is extracted verbatim from the
-        traveler's own words (see twm/prompts/scout.md) so it may already
-        read "5 days", not just "5" -- only append the unit when it's bare.
-        `title` stays a required field on `TripView`/`TripListItem`, so when
-        nothing is derivable yet this returns the placeholder itself rather
-        than `None`.
+        `_PLACEHOLDER_TITLE` for a fresh trip, never empty/null. A real title
+        arrives either from the traveler naming the trip or (TWM-232
+        follow-up) an LLM-generated title Meridian/Guide produce once the
+        traveler has answered the "anything else?" gating question -- until
+        then this just passes the placeholder through as-is. No deterministic
+        origin/duration string-building here: the LLM is the one source of a
+        synthesized title, this is only ever a thin passthrough.
         """
-        if raw_title and raw_title != _PLACEHOLDER_TITLE:
-            return raw_title
-        destination = trip_context.get(DESTINATIONS_KEY)
-        if destination:
-            return _coerce_display(destination)
-        origin = trip_context.get(ORIGIN_CITY_KEY)
-        duration = trip_context.get(TRIP_DURATION_KEY)
-        if origin and duration:
-            return f"{origin} · {_format_duration(duration)}"
-        if origin:
-            return f"Trip from {origin}"
-        if duration:
-            duration_str = str(duration)
-            return f"{duration_str}-day trip" if duration_str.isdigit() else duration_str
-        return _PLACEHOLDER_TITLE
+        return raw_title
 
     def _compose_plan(self, planner_state: dict[str, Any]) -> Optional[TripViewPlan]:
         awaiting = (planner_state.get("conversation_context") or {}).get("awaiting")
@@ -392,11 +369,6 @@ def _humanize_key(key: str) -> str:
     """Auto-label for a free-form `trip_context` key with no curated
     `_RECAP_LABELS` entry — `activity_preferences` -> `Activity preferences`."""
     return key.replace("_", " ").capitalize()
-
-
-def _format_duration(duration: Any) -> str:
-    duration_str = str(duration)
-    return f"{duration_str} days" if duration_str.isdigit() else duration_str
 
 
 def _coerce_display(value: Any) -> str:

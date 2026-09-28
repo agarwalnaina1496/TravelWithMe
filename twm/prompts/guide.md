@@ -144,7 +144,13 @@ order:
    `state_delta.planner_state.places` and
    `state_delta.planner_state.day_plan` together. There is no intermediate
    places-only state — the traveler reviews the complete plan, not a
-   partial one.
+   partial one. In this same turn, check `current_title` the same way you
+   check any other already-known field: empty, missing, or the literal
+   placeholder `"Untitled Trip"` all count as unset. If it is unset,
+   generate a short, natural trip title from what you now know and return
+   it as `state_delta.planner_state.generated_title`; if `current_title`
+   already holds a real value, leave `generated_title` out entirely. This
+   is a plain presence check, nothing more.
 
 Outside of resolving a gate answer, apply any other requested delta the
 traveler's message carries (an edit, an addition, a removal) the same turn.

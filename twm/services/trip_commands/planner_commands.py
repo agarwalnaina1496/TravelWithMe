@@ -133,6 +133,7 @@ async def apply_guide(
             "trip_state": {
                 "trip_context": state["trip_context"],
                 "planner_state": _guide_planner_snapshot(state),
+                "current_title": state.get("title"),
             },
             "message": message,
         }
@@ -197,6 +198,7 @@ async def apply_guide(
 
     _validate_guide_transition(state, planner_delta, previous_awaiting)
     planner["revision"] = int(planner.get("revision", 0)) + 1
+    generated_title = _guide_generated_title(planner, planner_delta, previous_awaiting)
 
     places_count = len(planner.get("places") or [])
     day_plan_length = len(planner.get("day_plan") or [])
@@ -235,10 +237,13 @@ async def apply_guide(
         places_count=places_count,
         day_plan_length=day_plan_length,
     )
-    return {
+    result: dict[str, Any] = {
         "message": response.message,
         "agent_meta": response.agent_meta.model_dump(mode="json"),
     }
+    if generated_title:
+        result["generated_title"] = generated_title
+    return result
 
 
 def _apply_plan_freeze(
@@ -389,6 +394,26 @@ def apply_reopen_revisit(
         "message": "Here are the destinations Meridian already found for you.",
         "agent_meta": None,
     }
+
+
+def _guide_generated_title(
+    planner: dict[str, Any], planner_delta: Any, previous_awaiting: str | None
+) -> str | None:
+    """TWM-232: the same "cleared the final gating question" transition
+    `_validate_guide_transition` checks is also the one point Guide may have
+    produced a title (gated in guide.md on `current_title` already being
+    unset -- Backend doesn't re-check that here, only whether the transition
+    happened and a title was actually produced this turn). Promotion into
+    the real `Trip.title` column happens centrally in
+    TripCommandService.execute, not here.
+    """
+    anything_else_just_cleared = (
+        previous_awaiting == "anything_else"
+        and not planner.get("conversation_context", {}).get("awaiting")
+    )
+    if anything_else_just_cleared and planner_delta.generated_title:
+        return planner_delta.generated_title
+    return None
 
 
 def _validate_guide_transition(

@@ -80,58 +80,33 @@ def test_context_recap_free_form_keys_follow_the_curated_keys_in_order():
 
 
 # ---- title -------------------------------------------------------------
+#
+# TWM-232: title composition has no deterministic fallback chain -- a real
+# title (traveler-set or LLM-promoted by trip_commands, see
+# services/trip_commands/{matcher,planner}_commands.py) is written straight
+# to the `Trip.title` column, so the composer is a pure passthrough. There is
+# nothing here to compose; these tests exist so a stray future _compose_title
+# reintroduction doesn't silently change this contract.
 
-def test_title_passes_through_a_real_stored_title_unchanged():
-    view = _build(title="Kerala unwind", trip_state={"trip_context": {"destinations": ["Goa"]}})
+def test_title_passes_through_whatever_is_stored_unchanged():
+    view = _build(title="Kerala unwind")
     assert view.title == "Kerala unwind"
 
 
-def test_title_falls_back_to_destination_once_the_placeholder_is_stored():
-    view = _build(title="Untitled Trip", trip_state={"trip_context": {"destinations": ["Goa"], "origin_city": "Delhi"}})
-    assert view.title == "Goa"
-
-
-def test_title_falls_back_to_origin_and_duration_with_no_destination_yet():
-    view = _build(title="Untitled Trip", trip_state={"trip_context": {"origin_city": "Bangalore", "trip_duration": "5"}})
-    assert view.title == "Bangalore · 5 days"
-
-
-def test_title_does_not_double_the_unit_when_duration_was_extracted_verbatim_with_one_already():
-    # trip_duration is extracted verbatim from the traveler's own words
-    # (twm/prompts/scout.md) -- it can already read "5 days", not just "5".
-    view = _build(title="Untitled Trip", trip_state={"trip_context": {"origin_city": "Bangalore", "trip_duration": "5 days"}})
-    assert view.title == "Bangalore · 5 days"
-
-
-def test_title_falls_back_to_origin_only():
-    view = _build(title="Untitled Trip", trip_state={"trip_context": {"origin_city": "Bangalore"}})
-    assert view.title == "Trip from Bangalore"
-
-
-def test_title_falls_back_to_duration_only():
-    view = _build(title="Untitled Trip", trip_state={"trip_context": {"trip_duration": "5"}})
-    assert view.title == "5-day trip"
-
-
-def test_title_falls_back_to_verbatim_duration_only_when_not_bare_numeric():
-    view = _build(title="Untitled Trip", trip_state={"trip_context": {"trip_duration": "a week"}})
-    assert view.title == "a week"
-
-
-def test_title_stays_the_placeholder_when_nothing_is_extracted_yet():
-    view = _build(title="Untitled Trip", trip_state={"trip_context": {}})
+def test_title_passes_through_the_placeholder_unchanged():
+    view = _build(title="Untitled Trip")
     assert view.title == "Untitled Trip"
 
 
-def test_list_item_title_uses_the_same_fallback_chain():
+def test_list_item_title_passes_through_unchanged():
     now = datetime.now(timezone.utc)
     item = SERVICE.build_list_item(
-        trip_id=TRIP_ID, title="Untitled Trip", product_mode="self_led", version=1,
+        trip_id=TRIP_ID, title="Kerala unwind", product_mode="self_led", version=1,
         created_at=now, updated_at=now,
-        trip_state={"trip_context": {"origin_city": "Bangalore", "trip_duration": "5"}},
+        trip_state={"trip_context": {"origin_city": "Bangalore"}},
         has_recommendation=False,
     )
-    assert item.title == "Bangalore · 5 days"
+    assert item.title == "Kerala unwind"
 
 
 def test_context_recap_omits_an_empty_free_form_value():

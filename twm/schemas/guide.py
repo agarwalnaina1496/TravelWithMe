@@ -69,6 +69,11 @@ class GuideTripState(BaseModel):
 
     trip_context: TripContext = Field(default_factory=TripContext)
     planner_state: GuidePlannerState = Field(default_factory=GuidePlannerState)
+    # TWM-232: read-only visibility into the trip's current title so Guide
+    # can tell whether one is already set -- the same presence check it
+    # already does for any trip_context field -- before deciding whether to
+    # generate one. None/the placeholder both read as "not set yet".
+    current_title: Optional[str] = None
 
 
 class GuideRequest(BaseModel):
@@ -101,6 +106,15 @@ class GuidePlannerStateDelta(BaseModel):
     conversation_context: Optional[GuideConversationContext] = None
     places: Optional[list[GuideText]] = None
     day_plan: Optional[list[GuideDay]] = None
+    # TWM-232: a short LLM-generated trip title, produced only on the turn
+    # Guide clears `awaiting` from "anything_else" and only when
+    # `GuideTripState.current_title` was still unset -- the same
+    # presence-gated pattern Guide already applies to every trip_context
+    # field, not a new turn-type branch. Backend promotes it to the real
+    # `Trip.title` column once (see trip_commands/planner_commands.py);
+    # Guide itself never checks who set an existing title, only whether one
+    # is set.
+    generated_title: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_places_unique(self) -> "GuidePlannerStateDelta":

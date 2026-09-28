@@ -109,12 +109,16 @@ class FakeDatabase:
 
         # --- trips ---
         # TWM-191: commit_command writes trip_state + the lifecycle columns.
-        if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7,version=version+1"):
-            trip_id, owner_value, expected_version, trip_state, stage, status, active_agent = args
+        # TWM-232: also promotes `title` when the caller passes one
+        # (COALESCE($8,title) — a null $8 leaves the stored title untouched).
+        if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7, title=COALESCE($8,title),version=version+1"):
+            trip_id, owner_value, expected_version, trip_state, stage, status, active_agent, title = args
             trip = self.trips.get(trip_id)
             if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
             trip.update(trip_state=trip_state, stage=stage, status=status, active_agent=active_agent)
+            if title is not None:
+                trip["title"] = title
             trip["version"] += 1
             trip["updated_at"] = datetime.now(timezone.utc)
             self.written_tables.add("trips")
