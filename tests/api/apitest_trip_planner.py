@@ -434,7 +434,7 @@ def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
     )
 
     assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
 
 
 def test_atlas_rejects_output_carrying_a_removed_field(
@@ -648,7 +648,7 @@ def test_atlas_rejects_travel_item_with_only_one_movement_endpoint(
     )
 
     assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
 
 
 def test_atlas_rejects_movement_endpoints_on_a_non_travel_timeline_item(
@@ -680,7 +680,7 @@ def test_atlas_rejects_movement_endpoints_on_a_non_travel_timeline_item(
     )
 
     assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
 
 
 def test_atlas_timeline_items_reject_any_structured_date_field(
@@ -718,7 +718,7 @@ def test_atlas_timeline_items_reject_any_structured_date_field(
         )
 
         assert response.status_code == 502, field
-        assert adapter.invoke.await_count == 1
+        assert adapter.invoke.await_count == 2
 
 
 def _atlas_output_with_gateway_leg(hub_overrides: list[dict] | None = None) -> dict:
@@ -975,7 +975,7 @@ def test_atlas_rejects_stay_price_estimate_with_wrong_tier_order(
     )
 
     assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
 
 
 def test_atlas_rejects_stay_price_estimate_missing_a_tier(
@@ -1005,7 +1005,7 @@ def test_atlas_rejects_stay_price_estimate_missing_a_tier(
     )
 
     assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
 
 
 def test_atlas_rejects_stay_price_estimate_with_decreasing_tier_low(
@@ -1038,4 +1038,4 @@ def test_atlas_rejects_stay_price_estimate_with_decreasing_tier_low(
     )
 
     assert response.status_code == 502
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2

@@ -318,35 +318,73 @@ def test_common_service_failure_response_respects_payload_mode(
         assert "response_metadata" not in failed
 
 
-def test_common_service_raises_immediately_on_invalid_output(monkeypatch) -> None:
-    # No repair attempt: a single bad completion fails the turn outright
-    # rather than spending a second LLM call trying to recover it.
+def test_common_service_retries_once_then_raises_on_repeated_invalid_output(monkeypatch) -> None:
+    # TWM-234: one fresh retry (2 attempts total) before giving up -- a
+    # single bad completion no longer fails the turn outright.
     sink = InMemorySink()
     engine, adapter = service_with_outputs(
         monkeypatch,
         "not-json",
+        "still-not-json",
         telemetry_sink=sink,
     )
 
     with pytest.raises(AgentOutputError) as captured:
         asyncio.run(engine.scout({}, "Help me."))
 
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
     assert captured.value.agent == "scout"
     assert captured.value.failures
     assert [event["event"] for event in sink.events] == [
         "be.agent.invocation.started",
         "be.agent.output.invalid",
+        "be.agent.invocation.started",
+        "be.agent.output.invalid",
     ]
-    failed = sink.events[1]
+    retrying, failed = sink.events[1], sink.events[3]
+    assert retrying["level"] == "WARNING"
+    assert retrying["fields"]["attempt"] == 1
+    assert retrying["fields"]["status"] == "retrying"
+    assert "retrying with a fresh attempt" in retrying["message"]
+    assert failed["level"] == "ERROR"
+    assert failed["fields"]["attempt"] == 2
+    assert failed["fields"]["status"] == "failed"
     assert failed["message"].startswith(
         "FastAPI rejected Scout response from test-engine. "
         "Detail - AgentOutputValidationError:"
     )
-    assert failed["fields"]["attempt"] == 1
-    assert failed["fields"]["raw_output_chars"] == len("not-json")
-    assert failed["message"].endswith('Response - "not-json"')
-    assert failed["response"] == "not-json"
+    assert failed["fields"]["raw_output_chars"] == len("still-not-json")
+    assert failed["message"].endswith('Response - "still-not-json"')
+    assert failed["response"] == "still-not-json"
+
+
+def test_common_service_succeeds_on_a_fresh_retry_after_one_invalid_output(monkeypatch) -> None:
+    # The positive path: a bad first completion doesn't fail the turn at
+    # all once the retry's fresh generation comes back valid.
+    sink = InMemorySink()
+    valid = {
+        "message": "A mountain trip can work well.",
+        "state_delta": {"trip_context": {"region": "Uttarakhand"}},
+        "intent": "advise",
+    }
+    engine, adapter = service_with_outputs(
+        monkeypatch,
+        "not-json",
+        json.dumps(valid),
+        telemetry_sink=sink,
+    )
+
+    execution = asyncio.run(engine.scout({}, "Help me."))
+
+    assert adapter.invoke.await_count == 2
+    assert execution.response["message"] == valid["message"]
+    assert [event["event"] for event in sink.events] == [
+        "be.agent.invocation.started",
+        "be.agent.output.invalid",
+        "be.agent.invocation.started",
+        "be.agent.response.received",
+    ]
+    assert sink.events[1]["level"] == "WARNING"
 
 
 def test_common_service_raises_on_empty_model_content(monkeypatch) -> None:
@@ -354,14 +392,15 @@ def test_common_service_raises_on_empty_model_content(monkeypatch) -> None:
     engine, adapter = service_with_outputs(
         monkeypatch,
         "",
+        "",
         telemetry_sink=sink,
     )
 
     with pytest.raises(AgentOutputError):
         asyncio.run(engine.scout({}, "Help me."))
 
-    assert adapter.invoke.await_count == 1
-    failed = sink.events[1]
+    assert adapter.invoke.await_count == 2
+    failed = sink.events[3]
     assert failed["message"].endswith('Response - ""')
     assert failed["response"] == ""
 
@@ -433,18 +472,16 @@ def test_common_service_rejects_double_encoded_output(monkeypatch) -> None:
         "state_delta": {},
         "intent": "advise",
     }
-    engine, adapter = service_with_outputs(
-        monkeypatch,
-        json.dumps(json.dumps(doubly_encoded)),
-    )
+    encoded = json.dumps(json.dumps(doubly_encoded))
+    engine, adapter = service_with_outputs(monkeypatch, encoded, encoded)
 
     with pytest.raises(AgentOutputError):
         asyncio.run(engine.scout({}, "Help me."))
 
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
 
 
-def test_common_service_raises_on_first_invalid_output(monkeypatch) -> None:
+def test_common_service_raises_after_retry_on_invalid_output(monkeypatch) -> None:
     sink = InMemorySink()
     invalid = {
         "status": "HARD_FAIL",
@@ -455,21 +492,24 @@ def test_common_service_raises_on_first_invalid_output(monkeypatch) -> None:
     engine, adapter = service_with_outputs(
         monkeypatch,
         json.dumps(invalid),
+        json.dumps(invalid),
         telemetry_sink=sink,
     )
 
     with pytest.raises(AgentOutputError) as captured:
         asyncio.run(engine.meridian({}, "Find options."))
 
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
     assert captured.value.agent == "meridian"
     assert captured.value.failures
     invalid_events = [
         event for event in sink.events if event["event"] == "be.agent.output.invalid"
     ]
-    assert len(invalid_events) == 1
-    assert "HARD_FAIL" in invalid_events[0]["message"]
-    assert invalid_events[0]["response"] == json.dumps(invalid)
+    assert len(invalid_events) == 2
+    assert invalid_events[0]["level"] == "WARNING"
+    assert invalid_events[1]["level"] == "ERROR"
+    assert "HARD_FAIL" in invalid_events[1]["message"]
+    assert invalid_events[1]["response"] == json.dumps(invalid)
 
 
 def test_common_service_redacts_model_controlled_validation_locations(
@@ -482,15 +522,13 @@ def test_common_service_redacts_model_controlled_validation_locations(
         "intent": "advise",
         sensitive_key: "secret",
     }
-    engine, adapter = service_with_outputs(
-        monkeypatch,
-        json.dumps(invalid),
-    )
+    encoded = json.dumps(invalid)
+    engine, adapter = service_with_outputs(monkeypatch, encoded, encoded)
 
     with pytest.raises(AgentOutputError) as captured:
         asyncio.run(engine.scout({}, "Help me."))
 
-    assert adapter.invoke.await_count == 1
+    assert adapter.invoke.await_count == 2
     assert captured.value.failures == [
         {"type": "extra_forbidden", "loc": ["<redacted>"]}
     ]

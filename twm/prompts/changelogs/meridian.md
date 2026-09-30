@@ -1,5 +1,19 @@
 # Meridian prompt changelog
 
+## Meridian 1.18.0 — 2026-10-01
+
+- **Explicit full path for `last_meridian_message` (TWM-234).** The
+  `NEEDS_CLARIFICATION` instruction told Meridian to "copy the visible
+  message into `last_meridian_message`" with no path, while the sibling
+  instruction for `awaiting` one line above spelled out the full
+  `state_delta.matcher_state.conversation_context.awaiting` path. That
+  asymmetry produced a live contract violation: Meridian nested
+  `last_meridian_message` as a sibling of `conversation_context` on
+  `matcher_state` directly, instead of inside it — `MeridianAgentOutput`'s
+  own validator reads it from inside `conversation_context`, so the
+  mismatch always failed FastAPI's contract check. Both places now spell
+  out the full path explicitly, matching `awaiting`'s treatment.
+
 ## Meridian 1.17.0 — 2026-09-30
 
 - **Never claim the `destinations` key (TWM-234 follow-up).** Meridian's
