@@ -116,3 +116,26 @@ def _reject_ui_owned(keys: Any, *, branch: str) -> None:
             f"agent state_delta.{branch} carries Backend-owned key(s) {bad}; "
             "agents never write lifecycle / selection / booking / itinerary state"
         )
+
+
+# TWM-234. `trip_context.destinations` (twm.schemas.trip_context) is a
+# declared field, not a free-form extra, so it never appears in
+# `model_extra` and the boundary check above can't see it. It's also not
+# uniformly agent-owned the way UI_OWNED_STATE_KEYS is: Guide legitimately
+# writes it on the known-destination path (extracted from the traveler's
+# own message), but Meridian must never write it under any circumstance —
+# the Discover path's only writer is the deterministic `select_destination`
+# command, never Meridian's own extraction, settled choice or mere
+# candidate alike. Call this from the one delta schema (Meridian) that must
+# never claim it; Guide's delta schema has no call to this function.
+def assert_no_destination_claim(delta: Any) -> None:
+    """Raise if an agent's own ``state_delta.trip_context`` sets
+    ``destinations`` -- that field belongs to Backend/Guide only."""
+
+    trip_context = getattr(delta, "trip_context", None)
+    if getattr(trip_context, "destinations", None) is not None:
+        raise ValueError(
+            "agent state_delta.trip_context.destinations is Backend-owned "
+            "(written only by the deterministic select_destination command); "
+            "use a different semantic key for a candidate or considered destination"
+        )
