@@ -1,5 +1,21 @@
 # Meridian prompt changelog
 
+## Meridian 1.17.0 — 2026-09-30
+
+- **Never claim the `destinations` key (TWM-234 follow-up).** Meridian's
+  free-key extraction instruction let it pick the literal key `destinations`
+  for a place the traveler merely named as a candidate to consider — the
+  same field Backend writes deterministically, once, only when the traveler
+  actually picks a recommended option (`select_destination`). A candidate
+  destination silently wrote into that field made the UI treat the trip as
+  if a destination were already settled while the traveler was still mid
+  Discover conversation, breaking every downstream reader gated on it
+  (Overview's primary CTA among them). Meridian is now told explicitly:
+  `destinations` is never one of its own free keys, for a settled choice or
+  a mere candidate alike; use a different key (e.g. `destinations_considered`)
+  for anything short of an actual selection. Backed by a schema-level guard
+  on `MeridianStateDelta` so a bad extraction can't silently recur.
+
 ## Meridian 1.16.0 — 2026-09-28
 
 - **LLM-generated trip title (TWM-232).** On the turn that answers the final

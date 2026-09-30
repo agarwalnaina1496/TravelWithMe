@@ -12,7 +12,11 @@ from .scout import (
     ScoutAdvisorState,
 )
 from .trip_context import TripContext
-from ..trust_boundary import assert_agent_delta_within_boundary, validate_phase_state
+from ..trust_boundary import (
+    assert_agent_delta_within_boundary,
+    assert_no_destination_claim,
+    validate_phase_state,
+)
 
 
 MeridianAdvisorConversationContext = ScoutAdvisorConversationContext
@@ -53,6 +57,7 @@ class MeridianStateDelta(BaseModel):
     @model_validator(mode="after")
     def reject_ui_owned_state(self) -> "MeridianStateDelta":
         assert_agent_delta_within_boundary(self)
+        assert_no_destination_claim(self)
         return self
 
 
