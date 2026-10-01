@@ -173,10 +173,13 @@ class SelectDestinationHandler(CommandHandler):
 class UnselectDestinationHandler(CommandHandler):
     """TWM-234: lets the traveler reconsider a matched destination without
     starting to plan it -- the Destinations page's "Compare other
-    destinations" action. Goes back to `matching`, never a direct
-    `matched` -> `matched` re-selection (illegal per `STAGE_TRANSITIONS`);
-    the already-fetched recommendation round stays available for the UI to
-    show immediately, so this never re-invokes Meridian itself."""
+    destinations" action. Goes to `recommended`, deliberately not
+    `reopen_matching_from_matched`'s `matching` -- the existing
+    recommendation round is still valid and simply being re-shown, never
+    regenerated, so there is nothing "in progress" the way `matching`
+    implies. `matched -> matched` itself stays illegal (no direct
+    re-selection); this clears the stale selection first so a later
+    `select_destination` lands on a clean `recommended -> matched` edge."""
 
     def precondition(self, ctx: CommandContext) -> None:
         if ctx.state.get("stage") != "matched":
@@ -185,9 +188,10 @@ class UnselectDestinationHandler(CommandHandler):
             )
 
     async def apply(self, ctx: CommandContext) -> dict[str, Any]:
-        reopen_matching_from_matched(
-            ctx.state, ctx.logger, context="unselect_destination"
-        )
+        state = ctx.state
+        state["selected_option"] = None
+        state["trip_context"].pop(DESTINATIONS_KEY, None)
+        set_stage(state, "recommended", ctx.logger, context="unselect_destination")
         return {"message": "Let's look at other destinations.", "agent_meta": None}
 
 

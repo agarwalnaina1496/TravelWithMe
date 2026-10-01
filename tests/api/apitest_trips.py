@@ -2621,13 +2621,15 @@ def test_matched_continue_is_a_no_op_when_a_recommendation_round_already_exists(
     assert saved["lifecycle"]["stage"] == "recommended"
 
 
-def test_unselect_destination_reopens_matching_and_clears_obsolete_selection(
+def test_unselect_destination_returns_to_recommended_and_clears_obsolete_selection(
     api_client: TestClient,
 ):
     # TWM-234: the Destinations page's "Compare other destinations" action
-    # -- unlike traveler_message/continue's matched-stage reopen, this
-    # never re-invokes Meridian; the already-fetched recommendation round
-    # stays available for the UI to show immediately.
+    # goes to "recommended", not "matching" -- unlike traveler_message's
+    # matched-stage reopen (a real message genuinely re-engages Meridian),
+    # this never re-invokes it; the already-fetched recommendation round is
+    # still valid and simply being re-shown, so there is nothing
+    # "in progress" the way "matching" would imply.
     repository = MemoryTripRepository()
     engine = FakeHandoffEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -2654,7 +2656,7 @@ def test_unselect_destination_reopens_matching_and_clears_obsolete_selection(
     assert engine.calls == []
     saved = response.json()["trip"]["trip_state"]
     assert saved["selected_option"] is None
-    assert saved["stage"] == "matching"
+    assert saved["stage"] == "recommended"
     assert "destinations" not in saved["trip_context"]
 
 
