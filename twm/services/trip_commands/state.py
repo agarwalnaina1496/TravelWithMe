@@ -51,11 +51,17 @@ STAGE_TRANSITIONS: dict[str, frozenset[str]] = {
     }),
     "matched": frozenset({
         "planning",  # start_planning, once a destination is set
-        "matching",  # a matched trip's traveler_message/continue with no
-        # genuine ambiguity to classify (the destination is already
-        # chosen, planning hasn't started) — service.py's
-        # reopen_matching_from_matched (handlers.py) routes straight back to Meridian,
-        # clearing the obsolete selected_option deterministically.
+        "matching",  # a matched trip's traveler_message with no genuine
+        # ambiguity to classify (the destination is already chosen,
+        # planning hasn't started) — handlers.py's
+        # reopen_matching_from_matched routes straight back to Meridian,
+        # clearing the obsolete selected_option deterministically, since a
+        # real traveler message means a fresh round is genuinely coming.
+        "recommended",  # unselect_destination -- the traveler's explicit
+        # "show me the comparison again" choice, mirroring "planning" ->
+        # "recommended" above: the existing recommendation round is still
+        # valid and simply being re-shown, never discarded or regenerated,
+        # so there is nothing "in progress" the way "matching" implies.
     }),
     "planning": frozenset({
         "plan_ready",  # apply_guide's revision turn first produces (or
