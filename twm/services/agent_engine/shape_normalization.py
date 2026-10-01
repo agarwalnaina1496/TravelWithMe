@@ -3,17 +3,25 @@
 Each fix targets exactly one named field and relocates it from exactly one
 named wrong location to exactly one named correct location, before schema
 validation ever runs -- normalize, then validate, reject only if it's still
-invalid after that. Two hard rules, independent of how likely or how
-severe any given mistake is:
+invalid after that. Three hard rules, independent of how likely or how
+severe any given mistake is -- correctness rules, not risk judgment calls:
 
-1. Never overwrite a value already present at the correct location (a stray
-   duplicate elsewhere is still dropped, but the real value always wins).
+1. Never overwrite or discard a real value to make room for another. A
+   scalar field present in both the right place and the wrong place is left
+   completely untouched in both places -- there is no principled way to
+   know which of two conflicting values is correct, so this module doesn't
+   guess; it leaves the output exactly as the agent produced it and lets
+   schema validation (then the retry) handle it from there. A list-valued
+   field present in both places is concatenated instead, since that loses
+   nothing from either side.
 2. Only ever relocate a field whose correct destination is uniquely
    determined by the shape alone. If the correct destination could be one
    of several sibling containers (which of N timeline items a stray `hubs`
    list belongs to, for instance), that is not something this module
    decides -- doing so would mean guessing, which is a correctness problem,
    not a question of how "ambiguous" the mistake looks.
+3. A fix only ever moves or merges a value already present in the output --
+   it never invents, infers, or fabricates one.
 
 This runs by default for Meridian, Guide, and Atlas -- every field in their
 schemas with a uniquely-determined parent gets a fix here, independent of
@@ -45,13 +53,14 @@ def normalize_agent_output(agent: AgentName, decoded: Any) -> list[str]:
 def _relocate_sibling_field(
     decoded: Any, *, outer_path: list[str], inner_container: str, field: str
 ) -> bool:
-    """Generic engine behind every fix below: if `field` sits directly on
-    the dict at `outer_path` (a sibling of `inner_container`) instead of
-    inside `decoded[*outer_path][inner_container]`, move it in -- only when
-    that inner slot doesn't already hold a value. Returns whether a value
-    actually moved (a stray field with the inner slot already filled is
-    still dropped as unused duplicate data, but that doesn't count as a
-    "fix" worth logging -- nothing was wrong to begin with)."""
+    """Generic engine behind every scalar fix below: if `field` sits
+    directly on the dict at `outer_path` (a sibling of `inner_container`)
+    instead of inside `decoded[*outer_path][inner_container]`, move it in --
+    but only when that inner slot is genuinely empty. If a value already
+    sits at the correct location too, this is a conflict between two values
+    the agent produced in the same breath with no principled way to pick a
+    winner -- so it leaves both exactly as given rather than discarding
+    either one, and schema validation (then the retry) takes it from there."""
 
     container = decoded
     for key in outer_path:
@@ -64,21 +73,19 @@ def _relocate_sibling_field(
     if not stray:
         return False
     inner = container.get(inner_container)
+    if inner is not None and not isinstance(inner, dict):
+        return False
+    if inner is not None and inner.get(field):
+        return False  # conflict -- leave both values untouched, don't guess
+    # The inner container can be legitimately absent (e.g. Guide's optional
+    # conversation_context) precisely when the only field it would have
+    # held was misplaced here instead -- create it rather than bailing out.
     if inner is None:
-        # The inner container can be legitimately absent (e.g. Guide's
-        # optional conversation_context) precisely when the only field it
-        # would have held was misplaced here instead -- create it rather
-        # than bailing out.
         inner = {}
         container[inner_container] = inner
-    elif not isinstance(inner, dict):
-        return False
-    moved = False
-    if not inner.get(field):
-        inner[field] = stray
-        moved = True
+    inner[field] = stray
     del container[field]
-    return moved
+    return True
 
 
 def _fix_meridian_last_meridian_message_nesting(decoded: Any) -> bool:
@@ -120,21 +127,33 @@ def _fix_atlas_assumptions_nesting(decoded: Any) -> bool:
     `stay_price_estimate` living under the wrong one of several sibling
     timeline items/days -- are deliberately left unfixed: relocating those
     would mean guessing which item a stray value belongs to, which this
-    module never does.)"""
+    module never does.)
+
+    Unlike the scalar fixes above, a real value already present at the
+    correct location isn't a reason to leave the stray one untouched:
+    `assumptions` is a list, and lists concatenate without discarding
+    anything from either side -- that's a merge, not a guess."""
 
     final_itinerary = decoded.get("final_itinerary") if isinstance(decoded, dict) else None
     if not isinstance(final_itinerary, dict):
         return False
     trip_summary = final_itinerary.get("trip_summary")
-    stray = trip_summary.get("assumptions") if isinstance(trip_summary, dict) else None
+    if not isinstance(trip_summary, dict):
+        return False
+    stray = trip_summary.get("assumptions")
     if not stray:
         return False
-    moved = False
-    if not final_itinerary.get("assumptions"):
+    if not isinstance(stray, list):
+        return False  # malformed shape; leave it for validation to reject
+    existing = final_itinerary.get("assumptions")
+    if existing:
+        if not isinstance(existing, list):
+            return False  # malformed shape; leave it for validation to reject
+        final_itinerary["assumptions"] = existing + stray
+    else:
         final_itinerary["assumptions"] = stray
-        moved = True
     del trip_summary["assumptions"]
-    return moved
+    return True
 
 
 # Scout is deliberately excluded -- no evidenced shape-slip pattern for it,

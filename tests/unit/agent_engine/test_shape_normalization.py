@@ -27,24 +27,27 @@ def test_moves_stray_last_meridian_message_into_conversation_context():
     assert "last_meridian_message" not in decoded["state_delta"]["matcher_state"]
 
 
-def test_never_overwrites_an_already_correctly_nested_value():
+def test_leaves_both_values_untouched_on_a_genuine_conflict():
+    # Both the nested slot and the stray sibling carry a (different) value
+    # -- there's no principled way to know which the agent actually meant,
+    # so this is never resolved by picking one and discarding the other.
+    # Validation (then the retry) is left to catch it instead.
     decoded = _decoded({
         "conversation_context": {
             "awaiting": "origin_city",
-            "last_meridian_message": "The real message.",
+            "last_meridian_message": "The nested value.",
         },
-        "last_meridian_message": "A stale duplicate.",
+        "last_meridian_message": "A conflicting sibling value.",
     })
 
     applied = normalize_agent_output("meridian", decoded)
 
-    # The stray duplicate is still dropped (matcher_state should only ever
-    # carry conversation_context/rejected-option data), but since the real
-    # nested value was already correct, nothing needed fixing.
     assert applied == []
     context = decoded["state_delta"]["matcher_state"]["conversation_context"]
-    assert context["last_meridian_message"] == "The real message."
-    assert "last_meridian_message" not in decoded["state_delta"]["matcher_state"]
+    assert context["last_meridian_message"] == "The nested value."
+    assert decoded["state_delta"]["matcher_state"]["last_meridian_message"] == (
+        "A conflicting sibling value."
+    )
 
 
 def test_leaves_correctly_shaped_output_untouched():
@@ -146,21 +149,24 @@ def test_moves_stray_atlas_assumptions_into_final_itinerary():
     assert "assumptions" not in final_itinerary["trip_summary"]
 
 
-def test_atlas_assumptions_never_overwrites_existing_top_level_value():
+def test_atlas_merges_assumptions_present_in_both_places_losing_nothing():
+    # Unlike the scalar fixes, a list in both places is merged rather than
+    # left alone -- concatenation can't silently drop either side's data.
     decoded = {
         "final_itinerary": {
-            "assumptions": [{"category": "budget", "detail": "The real one."}],
+            "assumptions": [{"category": "budget", "detail": "Already at the top level."}],
             "trip_summary": {
-                "assumptions": [{"category": "stay_area", "detail": "A stray duplicate."}],
+                "assumptions": [{"category": "stay_area", "detail": "Misplaced in trip_summary."}],
             },
         }
     }
 
     applied = normalize_agent_output("atlas", decoded)
 
-    assert applied == []
+    assert applied == ["assumptions_nesting"]
     assert decoded["final_itinerary"]["assumptions"] == [
-        {"category": "budget", "detail": "The real one."}
+        {"category": "budget", "detail": "Already at the top level."},
+        {"category": "stay_area", "detail": "Misplaced in trip_summary."},
     ]
     assert "assumptions" not in decoded["final_itinerary"]["trip_summary"]
 
