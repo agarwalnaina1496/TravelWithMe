@@ -123,7 +123,7 @@ class AgentExecutionService:
                 traveler_message=message,
             )
             try:
-                response, applied_fixes = _parse_and_validate(
+                response, applied_normalizations = _parse_and_validate(
                     agent, invocation_result.raw_output, definition
                 )
             except _OutputValidationFailure as failure:
@@ -134,20 +134,20 @@ class AgentExecutionService:
                 )
                 continue
 
-            if applied_fixes:
-                self._logger.warning(
+            if applied_normalizations:
+                self._logger.info(
                     f"{agent.capitalize()} response from {self._engine_name} "
-                    f"needed a known shape fix before it validated: "
-                    f"{', '.join(applied_fixes)}.",
-                    event="be.agent.output.shape_fixed",
+                    f"was reshaped by default normalization before validation: "
+                    f"{', '.join(applied_normalizations)}.",
+                    event="be.agent.output.normalized",
                     source="agent_engine",
                     agent=agent,
                     engine=self._engine_name,
                     component="fastapi",
                     operation=f"{agent}.response.validate",
                     attempt=attempt,
-                    status="fixed",
-                    fixes_applied=applied_fixes,
+                    status="normalized",
+                    normalizations_applied=applied_normalizations,
                 )
 
             self._logger.info(
@@ -373,11 +373,11 @@ def _parse_and_validate(
             [{"type": "json_invalid", "loc": []}]
         ) from None
 
-    applied_fixes = normalize_agent_output(agent, decoded)
+    applied_normalizations = normalize_agent_output(agent, decoded)
 
     try:
         parsed = definition.output_model.model_validate(decoded)
-        return parsed.model_dump(mode="json", exclude_none=True), applied_fixes
+        return parsed.model_dump(mode="json", exclude_none=True), applied_normalizations
     except ValidationError as error:
         failures = _sanitized_validation_failures(error, definition.output_model)
         raise _OutputValidationFailure(failures) from None

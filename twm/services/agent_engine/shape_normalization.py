@@ -1,50 +1,54 @@
-"""Deterministic, pre-validation fixes for known-shape LLM output slips.
+"""Default, pre-validation normalization of every agent's raw LLM output.
 
-Each fix targets exactly one named field and relocates it from exactly one
-named wrong location to exactly one named correct location, before schema
-validation ever runs -- normalize, then validate, reject only if it's still
-invalid after that. Three hard rules, independent of how likely or how
-severe any given mistake is -- correctness rules, not risk judgment calls:
+This is not a fix applied to a broken response -- it is a standard shape
+pass every decoded Meridian/Guide/Atlas response goes through before schema
+validation, the same way any boundary normalizes an external payload before
+trusting its shape. An LLM's own JSON nesting is not guaranteed to exactly
+match the schema on every generation even when every fact in it is correct,
+so normalization runs unconditionally, on every response, not only after a
+validation failure is observed.
 
-1. Never overwrite or discard a real value to make room for another. A
-   scalar field present in both the right place and the wrong place is left
-   completely untouched in both places -- there is no principled way to
-   know which of two conflicting values is correct, so this module doesn't
-   guess; it leaves the output exactly as the agent produced it and lets
-   schema validation (then the retry) handle it from there. A list-valued
-   field present in both places is concatenated instead, since that loses
-   nothing from either side.
-2. Only ever relocate a field whose correct destination is uniquely
-   determined by the shape alone. If the correct destination could be one
-   of several sibling containers (which of N timeline items a stray `hubs`
-   list belongs to, for instance), that is not something this module
-   decides -- doing so would mean guessing, which is a correctness problem,
-   not a question of how "ambiguous" the mistake looks.
-3. A fix only ever moves or merges a value already present in the output --
-   it never invents, infers, or fabricates one.
+Two things have to stay balanced here, and neither wins outright:
 
-This runs by default for Meridian, Guide, and Atlas -- every field in their
-schemas with a uniquely-determined parent gets a fix here, independent of
-whether a failure has actually been observed for it yet. Scout is
-deliberately excluded: its output shape (message / free-form trip_context /
-intent) has no nested field to relocate in the first place.
+1. Don't normalize so aggressively that it risks losing or corrupting data.
+   A scalar field present at both a correct and an incorrect location is
+   left completely untouched at both -- there is no principled way to know
+   which of two conflicting values the agent meant, so this module never
+   guesses; it leaves the output exactly as given and lets schema validation
+   (then the retry) handle it. A list-valued field present in both places is
+   concatenated instead, since that loses nothing from either side. A
+   normalization only ever relocates a field whose correct destination is
+   uniquely determined by the shape alone -- never guessing across several
+   sibling containers, such as which of N timeline items a stray value
+   belongs to.
+2. Don't withhold normalization just to avoid that risk either. Every field
+   in Meridian's, Guide's, and Atlas's schemas with a uniquely-determined
+   parent gets a normalization rule here, independent of whether a slip has
+   actually been observed for it yet -- this runs by default, not reactively
+   after a failure.
+3. A normalization only ever moves or merges a value already present in the
+   output -- it never invents, infers, or fabricates one.
+
+Scout is deliberately excluded: its output shape (message / free-form
+trip_context / intent) has no nested field to relocate in the first place.
 """
 
 from typing import Any, Callable
 
 from .contracts import AgentName
 
-# Each entry names the fix for logging/telemetry; `apply` mutates `decoded`
-# in place and returns True only when it actually changed something.
-ShapeFix = tuple[str, Callable[[Any], bool]]
+# Each entry names the normalization for logging/telemetry; `apply` mutates
+# `decoded` in place and returns True only when it actually changed something.
+NormalizationRule = tuple[str, Callable[[Any], bool]]
 
 
 def normalize_agent_output(agent: AgentName, decoded: Any) -> list[str]:
-    """Apply every registered fix for `agent` to `decoded` in place. Returns
-    the names of the fixes that actually changed something, in order."""
+    """Apply every registered normalization for `agent` to `decoded` in
+    place. Returns the names of the normalizations that actually changed
+    something, in order."""
 
     applied: list[str] = []
-    for name, apply in _SHAPE_FIXES.get(agent, ()):
+    for name, apply in _NORMALIZATION_RULES.get(agent, ()):
         if apply(decoded):
             applied.append(name)
     return applied
@@ -53,14 +57,15 @@ def normalize_agent_output(agent: AgentName, decoded: Any) -> list[str]:
 def _relocate_sibling_field(
     decoded: Any, *, outer_path: list[str], inner_container: str, field: str
 ) -> bool:
-    """Generic engine behind every scalar fix below: if `field` sits
-    directly on the dict at `outer_path` (a sibling of `inner_container`)
-    instead of inside `decoded[*outer_path][inner_container]`, move it in --
-    but only when that inner slot is genuinely empty. If a value already
-    sits at the correct location too, this is a conflict between two values
-    the agent produced in the same breath with no principled way to pick a
-    winner -- so it leaves both exactly as given rather than discarding
-    either one, and schema validation (then the retry) takes it from there."""
+    """Generic engine behind every scalar normalization below: if `field`
+    sits directly on the dict at `outer_path` (a sibling of
+    `inner_container`) instead of inside `decoded[*outer_path][inner_container]`,
+    move it in -- but only when that inner slot is genuinely empty. If a
+    value already sits at the correct location too, this is a conflict
+    between two values the agent produced in the same breath with no
+    principled way to pick a winner -- so it leaves both exactly as given
+    rather than discarding either one, and schema validation (then the
+    retry) takes it from there."""
 
     container = decoded
     for key in outer_path:
@@ -88,12 +93,12 @@ def _relocate_sibling_field(
     return True
 
 
-def _fix_meridian_last_meridian_message_nesting(decoded: Any) -> bool:
-    """TWM-234: observed live -- Meridian nested `last_meridian_message` as
-    a sibling of `conversation_context` on `matcher_state`, instead of
-    inside it. `MeridianAgentOutput`'s validator only ever reads the field
-    from inside `conversation_context`, so the misplacement always failed
-    the contract."""
+def _normalize_meridian_conversation_context(decoded: Any) -> bool:
+    """TWM-234: `last_meridian_message`'s correct, uniquely-determined
+    parent is `state_delta.matcher_state.conversation_context` --
+    `MeridianAgentOutput`'s validator only ever reads the field from inside
+    `conversation_context`, never as a sibling of it directly on
+    `matcher_state`."""
 
     return _relocate_sibling_field(
         decoded,
@@ -103,13 +108,13 @@ def _fix_meridian_last_meridian_message_nesting(decoded: Any) -> bool:
     )
 
 
-def _fix_guide_awaiting_nesting(decoded: Any) -> bool:
-    """TWM-234: `awaiting`'s correct parent is uniquely determined --
+def _normalize_guide_conversation_context(decoded: Any) -> bool:
+    """TWM-234: `awaiting`'s correct, uniquely-determined parent is
     `state_delta.planner_state.conversation_context.awaiting`, never a
     sibling of `conversation_context` directly on `planner_state`. Runs by
-    default regardless of whether this exact mistake has been observed for
-    Guide yet; the fix doesn't wait for a failure to justify itself, only
-    for the destination to be unambiguous, which it is here."""
+    default regardless of whether this exact shape slip has been observed
+    for Guide yet; normalization doesn't wait for a failure to justify
+    itself, only for the destination to be unambiguous, which it is here."""
 
     return _relocate_sibling_field(
         decoded,
@@ -119,18 +124,18 @@ def _fix_guide_awaiting_nesting(decoded: Any) -> bool:
     )
 
 
-def _fix_atlas_assumptions_nesting(decoded: Any) -> bool:
-    """TWM-234: `assumptions` belongs on `final_itinerary` directly, never
-    inside `trip_summary` -- the two sit at the same nesting depth as
-    siblings on `final_itinerary`, exactly the kind of flattenable mistake
-    this module exists to catch. (Atlas's other nesting risks -- `hubs` and
-    `stay_price_estimate` living under the wrong one of several sibling
-    timeline items/days -- are deliberately left unfixed: relocating those
-    would mean guessing which item a stray value belongs to, which this
-    module never does.)
+def _normalize_atlas_assumptions(decoded: Any) -> bool:
+    """TWM-234: `assumptions`'s correct, uniquely-determined parent is
+    `final_itinerary` directly, never inside `trip_summary` -- the two sit
+    at the same nesting depth as siblings on `final_itinerary`, exactly the
+    kind of flattenable shape this module normalizes by default. (Atlas's
+    other nesting risks -- `hubs` and `stay_price_estimate` living under the
+    wrong one of several sibling timeline items/days -- are deliberately
+    left alone: relocating those would mean guessing which item a stray
+    value belongs to, which this module never does.)
 
-    Unlike the scalar fixes above, a real value already present at the
-    correct location isn't a reason to leave the stray one untouched:
+    Unlike the scalar normalizations above, a real value already present at
+    the correct location isn't a reason to leave the stray one untouched:
     `assumptions` is a list, and lists concatenate without discarding
     anything from either side -- that's a merge, not a guess."""
 
@@ -156,17 +161,17 @@ def _fix_atlas_assumptions_nesting(decoded: Any) -> bool:
     return True
 
 
-# Scout is deliberately excluded -- no evidenced shape-slip pattern for it,
-# and its output shape (message / free-form trip_context / intent) has
-# nothing resembling this nesting ambiguity to begin with.
-_SHAPE_FIXES: dict[AgentName, tuple[ShapeFix, ...]] = {
+# Scout is deliberately excluded -- its output shape (message / free-form
+# trip_context / intent) has nothing resembling this nesting ambiguity to
+# begin with.
+_NORMALIZATION_RULES: dict[AgentName, tuple[NormalizationRule, ...]] = {
     "meridian": (
-        ("last_meridian_message_nesting", _fix_meridian_last_meridian_message_nesting),
+        ("meridian_conversation_context", _normalize_meridian_conversation_context),
     ),
     "guide": (
-        ("awaiting_nesting", _fix_guide_awaiting_nesting),
+        ("guide_conversation_context", _normalize_guide_conversation_context),
     ),
     "atlas": (
-        ("assumptions_nesting", _fix_atlas_assumptions_nesting),
+        ("atlas_assumptions", _normalize_atlas_assumptions),
     ),
 }

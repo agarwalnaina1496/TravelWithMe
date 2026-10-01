@@ -1,5 +1,5 @@
-"""TWM-234: default, pre-validation fixes for known-shape LLM output slips
-across Meridian, Guide, and Atlas -- not request/response schema
+"""TWM-234: default, pre-validation shape normalization applied to every
+Meridian, Guide, and Atlas response -- not request/response schema
 instantiation, just plain dict fixtures through the normalization function
 itself."""
 
@@ -18,7 +18,7 @@ def test_moves_stray_last_meridian_message_into_conversation_context():
 
     applied = normalize_agent_output("meridian", decoded)
 
-    assert applied == ["last_meridian_message_nesting"]
+    assert applied == ["meridian_conversation_context"]
     context = decoded["state_delta"]["matcher_state"]["conversation_context"]
     assert context == {
         "awaiting": "origin_city",
@@ -86,16 +86,16 @@ def test_creates_the_inner_container_when_it_is_missing_entirely():
 
     applied = normalize_agent_output("meridian", decoded)
 
-    assert applied == ["last_meridian_message_nesting"]
+    assert applied == ["meridian_conversation_context"]
     assert decoded["state_delta"]["matcher_state"]["conversation_context"] == {
         "last_meridian_message": "stray"
     }
 
 
-def test_scout_has_no_registered_fixes():
-    # Explicit per the product decision: Scout is excluded -- no evidenced
-    # shape-slip pattern, and its output shape has nothing resembling this
-    # nesting ambiguity.
+def test_scout_has_no_registered_normalizations():
+    # Explicit per the product decision: Scout is excluded -- its output
+    # shape (message / free-form trip_context / intent) has nothing
+    # resembling this nesting ambiguity to begin with.
     decoded = {"message": "hi", "state_delta": {"trip_context": {}}, "intent": None}
     assert normalize_agent_output("scout", decoded) == []
 
@@ -109,7 +109,7 @@ def test_moves_stray_guide_awaiting_into_conversation_context():
 
     applied = normalize_agent_output("guide", decoded)
 
-    assert applied == ["awaiting_nesting"]
+    assert applied == ["guide_conversation_context"]
     planner_state = decoded["state_delta"]["planner_state"]
     assert planner_state["conversation_context"] == {"awaiting": "trip_duration"}
     assert "awaiting" not in planner_state
@@ -141,7 +141,7 @@ def test_moves_stray_atlas_assumptions_into_final_itinerary():
 
     applied = normalize_agent_output("atlas", decoded)
 
-    assert applied == ["assumptions_nesting"]
+    assert applied == ["atlas_assumptions"]
     final_itinerary = decoded["final_itinerary"]
     assert final_itinerary["assumptions"] == [
         {"category": "stay_area", "detail": "Assumed central Udaipur."}
@@ -150,8 +150,9 @@ def test_moves_stray_atlas_assumptions_into_final_itinerary():
 
 
 def test_atlas_merges_assumptions_present_in_both_places_losing_nothing():
-    # Unlike the scalar fixes, a list in both places is merged rather than
-    # left alone -- concatenation can't silently drop either side's data.
+    # Unlike the scalar normalizations, a list in both places is merged
+    # rather than left alone -- concatenation can't silently drop either
+    # side's data.
     decoded = {
         "final_itinerary": {
             "assumptions": [{"category": "budget", "detail": "Already at the top level."}],
@@ -163,7 +164,7 @@ def test_atlas_merges_assumptions_present_in_both_places_losing_nothing():
 
     applied = normalize_agent_output("atlas", decoded)
 
-    assert applied == ["assumptions_nesting"]
+    assert applied == ["atlas_assumptions"]
     assert decoded["final_itinerary"]["assumptions"] == [
         {"category": "budget", "detail": "Already at the top level."},
         {"category": "stay_area", "detail": "Misplaced in trip_summary."},
@@ -171,8 +172,8 @@ def test_atlas_merges_assumptions_present_in_both_places_losing_nothing():
     assert "assumptions" not in decoded["final_itinerary"]["trip_summary"]
 
 
-def test_atlas_leaves_hubs_and_stay_price_estimate_unfixed_as_designed():
-    # Deliberately not auto-fixed: relocating these would mean guessing
+def test_atlas_leaves_hubs_and_stay_price_estimate_unnormalized_as_designed():
+    # Deliberately not auto-normalized: relocating these would mean guessing
     # which of several sibling timeline items/days a stray value belongs
     # to -- a correctness problem this module never takes on.
     decoded = {
