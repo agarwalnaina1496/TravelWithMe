@@ -28,6 +28,7 @@ from .contracts import (
     AgentOutputError,
     GenerationConfig,
 )
+from .shape_normalization import normalize_agent_output
 
 OUTPUT_CONTRACT_INSTRUCTION = (
     "\n\nOUTPUT CONTRACT:\n"
@@ -122,7 +123,9 @@ class AgentExecutionService:
                 traveler_message=message,
             )
             try:
-                response = _parse_and_validate(invocation_result.raw_output, definition)
+                response, applied_fixes = _parse_and_validate(
+                    agent, invocation_result.raw_output, definition
+                )
             except _OutputValidationFailure as failure:
                 last_failure = failure
                 will_retry = attempt < MAX_OUTPUT_VALIDATION_ATTEMPTS
@@ -130,6 +133,22 @@ class AgentExecutionService:
                     agent, invocation_result.raw_output, failure, attempt, will_retry
                 )
                 continue
+
+            if applied_fixes:
+                self._logger.warning(
+                    f"{agent.capitalize()} response from {self._engine_name} "
+                    f"needed a known shape fix before it validated: "
+                    f"{', '.join(applied_fixes)}.",
+                    event="be.agent.output.shape_fixed",
+                    source="agent_engine",
+                    agent=agent,
+                    engine=self._engine_name,
+                    component="fastapi",
+                    operation=f"{agent}.response.validate",
+                    attempt=attempt,
+                    status="fixed",
+                    fixes_applied=applied_fixes,
+                )
 
             self._logger.info(
                 f"{agent.capitalize()} agent response received from "
@@ -345,8 +364,8 @@ def _decode_agent_json(raw_output: str) -> Any:
 
 
 def _parse_and_validate(
-    raw_output: str, definition: AgentDefinition
-) -> dict[str, Any]:
+    agent: AgentName, raw_output: str, definition: AgentDefinition
+) -> tuple[dict[str, Any], list[str]]:
     try:
         decoded = _decode_agent_json(raw_output)
     except (TypeError, json.JSONDecodeError):
@@ -354,9 +373,11 @@ def _parse_and_validate(
             [{"type": "json_invalid", "loc": []}]
         ) from None
 
+    applied_fixes = normalize_agent_output(agent, decoded)
+
     try:
         parsed = definition.output_model.model_validate(decoded)
-        return parsed.model_dump(mode="json", exclude_none=True)
+        return parsed.model_dump(mode="json", exclude_none=True), applied_fixes
     except ValidationError as error:
         failures = _sanitized_validation_failures(error, definition.output_model)
         raise _OutputValidationFailure(failures) from None

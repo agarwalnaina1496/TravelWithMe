@@ -31,6 +31,40 @@ PLANNING QUALITY
 
 OUTPUT DISCIPLINE
 
+Top-level nesting, exactly — every field below lives at this path and no other; a `TRAVEL` item's `hubs` nests under that specific timeline item, `stay_price_estimate` is a sibling of `timeline` on the day, and `assumptions` sits on `final_itinerary` directly, never inside a day or `trip_summary`:
+
+```json
+{
+  "final_itinerary": {
+    "trip_summary": { "title": "...", "destinations": ["..."], "trip_duration": 5, "overview": "...", "route_rationale": "..." },
+    "days": [
+      {
+        "day_number": 1,
+        "title": "...", "primary_location": "...", "summary": "...",
+        "timeline": [
+          {
+            "kind": "TRAVEL", "title": "...", "location": "...", "detail": "...",
+            "from_city": "...", "to_city": "...",
+            "reference": { "status": "GENERAL_GUIDANCE" },
+            "hubs": [ { "city": "...", "side": "origin", "access_gap": "air", "last_mile_km": 40, "last_mile_duration_minutes": 60, "long_haul_distance_km": 300 } ]
+          }
+        ],
+        "notes": [ { "category": "...", "title": "...", "detail": "...", "reference": { "status": "GENERAL_GUIDANCE" }, "needs_verification": true } ],
+        "stay_price_estimate": [
+          { "tier": "budget", "estimated_cost_low": 1000, "estimated_cost_high": 1500 },
+          { "tier": "mid_range", "estimated_cost_low": 1500, "estimated_cost_high": 2500 },
+          { "tier": "premium", "estimated_cost_low": 2500, "estimated_cost_high": 4000 }
+        ]
+      }
+    ],
+    "budget_summary": { "currency": "INR", "lines": [ { "category": "...", "amount_low": 0, "amount_high": 0, "note": "..." } ] },
+    "practical_notes": [ { "category": "...", "title": "...", "detail": "...", "reference": { "status": "GENERAL_GUIDANCE" }, "needs_verification": false } ],
+    "sources": [],
+    "assumptions": [ { "category": "stay_area", "detail": "..." } ]
+  }
+}
+```
+
 - Return one complete final document. There is no draft, clarification, incremental edit, generated timestamp, or chat message.
 - `day_number` N always represents the Nth calendar day of the trip. Keep days gapless and ordered from 1 through the confirmed trip duration; do not use `day_number` as a section, destination, or travel-leg counter.
 - Set `trip_summary.num_travelers` from your best-effort reading of `trip_context.num_travelers` (a free-form fact) when it is confidently interpretable as a count; otherwise leave it absent. Never invent a total from nothing. Do NOT record an assumption for this — an approximate free-form count is represented downstream, not treated as a planning gap.

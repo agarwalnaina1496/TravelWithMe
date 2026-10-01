@@ -198,6 +198,22 @@ Include `traveler_criteria` only for `SUCCESS` and `SOFT_FAIL`. Those statuses a
 
 `constraint_adjustment_suggestions` is optional. Include it only for `SOFT_FAIL`, `HARD_FAIL`, `BUDGET_FAIL`, or `CONFLICT_FAIL` when a clear non-empty adjustment is useful. Omit it otherwise.
 
+A `NEEDS_CLARIFICATION` turn's `state_delta` shape, exactly — `last_meridian_message` nests inside `conversation_context` alongside `awaiting`, never as a sibling of it on `matcher_state` directly:
+
+```json
+{
+  "state_delta": {
+    "trip_context": { "num_travelers": 2 },
+    "matcher_state": {
+      "conversation_context": {
+        "awaiting": "origin_city",
+        "last_meridian_message": "Where will you be traveling from?"
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## Status Rules

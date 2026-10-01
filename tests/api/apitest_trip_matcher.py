@@ -121,7 +121,7 @@ def test_active_phase_prompt_releases_are_complete() -> None:
         "scout": "1.11.0",
         "meridian": "1.18.0",
         "guide": "3.3.0",
-        "atlas": "1.17.0",
+        "atlas": "1.18.0",
     }
     guide_prompt = load_prompt_release("guide").content
     assert "Traveler authority" in guide_prompt
@@ -723,14 +723,16 @@ def test_invalid_output_returns_cors_enabled_502(
     assert adapter.invoke.await_count == 2
 
 
-def test_meridian_rejects_last_meridian_message_nested_outside_conversation_context(
+def test_meridian_self_heals_last_meridian_message_nested_outside_conversation_context(
     api_client: TestClient,
 ) -> None:
     # TWM-234: a real, observed contract violation -- Meridian nested
     # last_meridian_message as a sibling of conversation_context on
     # matcher_state directly, instead of inside it alongside `awaiting`.
     # MeridianAgentOutput's own validator only ever reads it from inside
-    # conversation_context, so this exact shape must keep failing.
+    # conversation_context. A normalization pass now moves it into place
+    # before validation runs, so this exact known slip succeeds on the
+    # first attempt -- no retry, no 502, no traveler-visible failure.
     misnested = {
         "status": "NEEDS_CLARIFICATION",
         "state_delta": {
@@ -745,10 +747,7 @@ def test_meridian_rejects_last_meridian_message_nested_outside_conversation_cont
     }
     adapter = AsyncMock()
     adapter.invoke = AsyncMock(
-        side_effect=[
-            AgentInvocationResult(raw_output=json.dumps(misnested)),
-            AgentInvocationResult(raw_output=json.dumps(misnested)),
-        ]
+        side_effect=[AgentInvocationResult(raw_output=json.dumps(misnested))]
     )
     set_engine(
         api_client,
@@ -760,8 +759,14 @@ def test_meridian_rejects_last_meridian_message_nested_outside_conversation_cont
         json={"trip_state": {"trip_context": {}, "matcher_state": {}}, "message": "Where will you be traveling from?"},
     )
 
-    assert response.status_code == 502
-    assert adapter.invoke.await_count == 2
+    assert response.status_code == 200
+    assert adapter.invoke.await_count == 1
+    body = response.json()
+    assert body["state_delta"]["matcher_state"]["conversation_context"] == {
+        "awaiting": "origin_city",
+        "last_meridian_message": "Where will you be traveling from?",
+    }
+    assert "last_meridian_message" not in body["state_delta"]["matcher_state"]
 
 
 def test_adapter_timeout_returns_cors_enabled_504(api_client: TestClient) -> None:

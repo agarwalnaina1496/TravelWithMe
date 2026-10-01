@@ -12,7 +12,13 @@
   `matcher_state` directly, instead of inside it — `MeridianAgentOutput`'s
   own validator reads it from inside `conversation_context`, so the
   mismatch always failed FastAPI's contract check. Both places now spell
-  out the full path explicitly, matching `awaiting`'s treatment.
+  out the full path explicitly, matching `awaiting`'s treatment. Added a
+  concrete `NEEDS_CLARIFICATION` output-shape example to the Output
+  Contract section — the prompt previously showed only the *input* shape,
+  with nothing anchoring the output's own nesting. Backed by a FastAPI-side
+  normalization pass (`agent_engine/shape_normalization.py`) that moves a
+  misnested `last_meridian_message` into place before validation runs, so
+  this exact known slip self-heals on the first attempt even if it recurs.
 
 ## Meridian 1.17.0 — 2026-09-30
 
