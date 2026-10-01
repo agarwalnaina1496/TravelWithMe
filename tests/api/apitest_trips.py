@@ -2582,6 +2582,76 @@ def test_matched_continue_also_reopens_matching_and_clears_obsolete_selection(ap
     assert response.json()["trip"]["trip_state"]["selected_option"] is None
 
 
+def test_unselect_destination_reopens_matching_and_clears_obsolete_selection(
+    api_client: TestClient,
+):
+    # TWM-234: the Destinations page's "Compare other destinations" action
+    # -- unlike traveler_message/continue's matched-stage reopen, this
+    # never re-invokes Meridian; the already-fetched recommendation round
+    # stays available for the UI to show immediately.
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "matched",
+        "active_agent": None,
+        "selected_option": {
+            "type": "single", "id": "goa", "name": "Goa"
+        },
+        "trip_context": {"destinations": ["Goa"]},
+    }
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "unselect_destination",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 200
+    assert engine.calls == []
+    saved = response.json()["trip"]["trip_state"]
+    assert saved["selected_option"] is None
+    assert saved["stage"] == "matching"
+    assert "destinations" not in saved["trip_context"]
+
+
+def test_unselect_destination_rejects_when_not_matched(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {
+        "stage": "recommended",
+        "active_agent": None,
+        "advisor_state": None,
+        "matcher_state": None,
+        "planner_state": None,
+        "trip_context": {"destination": "Rishikesh"},
+    }
+    trip = _create_seeded_trip(
+        api_client, repository, title="Rishikesh", trip_state=state
+    )
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "unselect_destination",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
+    assert response.status_code == 422
+    assert engine.calls == []
+    saved = api_client.get(f"/trips/{trip['id']}").json()
+    assert saved["version"] == 1
+    assert saved["lifecycle"]["stage"] == "recommended"
+
+
 def test_discover_entry_intent_passes_the_travelers_first_message_directly_to_meridian(
     api_client: TestClient,
 ):

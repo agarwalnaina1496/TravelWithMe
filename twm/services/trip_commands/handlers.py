@@ -157,6 +157,27 @@ class SelectDestinationHandler(CommandHandler):
         )
 
 
+class UnselectDestinationHandler(CommandHandler):
+    """TWM-234: lets the traveler reconsider a matched destination without
+    starting to plan it -- the Destinations page's "Compare other
+    destinations" action. Goes back to `matching`, never a direct
+    `matched` -> `matched` re-selection (illegal per `STAGE_TRANSITIONS`);
+    the already-fetched recommendation round stays available for the UI to
+    show immediately, so this never re-invokes Meridian itself."""
+
+    def precondition(self, ctx: CommandContext) -> None:
+        if ctx.state.get("stage") != "matched":
+            raise InvalidTripCommandError(
+                "Only a matched destination can be reconsidered."
+            )
+
+    async def apply(self, ctx: CommandContext) -> dict[str, Any]:
+        reopen_matching_from_matched(
+            ctx.state, ctx.logger, context="unselect_destination"
+        )
+        return {"message": "Let's look at other destinations.", "agent_meta": None}
+
+
 class StartPlanningHandler(CommandHandler):
     def precondition(self, ctx: CommandContext) -> None:
         if not _has_planning_destination(ctx.state["trip_context"]):
@@ -278,6 +299,7 @@ COMMAND_HANDLERS: dict[TripCommandName, CommandHandler] = {
     "traveler_message": TravelerMessageHandler(),
     "continue": ContinueHandler(),
     "select_destination": SelectDestinationHandler(),
+    "unselect_destination": UnselectDestinationHandler(),
     "start_planning": StartPlanningHandler(),
     "approve_plan": ApprovePlanHandler(),
     "more_like_this": MoreLikeThisHandler(),
