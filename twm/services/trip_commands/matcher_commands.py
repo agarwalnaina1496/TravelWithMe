@@ -107,7 +107,7 @@ async def apply_meridian(
         payload = response.model_dump(mode="json", exclude={"state_delta"}, exclude_none=True)
         payload["version"] = (latest.version if latest else 0) + 1
         result["new_recommendation"] = payload
-        set_stage(state, "recommended")
+        set_stage(state, "recommended", logger, context="meridian_recommended")
         state["active_agent"] = None
     return result
 
@@ -164,7 +164,7 @@ def select_destination(
     # reader (Guide's own gate, plan-freeze, the trip summary/recap) has
     # exactly one field to check.
     state["trip_context"][DESTINATIONS_KEY] = [option["name"]]
-    set_stage(state, "matched")
+    set_stage(state, "matched", logger, context="select_destination")
     state["active_agent"] = None
     logger.info(
         "Applied Backend-owned destination selection.",

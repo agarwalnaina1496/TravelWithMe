@@ -126,6 +126,19 @@ class ClearSearchPrefHandler(CommandHandler):
 
 
 class ContinueHandler(CommandHandler):
+    """``continue`` is a kickoff for a matcher round that hasn't produced a
+    result yet -- it never mutates a trip that already has one. A matched or
+    recommended trip with an existing round has nothing to continue, so this
+    is a no-op rather than a redundant Meridian call: re-invoking Meridian
+    here would regenerate the same result and then collide with the
+    "recommended" stage it already set (`set_stage` rejects a same-stage
+    transition), and for a matched trip it would mean silently discarding
+    the traveler's chosen destination -- a side effect `continue` has no
+    business causing on its own. Deliberately reconsidering a matched
+    destination is `unselect_destination`'s job, or a real traveler message
+    (`TravelerMessageHandler`'s own matched-stage reopen), never a bare,
+    possibly-stray `continue`."""
+
     async def apply(self, ctx: CommandContext) -> dict[str, Any]:
         state, engine, logger = ctx.state, ctx.engine, ctx.logger
         latest = ctx.latest_recommendation
@@ -135,8 +148,8 @@ class ContinueHandler(CommandHandler):
                     "Send a traveler message to continue an existing Guide session."
                 )
             return await apply_guide(engine, logger, state, "MESSAGE", None, latest)
-        if state.get("stage") == "matched":
-            reopen_matching_from_matched(state, logger, context="continue_from_matched")
+        if state.get("stage") in {"recommended", "matched"} and latest is not None:
+            return {"message": None, "agent_meta": None}
         if state.get("active_agent") == "meridian" or state.get("stage") in {
             "matching",
             "recommended",

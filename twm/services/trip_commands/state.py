@@ -187,6 +187,16 @@ def set_stage(
             raise InvalidTripCommandError(
                 f"Illegal trip stage transition: {current_stage!r} -> {new_stage!r}."
             )
+    if logger is not None and new_stage != current_stage:
+        logger.info(
+            f"Trip stage transitioned: {current_stage!r} -> {new_stage!r}.",
+            event="be.trip.stage.transitioned",
+            source="application",
+            trip_id=str(state.get("trip_id")) if state.get("trip_id") else None,
+            from_stage=current_stage,
+            to_stage=new_stage,
+            context=context,
+        )
     state["stage"] = new_stage
 
 
