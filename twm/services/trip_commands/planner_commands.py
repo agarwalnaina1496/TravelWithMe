@@ -261,7 +261,7 @@ def _apply_plan_freeze(
     planner["revision"] = revision
     planner["frozen_plan"] = {"guide_state": guide_state, "guide_revision": revision}
     state["active_agent"] = None
-    set_stage(state, "planned")
+    set_stage(state, "planned", logger, context="approve_plan")
     # TWM-227: bridge the stated headcount into the structured booking party
     # once, now that the plan is final and before Atlas / any booking surface.
     seed_party_from_num_travelers(logger, state)

@@ -179,6 +179,50 @@ def test_set_stage_from_new_does_not_log_when_no_logger_given() -> None:
         set_stage(state, "planned")
 
 
+def test_set_stage_logs_info_on_a_successful_transition() -> None:
+    state = {"stage": "new", "trip_id": "trip-123"}
+    logged: list[dict] = []
+
+    class _StubLogger:
+        def info(self, message, **fields):
+            logged.append({"message": message, **fields})
+
+    set_stage(state, "matching", _StubLogger(), context="discover_entry")
+
+    assert len(logged) == 1
+    assert logged[0]["event"] == "be.trip.stage.transitioned"
+    assert logged[0]["trip_id"] == "trip-123"
+    assert logged[0]["from_stage"] == "new"
+    assert logged[0]["to_stage"] == "matching"
+    assert logged[0]["context"] == "discover_entry"
+
+
+def test_set_stage_does_not_log_when_no_logger_given_on_success() -> None:
+    state = {"stage": "new"}
+
+    set_stage(state, "matching")
+
+    assert state["stage"] == "matching"
+
+
+def test_set_stage_does_not_log_an_unenforced_from_stage_with_no_prior_value() -> None:
+    # No "stage" key at all (canonical_state hasn't run yet) means
+    # current_stage is None -- still a real transition worth logging, not a
+    # no-op, since the trip's stage genuinely changes from unset to "new".
+    state: dict = {}
+    logged: list[dict] = []
+
+    class _StubLogger:
+        def info(self, message, **fields):
+            logged.append({"message": message, **fields})
+
+    set_stage(state, "new", _StubLogger(), context="create_trip")
+
+    assert len(logged) == 1
+    assert logged[0]["from_stage"] is None
+    assert logged[0]["to_stage"] == "new"
+
+
 # "matching" is the second stage with enforced transitions (TWM-188).
 
 

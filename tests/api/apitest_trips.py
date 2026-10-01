@@ -2551,9 +2551,13 @@ def test_matched_traveler_message_reopens_matching_and_clears_obsolete_selection
     assert response.json()["trip"]["trip_state"]["selected_option"] is None
 
 
-def test_matched_continue_also_reopens_matching_and_clears_obsolete_selection(api_client: TestClient):
-    """continue's own routing hits the same matched-stage edge — covered
-    separately since it's a distinct branch in _apply()."""
+def test_matched_continue_never_reopens_matching_or_touches_selection(api_client: TestClient):
+    # TWM-234: continue is a no-arg kickoff for a matcher round that hasn't
+    # produced a result yet -- it must never silently discard a traveler's
+    # chosen destination. A stray/racy continue from the matched stage
+    # (e.g. a client's recommendations cache momentarily looking empty)
+    # fails safely instead of reopening matching the way traveler_message's
+    # own matched-stage reopen does for a real, explicit message.
     repository = MemoryTripRepository()
     engine = FakeHandoffEngine()
     app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
@@ -2575,11 +2579,46 @@ def test_matched_continue_also_reopens_matching_and_clears_obsolete_selection(ap
         },
     )
 
+    assert response.status_code == 422
+    assert engine.calls == []
+    saved = api_client.get(f"/trips/{trip['id']}").json()
+    assert saved["version"] == 1
+    assert saved["lifecycle"]["stage"] == "matched"
+    assert saved["lifecycle"]["selected_option"] == {
+        "type": "single", "id": "goa", "name": "Goa"
+    }
+
+
+def test_matched_continue_is_a_no_op_when_a_recommendation_round_already_exists(
+    api_client: TestClient,
+):
+    # TWM-234: the same no-op applies to the "recommended" stage -- the
+    # scenario that produced a real production bug: a client re-sends
+    # continue despite already having a result (e.g. a page revisit whose
+    # client-side cache looked briefly empty). Re-invoking Meridian here
+    # would regenerate the same result and then collide with the stage it
+    # already set (set_stage rejects "recommended" -> "recommended").
+    repository = MemoryTripRepository()
+    engine = FakeHandoffEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    state = {"stage": "recommended", "active_agent": None, "trip_context": {}}
+    trip = _create_seeded_trip(api_client, repository, trip_state=state)
+    _seed_recommendation(repository, UUID(trip["id"]))
+
+    response = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={
+            "command": "continue",
+            "expected_version": 1,
+            "idempotency_key": str(uuid4()),
+        },
+    )
+
     assert response.status_code == 200
-    assert [call[0] for call in engine.calls] == ["meridian"]
-    assert engine.calls[0][2] is None
-    assert "selected_option" not in engine.calls[0][1]["trip_context"]
-    assert response.json()["trip"]["trip_state"]["selected_option"] is None
+    assert engine.calls == []
+    saved = api_client.get(f"/trips/{trip['id']}").json()
+    assert saved["lifecycle"]["stage"] == "recommended"
 
 
 def test_unselect_destination_reopens_matching_and_clears_obsolete_selection(
