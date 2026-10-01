@@ -119,9 +119,9 @@ def test_active_phase_prompt_releases_are_complete() -> None:
 
     assert load_prompt_versions() == {
         "scout": "1.11.0",
-        "meridian": "1.17.0",
+        "meridian": "1.18.0",
         "guide": "3.3.0",
-        "atlas": "1.17.0",
+        "atlas": "1.18.0",
     }
     guide_prompt = load_prompt_release("guide").content
     assert "Traveler authority" in guide_prompt
@@ -369,7 +369,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     assert response.status_code == 200
     assert response.json()["agent_meta"] == {
         "agent": "meridian",
-        "prompt_version": "1.17.0",
+        "prompt_version": "1.18.0",
     }
     release = load_prompt_release("meridian")
     agent, invocation = adapter.invoke.await_args.args
@@ -690,7 +690,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         },
         "message": "What budget should I use?",
         "options": [],
-        "agent_meta": {"agent": "meridian", "prompt_version": "1.17.0"},
+        "agent_meta": {"agent": "meridian", "prompt_version": "1.18.0"},
     }
 
 
@@ -699,7 +699,10 @@ def test_invalid_output_returns_cors_enabled_502(
 ) -> None:
     adapter = AsyncMock()
     adapter.invoke = AsyncMock(
-        side_effect=[AgentInvocationResult(raw_output="not-json")]
+        side_effect=[
+            AgentInvocationResult(raw_output="not-json"),
+            AgentInvocationResult(raw_output="not-json"),
+        ]
     )
     set_engine(
         api_client,
@@ -717,7 +720,53 @@ def test_invalid_output_returns_cors_enabled_502(
         "detail": "The travel assistant returned an invalid response."
     }
     assert response.headers["access-control-allow-origin"] == "https://ui.test"
+    assert adapter.invoke.await_count == 2
+
+
+def test_meridian_self_heals_last_meridian_message_nested_outside_conversation_context(
+    api_client: TestClient,
+) -> None:
+    # TWM-234: a real, observed contract violation -- Meridian nested
+    # last_meridian_message as a sibling of conversation_context on
+    # matcher_state directly, instead of inside it alongside `awaiting`.
+    # MeridianAgentOutput's own validator only ever reads it from inside
+    # conversation_context. A normalization pass now moves it into place
+    # before validation runs, so this exact known slip succeeds on the
+    # first attempt -- no retry, no 502, no traveler-visible failure.
+    misnested = {
+        "status": "NEEDS_CLARIFICATION",
+        "state_delta": {
+            "trip_context": {},
+            "matcher_state": {
+                "conversation_context": {"awaiting": "origin_city"},
+                "last_meridian_message": "Where will you be traveling from?",
+            },
+        },
+        "message": "Where will you be traveling from?",
+        "options": [],
+    }
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        side_effect=[AgentInvocationResult(raw_output=json.dumps(misnested))]
+    )
+    set_engine(
+        api_client,
+        AgentExecutionService(adapter, logger_for_test(), "test-engine"),
+    )
+
+    response = api_client.post(
+        "/meridian",
+        json={"trip_state": {"trip_context": {}, "matcher_state": {}}, "message": "Where will you be traveling from?"},
+    )
+
+    assert response.status_code == 200
     assert adapter.invoke.await_count == 1
+    body = response.json()
+    assert body["state_delta"]["matcher_state"]["conversation_context"] == {
+        "awaiting": "origin_city",
+        "last_meridian_message": "Where will you be traveling from?",
+    }
+    assert "last_meridian_message" not in body["state_delta"]["matcher_state"]
 
 
 def test_adapter_timeout_returns_cors_enabled_504(api_client: TestClient) -> None:

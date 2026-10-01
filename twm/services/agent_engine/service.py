@@ -28,6 +28,7 @@ from .contracts import (
     AgentOutputError,
     GenerationConfig,
 )
+from .shape_normalization import normalize_agent_output
 
 OUTPUT_CONTRACT_INSTRUCTION = (
     "\n\nOUTPUT CONTRACT:\n"
@@ -35,6 +36,11 @@ OUTPUT_CONTRACT_INSTRUCTION = (
     "code fences. The object must match this JSON Schema:\n"
 )
 REDACTED_LOCATION = "<redacted>"
+# TWM-234: one fresh retry (2 attempts total) when the model's own output
+# fails our schema/contract validation -- never infinite, and never a
+# corrective retry (no validation-error feedback appended to the prompt),
+# just a brand new generation call against the exact same invocation.
+MAX_OUTPUT_VALIDATION_ATTEMPTS = 2
 
 
 @dataclass(frozen=True)
@@ -106,48 +112,91 @@ class AgentExecutionService:
             message,
             self._generation,
         )
-        invocation_result = await self._invoke(
-            agent,
-            invocation,
-            attempt=1,
-            prompt_version=release.version,
-            traveler_message=message,
-        )
-        try:
-            response = _parse_and_validate(invocation_result.raw_output, definition)
-        except _OutputValidationFailure as failure:
-            self._logger.error(
-                f"FastAPI rejected {agent.capitalize()} response from "
-                f"{self._engine_name}. Detail - AgentOutputValidationError: "
-                f"{len(failure.failures)} contract violation(s). Response - "
-                f"{self._logger.format_json(invocation_result.raw_output)}",
-                event="be.agent.output.invalid",
-                source="agent_engine",
-                agent=agent,
-                engine=self._engine_name,
-                component="fastapi",
-                operation=f"{agent}.response.validate",
-                failure_stage="agent_output_validation",
-                error_type="AgentOutputValidationError",
-                attempt=1,
-                status="failed",
-                raw_output_chars=len(invocation_result.raw_output),
-                validation_failures=failure.failures,
-                response=invocation_result.raw_output,
+
+        last_failure: _OutputValidationFailure | None = None
+        for attempt in range(1, MAX_OUTPUT_VALIDATION_ATTEMPTS + 1):
+            invocation_result = await self._invoke(
+                agent,
+                invocation,
+                attempt=attempt,
+                prompt_version=release.version,
+                traveler_message=message,
             )
-            raise AgentOutputError(agent, failure.failures) from None
+            try:
+                response, applied_normalizations = _parse_and_validate(
+                    agent, invocation_result.raw_output, definition
+                )
+            except _OutputValidationFailure as failure:
+                last_failure = failure
+                will_retry = attempt < MAX_OUTPUT_VALIDATION_ATTEMPTS
+                self._log_output_validation_failure(
+                    agent, invocation_result.raw_output, failure, attempt, will_retry
+                )
+                continue
 
-        self._logger.info(
-            f"{agent.capitalize()} agent response received from "
-            f"{_display_engine_name(self._engine_name)}. Response - "
-            f"{self._logger.format_json(response)}",
-            event="be.agent.response.received",
+            if applied_normalizations:
+                self._logger.info(
+                    f"{agent.capitalize()} response from {self._engine_name} "
+                    f"was reshaped by default normalization before validation: "
+                    f"{', '.join(applied_normalizations)}.",
+                    event="be.agent.output.normalized",
+                    source="agent_engine",
+                    agent=agent,
+                    engine=self._engine_name,
+                    component="fastapi",
+                    operation=f"{agent}.response.validate",
+                    attempt=attempt,
+                    status="normalized",
+                    normalizations_applied=applied_normalizations,
+                )
+
+            self._logger.info(
+                f"{agent.capitalize()} agent response received from "
+                f"{_display_engine_name(self._engine_name)}. Response - "
+                f"{self._logger.format_json(response)}",
+                event="be.agent.response.received",
+                source="agent_engine",
+                fields=invocation_result.metadata,
+                response=response,
+            )
+            return AgentExecution(response=response, prompt_release=release)
+
+        raise AgentOutputError(agent, last_failure.failures) from None
+
+    def _log_output_validation_failure(
+        self,
+        agent: AgentName,
+        raw_output: str,
+        failure: _OutputValidationFailure,
+        attempt: int,
+        will_retry: bool,
+    ) -> None:
+        # TWM-234: a single malformed/off-schema generation is common LLM
+        # noise, not necessarily a broken prompt -- one fresh retry (a brand
+        # new generation call, no corrective feedback appended) resolves
+        # most of them without ever surfacing a failure to the traveler.
+        # Only the final attempt logs at error severity and raises.
+        log = self._logger.warning if will_retry else self._logger.error
+        outcome = "retrying with a fresh attempt" if will_retry else "giving up"
+        log(
+            f"FastAPI rejected {agent.capitalize()} response from "
+            f"{self._engine_name}. Detail - AgentOutputValidationError: "
+            f"{len(failure.failures)} contract violation(s), {outcome}. "
+            f"Response - {self._logger.format_json(raw_output)}",
+            event="be.agent.output.invalid",
             source="agent_engine",
-            fields=invocation_result.metadata,
-            response=response,
+            agent=agent,
+            engine=self._engine_name,
+            component="fastapi",
+            operation=f"{agent}.response.validate",
+            failure_stage="agent_output_validation",
+            error_type="AgentOutputValidationError",
+            attempt=attempt,
+            status="retrying" if will_retry else "failed",
+            raw_output_chars=len(raw_output),
+            validation_failures=failure.failures,
+            response=raw_output,
         )
-
-        return AgentExecution(response=response, prompt_release=release)
 
     async def _invoke(
         self,
@@ -315,8 +364,8 @@ def _decode_agent_json(raw_output: str) -> Any:
 
 
 def _parse_and_validate(
-    raw_output: str, definition: AgentDefinition
-) -> dict[str, Any]:
+    agent: AgentName, raw_output: str, definition: AgentDefinition
+) -> tuple[dict[str, Any], list[str]]:
     try:
         decoded = _decode_agent_json(raw_output)
     except (TypeError, json.JSONDecodeError):
@@ -324,9 +373,11 @@ def _parse_and_validate(
             [{"type": "json_invalid", "loc": []}]
         ) from None
 
+    applied_normalizations = normalize_agent_output(agent, decoded)
+
     try:
         parsed = definition.output_model.model_validate(decoded)
-        return parsed.model_dump(mode="json", exclude_none=True)
+        return parsed.model_dump(mode="json", exclude_none=True), applied_normalizations
     except ValidationError as error:
         failures = _sanitized_validation_failures(error, definition.output_model)
         raise _OutputValidationFailure(failures) from None

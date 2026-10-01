@@ -1,5 +1,19 @@
 # Atlas prompt changelog
 
+## Atlas 1.18.0 — 2026-10-01
+
+- **Output-shape example added (TWM-234 agent-output-reliability audit).**
+  Atlas's output is the structurally deepest of the four agents (nested
+  timeline items, per-leg transport hubs, three-tier stay estimates,
+  day/trip-level notes, assumptions) and previously had zero example JSON
+  anywhere in the prompt to anchor where each field actually nests. Added a
+  skeletal OUTPUT DISCIPLINE example showing the exact top-level nesting for
+  every field with real ambiguity (`hubs` under its specific `TRAVEL`
+  timeline item, `stay_price_estimate` as a day-level sibling of `timeline`,
+  `assumptions` on `final_itinerary` directly). No behavioral/business-rule
+  change -- this is a structural anchor only, part of the same pass that
+  added one fresh retry on invalid output across all four agents.
+
 ## Atlas 1.17.0 — 2026-09-10
 
 - **Rail access-gap tightening (TWM-230 Increment 1).** Atlas now treats an
