@@ -137,6 +137,7 @@ TripCommandName = Literal[
     "traveler_message",
     "continue",
     "select_destination",
+    "unselect_destination",
     "start_planning",
     "approve_plan",
     "more_like_this",
