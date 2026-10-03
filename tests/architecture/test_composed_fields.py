@@ -14,7 +14,7 @@ from twm.services.trip_view.service import TripViewService
 
 # id / title / product_mode / version are the trip row's own identity;
 # ui_state is a stored per-viewer bag passed through verbatim.
-_TRIP_VIEW_STRUCTURAL = {"id", "title", "product_mode", "version", "ui_state"}
+_TRIP_VIEW_STRUCTURAL = {"id", "title", "title_source", "product_mode", "version", "ui_state"}
 
 
 def test_trip_view_every_field_is_owned_by_the_composer():

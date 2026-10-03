@@ -69,6 +69,7 @@ class TripViewService:
         *,
         trip_id: UUID,
         title: str,
+        title_source: str,
         product_mode: str,
         version: int,
         trip_state: dict[str, Any],
@@ -88,6 +89,7 @@ class TripViewService:
         return TripView(
             id=trip_id,
             title=title,
+            title_source=title_source,
             product_mode=product_mode,
             version=version,
             ui_state=ui_state,
@@ -107,6 +109,7 @@ class TripViewService:
         *,
         trip_id: UUID,
         title: str,
+        title_source: str,
         product_mode: str,
         version: int,
         created_at: Any,
@@ -120,6 +123,7 @@ class TripViewService:
         return TripListItem(
             id=trip_id,
             title=title,
+            title_source=title_source,
             product_mode=product_mode,
             version=version,
             created_at=created_at,

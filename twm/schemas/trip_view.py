@@ -138,11 +138,17 @@ class BeforeYouGoItem(BaseModel):
     verify: bool
 
 
+TitleSource = Literal["placeholder", "generated", "user"]
+
+
 class TripView(BaseModel):
     model_config = _forbid
 
     id: UUID
     title: str
+    # Who set `title`: still the placeholder, promoted from an agent, or
+    # chosen by the traveler (TWM-234).
+    title_source: TitleSource
     product_mode: Literal["self_led", "twm_led"]
     version: int
     # Structural / passthrough fields alongside `id` / `title` / `version` —
@@ -181,6 +187,7 @@ class TripListItem(BaseModel):
 
     id: UUID
     title: str
+    title_source: TitleSource
     product_mode: Literal["self_led", "twm_led"]
     version: int
     created_at: datetime

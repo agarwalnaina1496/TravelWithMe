@@ -111,14 +111,16 @@ class FakeDatabase:
         # TWM-191: commit_command writes trip_state + the lifecycle columns.
         # TWM-232: also promotes `title` when the caller passes one
         # (COALESCE($8,title) — a null $8 leaves the stored title untouched).
-        if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7, title=COALESCE($8,title),version=version+1"):
-            trip_id, owner_value, expected_version, trip_state, stage, status, active_agent, title = args
+        # TWM-234: a promoted title is marked `generated`.
+        if q.startswith(f"UPDATE {self.q('trips')} SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7, title=COALESCE($8,title), title_source=COALESCE($9,title_source)"):
+            trip_id, owner_value, expected_version, trip_state, stage, status, active_agent, title, title_source = args
             trip = self.trips.get(trip_id)
             if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
             trip.update(trip_state=trip_state, stage=stage, status=status, active_agent=active_agent)
             if title is not None:
                 trip["title"] = title
+                trip["title_source"] = title_source
             trip["version"] += 1
             trip["updated_at"] = datetime.now(timezone.utc)
             self.written_tables.add("trips")
@@ -139,6 +141,7 @@ class FakeDatabase:
             if not trip or not _owned_by(trip, owner_value) or trip["version"] != expected_version:
                 return None
             trip["title"] = title
+            trip["title_source"] = "user"
             trip["version"] += 1
             trip["updated_at"] = datetime.now(timezone.utc)
             self.written_tables.add("trips")
@@ -171,11 +174,11 @@ class FakeDatabase:
                 return None
             return {"version": trip["version"]}
         if q.startswith(f"INSERT INTO {self.q('trips')}"):
-            guest_id, user_id, title, product_mode, trip_state, ui_state, stage, status, active_agent, idempotency_key = args
+            guest_id, user_id, title, title_source, product_mode, trip_state, ui_state, stage, status, active_agent, idempotency_key = args
             trip_id = uuid4()
             now = datetime.now(timezone.utc)
             trip = {
-                "id": trip_id, "guest_session_id": guest_id, "user_id": user_id, "title": title, "product_mode": product_mode,
+                "id": trip_id, "guest_session_id": guest_id, "user_id": user_id, "title": title, "title_source": title_source, "product_mode": product_mode,
                 "trip_state": trip_state, "ui_state": ui_state,
                 "stage": stage, "status": status, "active_agent": active_agent,
                 "idempotency_key": idempotency_key,

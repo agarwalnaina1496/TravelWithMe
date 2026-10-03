@@ -75,7 +75,10 @@ class MemoryTripRepository:
         idempotency_key=None, idempotency_request_hash=None, idempotency_response=None,
     ):
         now = datetime.now(timezone.utc)
-        trip = TripRecord(uuid4(), guest_id, user_id, title, product_mode, trip_state, ui_state, 1, now, now)
+        trip = TripRecord(
+            uuid4(), guest_id, user_id, title, product_mode, trip_state, ui_state, 1, now, now,
+            title_source="placeholder" if title == "Untitled Trip" else "user",
+        )
         self.trips[trip.id] = trip
         if idempotency_key is not None:
             self.trip_idempotency_keys[(guest_id, idempotency_key)] = trip.id
@@ -125,7 +128,7 @@ class MemoryTripRepository:
             return None
         if trip.version != expected_version:
             raise VersionConflictError(trip.version)
-        updated = replace(trip, title=title, version=trip.version + 1, updated_at=datetime.now(timezone.utc))
+        updated = replace(trip, title=title, title_source="user", version=trip.version + 1, updated_at=datetime.now(timezone.utc))
         self.trips[trip_id] = updated
         return updated
 
@@ -192,6 +195,7 @@ class MemoryTripRepository:
         updated = replace(
             trip, trip_state=merged, version=trip.version + 1, updated_at=datetime.now(timezone.utc),
             title=title if title is not None else trip.title,
+            title_source="generated" if title is not None else trip.title_source,
         )
         self.trips[trip_id] = updated
         if new_recommendation is not None:
@@ -1186,6 +1190,7 @@ def test_guide_promotes_a_generated_title_once_the_placeholder_is_still_stored(a
     assert response.json()["trip"]["title"] == "5 days in Rishikesh"
     persisted = api_client.get(f"/trips/{trip['id']}").json()
     assert persisted["title"] == "5 days in Rishikesh"
+    assert persisted["title_source"] == "generated"
 
 
 def test_guide_never_overwrites_a_real_title_even_if_one_is_generated(api_client: TestClient):
@@ -1203,6 +1208,7 @@ def test_guide_never_overwrites_a_real_title_even_if_one_is_generated(api_client
     )
     assert response.status_code == 200
     assert response.json()["trip"]["title"] == "My Real Trip Name"
+    assert api_client.get(f"/trips/{trip['id']}").json()["title_source"] == "user"
 
 
 class FakeMeridianGeneratesTitleEngine(FakeCommandEngine):
@@ -1266,6 +1272,10 @@ def test_meridian_promotes_a_generated_title_once_the_placeholder_is_still_store
     )
     assert response.status_code == 200
     assert response.json()["trip"]["title"] == "5 days from Bangalore"
+    persisted = api_client.get(f"/trips/{trip['id']}").json()
+    assert persisted["title_source"] == "generated"
+    listed = next(item for item in api_client.get("/trips").json()["trips"] if item["id"] == trip["id"])
+    assert listed["title_source"] == "generated"
 
 
 def test_meridian_never_overwrites_a_real_title_even_if_one_is_generated(api_client: TestClient):
@@ -1283,6 +1293,34 @@ def test_meridian_never_overwrites_a_real_title_even_if_one_is_generated(api_cli
     )
     assert response.status_code == 200
     assert response.json()["trip"]["title"] == "My Real Trip Name"
+    assert api_client.get(f"/trips/{trip['id']}").json()["title_source"] == "user"
+
+
+def test_a_rename_after_a_generated_title_marks_it_user_set_and_generation_cannot_undo_it(api_client: TestClient):
+    repository = MemoryTripRepository()
+    engine = FakeMeridianGeneratesTitleEngine()
+    app.dependency_overrides[get_trip_persistence] = lambda: _service(repository)
+    app.dependency_overrides[get_engine] = lambda: engine
+    trip = _create_seeded_trip(
+        api_client, repository, title="Untitled Trip", trip_state=_meridian_anything_else_state()
+    )
+    assert api_client.get(f"/trips/{trip['id']}").json()["title_source"] == "placeholder"
+    generated = api_client.post(
+        f"/trips/{trip['id']}/commands",
+        json={"command": "traveler_message", "message": "Nothing else.",
+              "expected_version": 1, "idempotency_key": str(uuid4())},
+    )
+    assert generated.status_code == 200
+    current = api_client.get(f"/trips/{trip['id']}").json()
+    assert (current["title"], current["title_source"]) == ("5 days from Bangalore", "generated")
+
+    renamed = api_client.patch(
+        f"/trips/{trip['id']}", json={"expected_version": current["version"], "title": "Puja holidays"}
+    )
+    assert renamed.status_code == 200
+    assert (renamed.json()["title"], renamed.json()["title_source"]) == ("Puja holidays", "user")
+    listed = next(item for item in api_client.get("/trips").json()["trips"] if item["id"] == trip["id"])
+    assert (listed["title"], listed["title_source"]) == ("Puja holidays", "user")
 
 
 def test_single_step_generation_logs_plan_generated_with_budget_and_preference_presence(

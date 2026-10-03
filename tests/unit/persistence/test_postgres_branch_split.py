@@ -30,7 +30,7 @@ def _seed_trip(db: FakeDatabase, guest_id, *, core_state=None, version=1):
     # TWM-191: stage/status/active_agent are columns on the trips row now,
     # not blob keys.
     db.trips[trip_id] = {
-        "id": trip_id, "guest_session_id": guest_id, "user_id": None, "title": "Trip", "product_mode": "self_led",
+        "id": trip_id, "guest_session_id": guest_id, "user_id": None, "title": "Trip", "title_source": "placeholder", "product_mode": "self_led",
         "trip_state": __import__("json").dumps(
             {k: v for k, v in core_state.items() if k not in ("stage", "status", "active_agent")}
         ),

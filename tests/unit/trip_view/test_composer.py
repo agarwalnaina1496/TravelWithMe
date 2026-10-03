@@ -37,7 +37,7 @@ def _final_itinerary(**overrides):
 
 def _build(*, trip_state=None, itinerary=None, has_recommendation=False, title="T"):
     return SERVICE.build(
-        trip_id=TRIP_ID, title=title, product_mode="self_led", version=1,
+        trip_id=TRIP_ID, title=title, title_source="placeholder", product_mode="self_led", version=1,
         trip_state=trip_state or {}, ui_state={},
         itinerary_result=None if itinerary is None else {"final_itinerary": itinerary},
         has_recommendation=has_recommendation,
@@ -101,12 +101,13 @@ def test_title_passes_through_the_placeholder_unchanged():
 def test_list_item_title_passes_through_unchanged():
     now = datetime.now(timezone.utc)
     item = SERVICE.build_list_item(
-        trip_id=TRIP_ID, title="Kerala unwind", product_mode="self_led", version=1,
+        trip_id=TRIP_ID, title="Kerala unwind", title_source="user", product_mode="self_led", version=1,
         created_at=now, updated_at=now,
         trip_state={"trip_context": {"origin_city": "Bangalore"}},
         has_recommendation=False,
     )
     assert item.title == "Kerala unwind"
+    assert item.title_source == "user"
 
 
 def test_context_recap_omits_an_empty_free_form_value():
