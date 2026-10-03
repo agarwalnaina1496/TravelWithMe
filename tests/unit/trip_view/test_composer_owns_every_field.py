@@ -15,10 +15,10 @@ from tests.architecture.composed_fields import assert_all_fields_composed
 from twm.schemas.trip_view import TripView
 from twm.services.trip_view.service import TripViewService
 
-# id / title / product_mode / version are the trip row's own identity;
+# id / title / title_source / product_mode / version are the trip row's own identity;
 # ui_state is a stored per-viewer bag passed through verbatim. Everything
 # else is composed.
-_STRUCTURAL = {"id", "title", "product_mode", "version", "ui_state"}
+_STRUCTURAL = {"id", "title", "title_source", "product_mode", "version", "ui_state"}
 
 
 def test_every_composed_field_has_a_compose_method_that_build_calls():

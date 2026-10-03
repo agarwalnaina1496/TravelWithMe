@@ -59,6 +59,7 @@ class TripRecord:
     version: int
     created_at: datetime
     updated_at: datetime
+    title_source: str = "placeholder"
 
 
 @dataclass(frozen=True)

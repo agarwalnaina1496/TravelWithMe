@@ -66,6 +66,7 @@ async def _compose_trip_view(
     return view_service.build(
         trip_id=trip_id,
         title=trip.title,
+        title_source=trip.title_source,
         product_mode=trip.product_mode,
         version=trip.version,
         trip_state=trip.trip_state,
@@ -110,7 +111,7 @@ async def list_trips(
     )
     return TripListResponse(trips=[
         trip_view.build_list_item(
-            trip_id=t.id, title=t.title, product_mode=t.product_mode, version=t.version,
+            trip_id=t.id, title=t.title, title_source=t.title_source, product_mode=t.product_mode, version=t.version,
             created_at=t.created_at, updated_at=t.updated_at, trip_state=t.trip_state,
             has_recommendation=t.id in recommendation_ids,
         )
@@ -129,7 +130,7 @@ async def create_trip(
     )
     logger.info("Created guest trip.", event="be.trip.created", source="http", trip_id=str(trip.id), version=trip.version)
     return trip_view.build(
-        trip_id=trip.id, title=trip.title, product_mode=trip.product_mode, version=trip.version,
+        trip_id=trip.id, title=trip.title, title_source=trip.title_source, product_mode=trip.product_mode, version=trip.version,
         trip_state=trip.trip_state, ui_state=trip.ui_state, itinerary_result=None, has_recommendation=False,
     )
 

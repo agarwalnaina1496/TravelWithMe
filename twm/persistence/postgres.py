@@ -22,6 +22,7 @@ from .contracts import (
     User,
     VersionConflictError,
 )
+from ..schemas.trips import PLACEHOLDER_TITLE
 from ..shared.trip_state_branches import populated_touchable_branches
 
 # Branches split out of trips.trip_state into dedicated tables (TWM-158).
@@ -119,6 +120,7 @@ def _record(row: asyncpg.Record) -> TripRecord:
         trip_state=_with_lifecycle(_json_object(row["trip_state"]), row),
         ui_state=_json_object(row["ui_state"]),
         version=row["version"], created_at=row["created_at"], updated_at=row["updated_at"],
+        title_source=row["title_source"],
     )
 
 
@@ -264,9 +266,9 @@ class PostgresTripRepository:
             async with connection.transaction():
                 row = await connection.fetchrow(
                     f"""INSERT INTO {self.schema}.trips
-                    (guest_session_id,user_id,title,product_mode,trip_state,ui_state,stage,status,active_agent,idempotency_key)
-                    VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$9,$10) RETURNING *""",
-                    guest_id, user_id, title, product_mode,
+                    (guest_session_id,user_id,title,title_source,product_mode,trip_state,ui_state,stage,status,active_agent,idempotency_key)
+                    VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10,$11) RETURNING *""",
+                    guest_id, user_id, title, "placeholder" if title == PLACEHOLDER_TITLE else "user", product_mode,
                     json.dumps(_blob_state(trip_state)), json.dumps(ui_state), stage, status, active_agent, idempotency_key)
                 touched = populated_touchable_branches(trip_state)
                 await self._write_branch_tables(connection, row["id"], trip_state, touched)
@@ -381,7 +383,7 @@ class PostgresTripRepository:
 
     async def rename_trip(self, owner: TripOwner, trip_id: UUID, expected_version: int, title: str) -> TripRecord | None:
         return await self._mutate(
-            f"""UPDATE {self.schema}.trips SET title=$4,version=version+1,updated_at=now()
+            f"""UPDATE {self.schema}.trips SET title=$4,title_source='user',version=version+1,updated_at=now()
             WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
             owner, trip_id, expected_version, title)
 
@@ -467,10 +469,13 @@ class PostgresTripRepository:
                 row = await connection.fetchrow(
                     f"""UPDATE {self.schema}.trips
                     SET trip_state=$4::jsonb,stage=$5,status=$6,active_agent=$7,
-                        title=COALESCE($8,title),version=version+1,updated_at=now()
+                        title=COALESCE($8,title),
+                        title_source=COALESCE($9,title_source),
+                        version=version+1,updated_at=now()
                     WHERE id=$1 AND {_owner_clause(owner, 2)} AND version=$3 RETURNING *""",
                     trip_id, _owner_value(owner), expected_version,
                     json.dumps(_blob_state(trip_state)), stage, status, active_agent, title,
+                    "generated" if title is not None else None,
                 )
                 if not row:
                     prior = await connection.fetchrow(
