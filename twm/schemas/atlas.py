@@ -1,15 +1,29 @@
 """Atlas input and rich final-itinerary contracts."""
 
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic.json_schema import SkipJsonSchema
 
 from ..trust_boundary import validate_phase_state
+from .agent_contract import (
+    AgentContent,
+    EmptyAsNone,
+    Text,
+    ensure_ordered_range,
+    record_heal,
+)
 from .common import AgentMeta
 from .trip_context import TripContext
 
 
-AtlasText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 VerificationStatus = Literal["VERIFIED", "GENERAL_GUIDANCE"]
 TimelineKind = Literal["TRAVEL", "STAY", "MEAL", "ACTIVITY", "FREE_TIME"]
 # TWM-217: `dates` and `traveler_count` are gone — a day-numbered plan is
@@ -34,7 +48,7 @@ AtlasHubSide = Literal["origin", "destination"]
 AtlasAccessGap = Literal["air", "rail"]
 
 
-class AtlasTransportHub(BaseModel):
+class AtlasTransportHub(AgentContent):
     """TWM-226: a plain geographic fact about a candidate gateway city for a
     `TRAVEL` leg whose own endpoint town has no realistic long-haul transport.
     Atlas supplies an unranked plausible set (2-3); deterministic downstream
@@ -42,9 +56,7 @@ class AtlasTransportHub(BaseModel):
     names a transit mode here -- `long_haul_distance_km` lets a rail-only hub
     with no airport still be assessed downstream."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    city: AtlasText
+    city: Text
     side: AtlasHubSide
     access_gap: AtlasAccessGap
     # All three are positive: a gateway sits a real surface transfer from the
@@ -55,43 +67,46 @@ class AtlasTransportHub(BaseModel):
     long_haul_distance_km: int = Field(gt=0)
 
 
-class AtlasAssumption(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AtlasAssumption(AgentContent):
     category: AtlasAssumptionCategory
-    detail: AtlasText
+    detail: Text
 
 
-class AtlasReference(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AtlasReference(AgentContent):
     status: VerificationStatus
-    source_title: Optional[AtlasText] = None
-    source_url: Optional[AtlasText] = None
+    source_title: Optional[Text] = None
+    source_url: Optional[Text] = None
 
-    @model_validator(mode="after")
-    def require_source_for_verified_detail(self) -> "AtlasReference":
-        if self.status == "VERIFIED" and not (
-            self.source_title and self.source_url
+    @model_validator(mode="before")
+    @classmethod
+    def _unsourced_claim_is_general_guidance(cls, data: Any, info: ValidationInfo) -> Any:
+        # "Verified" is a claim the output has to back with a source. Without
+        # one the honest reading is general guidance -- lowering the claim,
+        # never inventing a source -- rather than discarding the itinerary.
+        if (
+            isinstance(data, dict)
+            and data.get("status") == "VERIFIED"
+            and not (data.get("source_title") and data.get("source_url"))
         ):
-            raise ValueError("VERIFIED details require source_title and source_url")
-        return self
+            record_heal(info, "reference.unsourced_verified_downgraded")
+            return {**data, "status": "GENERAL_GUIDANCE"}
+        return data
 
 
 class AtlasWorkingDay(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     day_number: int = Field(ge=1)
-    date: Optional[AtlasText] = None
-    places: list[AtlasText] = Field(default_factory=list)
+    date: Optional[Text] = None
+    places: list[Text] = Field(default_factory=list)
 
 
 class AtlasWorkingPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    destinations: list[AtlasText]
+    destinations: list[Text]
     trip_duration: int = Field(ge=1, le=60)
-    approved_places: list[AtlasText] = Field(default_factory=list)
+    approved_places: list[Text] = Field(default_factory=list)
     days: list[AtlasWorkingDay]
 
     @model_validator(mode="after")
@@ -125,55 +140,67 @@ class AtlasRequest(BaseModel):
         return self
 
 
-class AtlasTripSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    title: AtlasText
-    destinations: list[AtlasText]
-    trip_duration: int = Field(ge=1)
+class AtlasTripSummary(AgentContent):
+    title: Text
+    destinations: list[Text]
+    # The number of days in the itinerary (derived by AtlasFinalItinerary);
+    # hidden from the model rather than asked to agree with its own day list.
+    trip_duration: SkipJsonSchema[int] = Field(default=1, ge=1)
     num_travelers: Optional[int] = Field(default=None, ge=1)
-    overview: AtlasText
-    route_rationale: AtlasText
+    overview: Text
+    route_rationale: Text
 
 
-class AtlasTimelineItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    start_time: Optional[AtlasText] = None
-    end_time: Optional[AtlasText] = None
+class AtlasTimelineItem(AgentContent):
+    start_time: Optional[Text] = None
+    end_time: Optional[Text] = None
     kind: TimelineKind
-    title: AtlasText
-    location: AtlasText
-    detail: AtlasText
-    movement_guidance: Optional[AtlasText] = None
-    from_city: Optional[AtlasText] = None
-    to_city: Optional[AtlasText] = None
+    title: Text
+    location: Text
+    detail: Text
+    movement_guidance: Optional[Text] = None
+    from_city: Optional[Text] = None
+    to_city: Optional[Text] = None
     estimated_cost_low: Optional[int] = Field(default=None, ge=0)
     estimated_cost_high: Optional[int] = Field(default=None, ge=0)
     reference: AtlasReference
-    requires_advance_booking: bool = False
+    # Derived from booking_readiness (present means advance action applies);
+    # hidden from the model so the two can never disagree.
+    requires_advance_booking: SkipJsonSchema[bool] = False
     booking_readiness: Optional[AtlasBookingReadiness] = None
     # TWM-226: candidate gateway hubs for a TRAVEL leg whose own endpoint town
     # has no realistic long-haul transport -- presented as equal options (the
     # more commonly-used gateway first where there is one). Absent for a
     # normally-connected leg and when Atlas cannot confidently name a hub.
-    hubs: Optional[list[AtlasTransportHub]] = None
+    hubs: Annotated[Optional[list[AtlasTransportHub]], EmptyAsNone] = None
 
     @model_validator(mode="after")
     def validate_cost_range(self) -> "AtlasTimelineItem":
         _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def _heal_booking_and_cost(cls, data: Any, info: ValidationInfo) -> Any:
+        if not isinstance(data, dict):
+            return data
+        data = {**data}
+        # A model that says "needs advance booking" without picking a readiness
+        # has said exactly `needs_advance_booking`.
+        if data.get("requires_advance_booking") is True and data.get("booking_readiness") is None:
+            data["booking_readiness"] = "needs_advance_booking"
+            record_heal(info, "booking_readiness.taken_from_requires_advance_booking")
+        # A cost range needs both ends; a lone bound is not a range (the UI only
+        # renders one when both exist), so it is dropped rather than half-shown.
+        low, high = data.get("estimated_cost_low"), data.get("estimated_cost_high")
+        if (low is None) != (high is None):
+            data["estimated_cost_low"] = data["estimated_cost_high"] = None
+            record_heal(info, "estimated_cost.lone_bound_dropped")
+        return data
+
     @model_validator(mode="after")
-    def validate_booking_readiness(self) -> "AtlasTimelineItem":
-        if self.requires_advance_booking and self.booking_readiness is None:
-            raise ValueError(
-                "booking_readiness is required when requires_advance_booking is true"
-            )
-        if not self.requires_advance_booking and self.booking_readiness is not None:
-            raise ValueError(
-                "booking_readiness is allowed only when requires_advance_booking is true"
-            )
+    def derive_requires_advance_booking(self) -> "AtlasTimelineItem":
+        self.requires_advance_booking = self.booking_readiness is not None
         return self
 
     @model_validator(mode="after")
@@ -195,11 +222,6 @@ class AtlasTimelineItem(BaseModel):
             return self
         if self.kind != "TRAVEL":
             raise ValueError("hubs are allowed only when kind is TRAVEL")
-        if not self.hubs:
-            raise ValueError(
-                "hubs must be absent rather than an empty list when Atlas "
-                "cannot confidently name a gateway hub"
-            )
         return self
 
 
@@ -207,13 +229,11 @@ StayTier = Literal["budget", "mid_range", "premium"]
 _STAY_TIER_ORDER: tuple[StayTier, ...] = ("budget", "mid_range", "premium")
 
 
-class AtlasStayTierEstimate(BaseModel):
+class AtlasStayTierEstimate(AgentContent):
     """A single tier of TWM-204's non-binding stay price-band estimate --
     never a live/booked price (that stays structurally forbidden on
     TrustedAction), the same estimate-then-redirect honesty framing already
     applied to transit `estimated_cost_low/high`."""
-
-    model_config = ConfigDict(extra="forbid")
 
     tier: StayTier
     estimated_cost_low: int = Field(ge=0)
@@ -225,32 +245,41 @@ class AtlasStayTierEstimate(BaseModel):
         return self
 
 
-class AtlasDayNote(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    category: AtlasText
-    title: AtlasText
-    detail: AtlasText
+class AtlasDayNote(AgentContent):
+    category: Text
+    title: Text
+    detail: Text
     reference: AtlasReference
     # TWM-217: "worth checking closer to travel; no live source confirmed
     # it." A day-specific verification gap lives here (not a separate list).
     needs_verification: bool = False
 
 
-class AtlasDay(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AtlasDay(AgentContent):
     day_number: int = Field(ge=1)
-    title: AtlasText
-    primary_location: AtlasText
-    summary: AtlasText
+    title: Text
+    primary_location: Text
+    summary: Text
     timeline: list[AtlasTimelineItem] = Field(min_length=1)
     notes: list[AtlasDayNote] = Field(default_factory=list)
-    backup_plan: Optional[AtlasText] = None
+    backup_plan: Optional[Text] = None
     # TWM-204: present only when this day involves an overnight stay --
     # Atlas's own judgment call, the same as backup_plan above. Absent for
     # a day-trip/pure-transit/departure day with no overnight stay.
-    stay_price_estimate: Optional[list[AtlasStayTierEstimate]] = None
+    stay_price_estimate: Annotated[Optional[list[AtlasStayTierEstimate]], EmptyAsNone] = None
+
+    @field_validator("stay_price_estimate", mode="before")
+    @classmethod
+    def _tiers_in_price_order(cls, value: Any, info: ValidationInfo) -> Any:
+        if not (isinstance(value, list) and value and all(isinstance(item, dict) for item in value)):
+            return value
+        order = {tier: index for index, tier in enumerate(_STAY_TIER_ORDER)}
+        if not all(item.get("tier") in order for item in value):
+            return value
+        ordered = sorted(value, key=lambda item: order[item["tier"]])
+        if ordered != value:
+            record_heal(info, "stay_price_estimate.tiers_ordered")
+        return ordered
 
     @model_validator(mode="after")
     def validate_stay_price_estimate(self) -> "AtlasDay":
@@ -271,28 +300,24 @@ class AtlasDay(BaseModel):
         return self
 
 
-class AtlasBudgetLine(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    category: AtlasText
+class AtlasBudgetLine(AgentContent):
+    category: Text
     amount_low: int = Field(ge=0)
     amount_high: int = Field(ge=0)
-    note: AtlasText
+    note: Text
 
     @model_validator(mode="after")
     def validate_range(self) -> "AtlasBudgetLine":
-        if self.amount_high < self.amount_low:
-            raise ValueError("budget amount_high must be at least amount_low")
+        ensure_ordered_range(self.amount_low, self.amount_high, "budget amount")
         return self
 
 
-class AtlasBudgetSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    currency: AtlasText
+class AtlasBudgetSummary(AgentContent):
+    currency: Text
     lines: list[AtlasBudgetLine] = Field(min_length=1)
-    total_low: int = Field(default=0, ge=0)
-    total_high: int = Field(default=0, ge=0)
+    # Always the sum of the lines (calculated below); hidden from the model.
+    total_low: SkipJsonSchema[int] = Field(default=0, ge=0)
+    total_high: SkipJsonSchema[int] = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def calculate_totals(self) -> "AtlasBudgetSummary":
@@ -301,48 +326,60 @@ class AtlasBudgetSummary(BaseModel):
         return self
 
 
-class AtlasPracticalNote(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    category: AtlasText
-    title: AtlasText
-    detail: AtlasText
+class AtlasPracticalNote(AgentContent):
+    category: Text
+    title: Text
+    detail: Text
     reference: AtlasReference
     # TWM-217: a trip-wide verification gap lives here (not a separate list).
     needs_verification: bool = False
 
 
-class AtlasSource(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    title: AtlasText
-    url: AtlasText
-    supports: list[AtlasText] = Field(min_length=1)
+class AtlasSource(AgentContent):
+    title: Text
+    url: Text
+    supports: list[Text] = Field(min_length=1)
 
 
-class AtlasFinalItinerary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AtlasFinalItinerary(AgentContent):
     trip_summary: AtlasTripSummary
-    days: list[AtlasDay]
+    days: list[AtlasDay] = Field(min_length=1)
     budget_summary: AtlasBudgetSummary
     practical_notes: list[AtlasPracticalNote]
     sources: list[AtlasSource]
     assumptions: list[AtlasAssumption] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _heal_shape(cls, data: Any, info: ValidationInfo) -> Any:
+        if not isinstance(data, dict):
+            return data
+        data = {**data}
+        # `assumptions` sits on the itinerary, never inside trip_summary; lists
+        # merge without losing anything from either side.
+        summary = data.get("trip_summary")
+        stray = summary.get("assumptions") if isinstance(summary, dict) else None
+        existing = data.get("assumptions") or []
+        if isinstance(stray, list) and stray and isinstance(existing, list):
+            data["assumptions"] = existing + stray
+            data["trip_summary"] = {k: v for k, v in summary.items() if k != "assumptions"}
+            record_heal(info, "assumptions.relocated_into_final_itinerary")
+        # A day's number is its position in the list.
+        days = data.get("days")
+        if isinstance(days, list) and all(isinstance(day, dict) for day in days):
+            numbered = [{**day, "day_number": number} for number, day in enumerate(days, 1)]
+            if numbered != days:
+                record_heal(info, "days.numbered_by_position")
+            data["days"] = numbered
+        return data
+
     @model_validator(mode="after")
-    def validate_days(self) -> "AtlasFinalItinerary":
-        expected = self.trip_summary.trip_duration
-        if len(self.days) != expected:
-            raise ValueError("final itinerary day count must equal trip_duration")
-        if [day.day_number for day in self.days] != list(range(1, expected + 1)):
-            raise ValueError("final itinerary days must be sequential from 1")
+    def derive_trip_duration(self) -> "AtlasFinalItinerary":
+        self.trip_summary.trip_duration = len(self.days)
         return self
 
 
-class AtlasAgentOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class AtlasAgentOutput(AgentContent):
     final_itinerary: AtlasFinalItinerary
 
 
@@ -353,5 +390,4 @@ class AtlasResponse(AtlasAgentOutput):
 def _validate_optional_range(low: Optional[int], high: Optional[int]) -> None:
     if (low is None) != (high is None):
         raise ValueError("cost range requires both low and high or neither")
-    if low is not None and high is not None and high < low:
-        raise ValueError("cost high must be at least cost low")
+    ensure_ordered_range(low, high, "cost")

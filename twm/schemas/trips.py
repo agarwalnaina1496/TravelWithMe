@@ -12,7 +12,8 @@ from .booking_setup import (
     TravelerComposition,
 )
 from .common import AgentMeta
-from .recommendations import NonEmptyString, RecommendationOption, TravelerCriterion
+from .agent_contract import Text
+from .recommendations import RecommendationOption, TravelerCriterion
 from .scout import BoundedMessage
 
 # TWM-232: the one literal default every fresh trip's title starts as. Shared
@@ -27,7 +28,7 @@ class MeridianRefinementReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["single", "circuit"]
-    id: NonEmptyString
+    id: Text
 
 
 class MeridianRefinement(BaseModel):
@@ -112,7 +113,7 @@ class TripRecommendationsResponse(BaseModel):
     trip_type: Literal["single", "circuit", "mixed"] | None = None
     options: list[RecommendationOption] = Field(default_factory=list)
     traveler_criteria: list[TravelerCriterion] | None = None
-    constraint_adjustment_suggestions: list[NonEmptyString] | None = None
+    constraint_adjustment_suggestions: list[Text] | None = None
     agent_meta: AgentMeta
     created_at: datetime
 

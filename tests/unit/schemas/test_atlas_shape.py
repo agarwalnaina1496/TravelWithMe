@@ -43,12 +43,12 @@ def _day(**overrides):
     return day
 
 
-def test_atlas_timeline_item_rejects_removed_travel_narrative_fields():
+def test_atlas_timeline_item_drops_removed_travel_narrative_fields():
     for removed_field in ("from_place", "to_place", "display_label"):
-        with pytest.raises(ValidationError):
-            AtlasTimelineItem.model_validate(
-                _timeline_item(**{removed_field: "Narrative copy"})
-            )
+        validated = AtlasTimelineItem.model_validate(
+            _timeline_item(**{removed_field: "Narrative copy"})
+        )
+        assert removed_field not in validated.model_dump()
 
 
 def test_atlas_transport_hub_requires_mode_neutral_access_gap():
@@ -91,8 +91,8 @@ def test_atlas_day_uses_notes_instead_of_legacy_guidance_fields():
     assert validated.notes[0].title == "Taj Mahal Friday closure"
 
     for removed_field in ("seasonal_guidance", "permit_or_ticket_guidance"):
-        with pytest.raises(ValidationError):
-            AtlasDay.model_validate(_day(**{removed_field: "Legacy guidance."}))
+        legacy = AtlasDay.model_validate(_day(**{removed_field: "Legacy guidance."}))
+        assert removed_field not in legacy.model_dump()
 
 
 def test_day_specific_taj_closure_is_not_duplicated_in_trip_practical_notes():

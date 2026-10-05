@@ -1231,7 +1231,7 @@ class FakeMeridianGeneratesTitleEngine(FakeCommandEngine):
                 "trip_type": "single",
                 "traveler_criteria": [{
                     "id": "pace", "label": "Relaxed pace",
-                    "requirement_type": "PREFERENCE", "source_context_paths": ["travel_style.pace"],
+                    "requirement_type": "PREFERENCE",
                 }],
                 "options": [{
                     "rank": 1, "type": "single", "name": "Goa",
@@ -3097,7 +3097,7 @@ class FakeMoreLikeThisEngine(FakeCommandEngine):
                 "trip_type": "single",
                 "traveler_criteria": [{
                     "id": "pace", "label": "Relaxed pace",
-                    "requirement_type": "PREFERENCE", "source_context_paths": ["travel_style.pace"],
+                    "requirement_type": "PREFERENCE",
                 }],
                 "options": [{
                     "rank": 1, "type": "single", "name": "Gokarna Coast",

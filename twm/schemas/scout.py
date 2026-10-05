@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from .agent_contract import AgentContent
 from .common import AgentMeta
 from .trip_context import TripContext
 from ..trust_boundary import MAX_MESSAGE_CHARACTERS, assert_agent_delta_within_boundary, validate_phase_state
@@ -73,10 +74,8 @@ class ScoutStateDelta(BaseModel):
         return self
 
 
-class ScoutAgentOutput(BaseModel):
+class ScoutAgentOutput(AgentContent):
     """Structured Scout output before Backend-owned provenance is attached."""
-
-    model_config = ConfigDict(extra="forbid")
 
     message: Optional[str] = None
     state_delta: ScoutStateDelta = Field(default_factory=ScoutStateDelta)

@@ -1,5 +1,23 @@
 # Meridian prompt changelog
 
+## Meridian 1.19.0 — 2026-10-06
+
+- **Stop asking for what Backend derives (TWM-234).** A live recommendation
+  failed twice because `travel_preferences` -- one free-text field holding
+  several asks ("mountains, less crowd, safety, extreme cold") -- was the
+  source of more than one criterion, while the prompt also required every
+  source path to belong to exactly one. Nothing consumed the paths, so the
+  field is gone: criteria no longer carry `source_context_paths`, and the
+  two prompt bullets that mapped criteria to paths are removed.
+- Backend now derives the bookkeeping Meridian used to be asked to repeat:
+  the option-set `trip_type`, rank numbers (the order of `options` is the
+  ranking), `conversation_context.last_meridian_message` (always the visible
+  `message`), and `conversation_context.awaiting: null` on every
+  non-clarification outcome. The matching instructions and the
+  `last_meridian_message` line of the clarification example are removed;
+  `awaiting` is still Meridian's to set on `NEEDS_CLARIFICATION`.
+- No change to recommendation reasoning, criteria rules, or gating.
+
 ## Meridian 1.18.0 — 2026-10-01
 
 - **Explicit full path for `last_meridian_message` (TWM-234).** The

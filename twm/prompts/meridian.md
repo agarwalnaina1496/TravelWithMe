@@ -78,7 +78,6 @@ When one missing or ambiguous detail would materially change feasibility, rankin
 - give brief useful guidance from the known context, then ask exactly one targeted question in the same message;
 - return no options;
 - set `state_delta.matcher_state.conversation_context.awaiting` to the missing detail — when that detail is one of the five shared `trip_context` keys, use the exact key name as the slug (`origin_city`, `num_travelers`, `trip_duration`, `travel_dates`, or `budget`);
-- copy the visible message into `state_delta.matcher_state.conversation_context.last_meridian_message` — nested inside `conversation_context` alongside `awaiting`, never as a sibling of `conversation_context` on `matcher_state` directly.
 
 When a turn answers `awaiting`, persist the useful answer, then continue the gate below, ask the next single material question that still lacks an answer, or return a terminal failure.
 
@@ -107,8 +106,6 @@ Build one shared `traveler_criteria` set before evaluating options:
 - create one criterion for each distinct material traveler ask or decision constraint;
 - preserve the traveler's qualifiers, relationships, inclusions, exclusions, comparison goals, and route concerns;
 - use concise stable identifiers and traveler specific labels;
-- map each criterion to the exact relevant paths under `trip_context`;
-- group paths only when they express the same ask, and assign each source path to one criterion;
 - classify explicit non negotiable requirements, exclusions, and feasibility limits as `HARD`; classify other desired qualities as `PREFERENCE`;
 - keep genuinely inapplicable asks out of the criteria set and explain that limitation concisely in `message`.
 
@@ -194,11 +191,11 @@ Return one complete JSON object with exactly the fields defined in the schema su
 
 `state_delta.trip_context` contains only new useful matcher-derived traveler context. `state_delta.matcher_state` contains only your conversation context or rejected-option updates — never lifecycle, selection, navigation, or recommendation-history fields.
 
-Include `traveler_criteria` only for `SUCCESS` and `SOFT_FAIL`. Those statuses also require one to three options and a matching `trip_type`. Omit `traveler_criteria` for clarification and terminal failures.
+Include `traveler_criteria` only for `SUCCESS` and `SOFT_FAIL`. Those statuses also require one to three options. Omit `traveler_criteria` for clarification and terminal failures.
 
 `constraint_adjustment_suggestions` is optional. Include it only for `SOFT_FAIL`, `HARD_FAIL`, `BUDGET_FAIL`, or `CONFLICT_FAIL` when a clear non-empty adjustment is useful. Omit it otherwise.
 
-A `NEEDS_CLARIFICATION` turn's `state_delta` shape, exactly — `last_meridian_message` nests inside `conversation_context` alongside `awaiting`, never as a sibling of it on `matcher_state` directly:
+A `NEEDS_CLARIFICATION` turn's `state_delta` shape, exactly — `awaiting` nests inside `conversation_context`, never as a sibling of it on `matcher_state` directly:
 
 ```json
 {
@@ -206,8 +203,7 @@ A `NEEDS_CLARIFICATION` turn's `state_delta` shape, exactly — `last_meridian_m
     "trip_context": { "num_travelers": 2 },
     "matcher_state": {
       "conversation_context": {
-        "awaiting": "origin_city",
-        "last_meridian_message": "Where will you be traveling from?"
+        "awaiting": "origin_city"
       }
     }
   }
@@ -225,7 +221,7 @@ A `NEEDS_CLARIFICATION` turn's `state_delta` shape, exactly — `last_meridian_m
 - `BUDGET_FAIL`: the stated budget boundary prevents viable options.
 - `CONFLICT_FAIL`: traveler constraints conflict with one another.
 
-All terminal outcomes clear `conversation_context.awaiting` to `null`. `conversation_context.last_meridian_message` always matches the visible `message`.
+Only `NEEDS_CLARIFICATION` sets `conversation_context.awaiting`; Backend clears it on every other outcome and records the visible `message` as the last Meridian message, so neither needs to be returned.
 
 ---
 

@@ -3,11 +3,12 @@
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from ...schemas.agent_contract import HEALED_KEY
 from ...prompt_registry import PromptRelease, load_prompt_release
 from ...schemas import (
     AtlasAgentOutput,
@@ -28,7 +29,6 @@ from .contracts import (
     AgentOutputError,
     GenerationConfig,
 )
-from .shape_normalization import normalize_agent_output
 
 OUTPUT_CONTRACT_INSTRUCTION = (
     "\n\nOUTPUT CONTRACT:\n"
@@ -36,11 +36,14 @@ OUTPUT_CONTRACT_INSTRUCTION = (
     "code fences. The object must match this JSON Schema:\n"
 )
 REDACTED_LOCATION = "<redacted>"
-# TWM-234: one fresh retry (2 attempts total) when the model's own output
-# fails our schema/contract validation -- never infinite, and never a
-# corrective retry (no validation-error feedback appended to the prompt),
-# just a brand new generation call against the exact same invocation.
+# TWM-234: one retry (2 attempts total) when the model's own output fails our
+# schema/contract validation -- never infinite. The retry is corrective: it
+# tells the model which contract rules its previous output broke, using only
+# what Backend itself wrote (the failed rule's type, the schema-known path, and
+# our own validator's message) -- never a model-controlled string, so the
+# feedback cannot carry injected text back into the prompt.
 MAX_OUTPUT_VALIDATION_ATTEMPTS = 2
+MAX_FEEDBACK_FAILURES = 10
 
 
 @dataclass(frozen=True)
@@ -117,7 +120,7 @@ class AgentExecutionService:
         for attempt in range(1, MAX_OUTPUT_VALIDATION_ATTEMPTS + 1):
             invocation_result = await self._invoke(
                 agent,
-                invocation,
+                _with_correction(invocation, last_failure),
                 attempt=attempt,
                 prompt_version=release.version,
                 traveler_message=message,
@@ -373,11 +376,13 @@ def _parse_and_validate(
             [{"type": "json_invalid", "loc": []}]
         ) from None
 
-    applied_normalizations = normalize_agent_output(agent, decoded)
-
+    # Each contract heals its own harmless slips while it validates (see
+    # twm.schemas.agent_contract); the names of those that fired come back
+    # through the validation context for telemetry.
+    healed: list[str] = []
     try:
-        parsed = definition.output_model.model_validate(decoded)
-        return parsed.model_dump(mode="json", exclude_none=True), applied_normalizations
+        parsed = definition.output_model.model_validate(decoded, context={HEALED_KEY: healed})
+        return parsed.model_dump(mode="json", exclude_none=True), healed
     except ValidationError as error:
         failures = _sanitized_validation_failures(error, definition.output_model)
         raise _OutputValidationFailure(failures) from None
@@ -387,8 +392,9 @@ def _sanitized_validation_failures(
     error: ValidationError, output_model: type[BaseModel]
 ) -> list[dict[str, Any]]:
     known_fields = _schema_property_names(output_model.model_json_schema())
-    return [
-        {
+    failures: list[dict[str, Any]] = []
+    for item in error.errors(include_input=False):
+        failure: dict[str, Any] = {
             "type": item["type"],
             "loc": [
                 component
@@ -401,8 +407,38 @@ def _sanitized_validation_failures(
                 for component in item["loc"]
             ],
         }
-        for item in error.errors(include_input=False)
+        # A custom rule's message is text Backend wrote (see the schema
+        # validators); built-in messages and any model-controlled value stay out.
+        if item["type"] == "value_error":
+            failure["reason"] = item["msg"].removeprefix("Value error, ")
+        failures.append(failure)
+    return failures
+
+
+def _format_location(location: list[Any]) -> str:
+    path = ""
+    for component in location:
+        path += f"[{component}]" if isinstance(component, int) else f".{component}"
+    return path.lstrip(".") or "(response root)"
+
+
+def _with_correction(
+    invocation: AgentInvocation, failure: _OutputValidationFailure | None
+) -> AgentInvocation:
+    if failure is None:
+        return invocation
+    lines = [
+        f"- {_format_location(item['loc'])}: {item.get('reason') or item['type']}"
+        for item in failure.failures[:MAX_FEEDBACK_FAILURES]
     ]
+    notice = (
+        "\n\nCORRECTION REQUIRED:\n"
+        "Your previous response was rejected by the contract validator for:\n"
+        + "\n".join(lines)
+        + "\nReturn the complete corrected JSON object, changing only what "
+        "these problems require."
+    )
+    return replace(invocation, system_prompt=invocation.system_prompt + notice)
 
 
 def _schema_property_names(value: Any) -> set[str]:

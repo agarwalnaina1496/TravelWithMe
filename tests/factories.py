@@ -7,7 +7,6 @@ def traveler_criteria() -> list[dict]:
             "id": "pace",
             "label": "Relaxed pace",
             "requirement_type": "PREFERENCE",
-            "source_context_paths": ["travel_style.pace"],
         }
     ]
 
