@@ -8,7 +8,7 @@ from ..dependencies import get_engine, get_logger
 from ..schemas import AtlasRequest, AtlasResponse, GuideRequest, GuideResponse
 from ..services import AgentEngine
 from ..services.trip_commands.atlas_commands import atlas_review
-from ..services.trip_commands.planner_commands import guide_review
+from ..services.trip_commands.guide_plan_rules import guide_review
 from ..services.response_normalization import (
     _normalize_atlas_response,
     _normalize_guide_response,
@@ -39,7 +39,7 @@ async def guide(
     )
     # No guide_event field on the agent payload — every MESSAGE turn is
     # handled identically (see guide.md); APPROVE_PLAN is never forwarded
-    # to Guide in the real trip-command flow (planner_commands.py), and
+    # to Guide in the real trip-command flow (planner_commands.py / guide_plan_rules.py), and
     # this stateless debug route mirrors that by not exposing it either.
     agent_state = payload.trip_state.model_dump(mode="json")
     # The same plan rules the trip-command flow applies, judged on this request's

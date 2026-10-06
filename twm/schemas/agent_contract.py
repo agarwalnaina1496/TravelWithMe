@@ -198,7 +198,9 @@ def number_by_position(items: Any, field: str) -> tuple[Any, bool]:
 # --- enums and numbers ------------------------------------------------------
 
 
-def _slug(text: str) -> str:
+def slug(text: str) -> str:
+    """Case, space and hyphen-insensitive form of a name (``"Mid-range"`` -> ``mid_range``)."""
+
     return re.sub(r"[\s\-]+", "_", text.strip()).casefold()
 
 
@@ -207,11 +209,11 @@ def case_insensitive(literal: Any) -> Any:
     ("success", "Soft Fail", "Mid-range") -- the member itself is never guessed,
     only matched."""
 
-    members = {_slug(member): member for member in get_args(literal) if isinstance(member, str)}
+    members = {slug(member): member for member in get_args(literal) if isinstance(member, str)}
 
     def match(value: Any, info: ValidationInfo) -> Any:
         if isinstance(value, str):
-            member = members.get(_slug(value))
+            member = members.get(slug(value))
             if member is not None and member != value:
                 record_heal(info, f"{info.field_name}.recased")
                 return member

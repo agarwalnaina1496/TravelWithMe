@@ -4,10 +4,8 @@ and deterministic remove_place command (TWM-232)."""
 import pytest
 
 from twm.services.trip_commands.errors import InvalidTripCommandError
-from twm.services.trip_commands.planner_commands import (
-    _validate_day_plan,
-    apply_remove_place,
-)
+from twm.services.trip_commands.guide_plan_rules import validate_day_plan as _validate_day_plan
+from twm.services.trip_commands.planner_commands import apply_remove_place
 
 
 def _state(trip_duration: object, day_plan: list[dict]) -> dict:

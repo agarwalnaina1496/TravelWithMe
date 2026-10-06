@@ -25,6 +25,7 @@ from .agent_contract import (
     ordered_range,
     number_by_position,
     record_heal,
+    slug,
 )
 from .common import AgentMeta
 from .trip_context import TripContext
@@ -288,10 +289,10 @@ class AtlasDay(AgentContent):
         if not (isinstance(value, list) and value and all(isinstance(item, dict) for item in value)):
             return value
         order = {tier: index for index, tier in enumerate(_STAY_TIER_ORDER)}
-        rank = lambda item: order.get(str(item.get("tier")).strip().casefold().replace("-", "_").replace(" ", "_"))  # noqa: E731
-        if any(rank(item) is None for item in value):
+        ranks = [order.get(slug(str(item.get("tier")))) for item in value]
+        if any(rank is None for rank in ranks):
             return value
-        ordered = sorted(value, key=rank)
+        ordered = [item for _, item in sorted(zip(ranks, value), key=lambda pair: pair[0])]
         if ordered != value:
             record_heal(info, "stay_price_estimate.tiers_ordered")
         return ordered
