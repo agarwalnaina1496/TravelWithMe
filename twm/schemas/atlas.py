@@ -22,7 +22,7 @@ from .agent_contract import (
     OptionalText,
     Text,
     case_insensitive,
-    ensure_ordered_range,
+    ordered_range,
     number_by_position,
     record_heal,
 )
@@ -181,8 +181,10 @@ class AtlasTimelineItem(AgentContent):
     hubs: Annotated[Optional[list[AtlasTransportHub]], EmptyAsNone] = None
 
     @model_validator(mode="after")
-    def validate_cost_range(self) -> "AtlasTimelineItem":
-        _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
+    def validate_cost_range(self, info: ValidationInfo) -> "AtlasTimelineItem":
+        self.estimated_cost_low, self.estimated_cost_high = ordered_range(
+            self.estimated_cost_low, self.estimated_cost_high, info, "estimated_cost"
+        )
         return self
 
     @model_validator(mode="before")
@@ -246,8 +248,10 @@ class AtlasStayTierEstimate(AgentContent):
     estimated_cost_high: Estimate
 
     @model_validator(mode="after")
-    def validate_range(self) -> "AtlasStayTierEstimate":
-        _validate_optional_range(self.estimated_cost_low, self.estimated_cost_high)
+    def validate_range(self, info: ValidationInfo) -> "AtlasStayTierEstimate":
+        self.estimated_cost_low, self.estimated_cost_high = ordered_range(
+            self.estimated_cost_low, self.estimated_cost_high, info, "stay_estimate"
+        )
         return self
 
 
@@ -314,8 +318,10 @@ class AtlasBudgetLine(AgentContent):
     note: Text
 
     @model_validator(mode="after")
-    def validate_range(self) -> "AtlasBudgetLine":
-        ensure_ordered_range(self.amount_low, self.amount_high, "budget amount")
+    def validate_range(self, info: ValidationInfo) -> "AtlasBudgetLine":
+        self.amount_low, self.amount_high = ordered_range(
+            self.amount_low, self.amount_high, info, "budget_amount"
+        )
         return self
 
 
@@ -389,9 +395,3 @@ class AtlasAgentOutput(AgentContent):
 
 class AtlasResponse(AtlasAgentOutput):
     agent_meta: AgentMeta
-
-
-def _validate_optional_range(low: Optional[int], high: Optional[int]) -> None:
-    if (low is None) != (high is None):
-        raise ValueError("cost range requires both low and high or neither")
-    ensure_ordered_range(low, high, "cost")

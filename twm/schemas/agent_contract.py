@@ -160,11 +160,16 @@ def ensure_unique(values: list[str], what: str) -> None:
         raise ValueError(f"{what} must be unique")
 
 
-def ensure_ordered_range(low: Optional[float], high: Optional[float], what: str) -> None:
-    """Reject a range whose high end sits below its low end."""
+def ordered_range(
+    low: Optional[float], high: Optional[float], info: ValidationInfo, name: str
+) -> tuple[Optional[float], Optional[float]]:
+    """A range written high-first is the same range: put it the right way round
+    (and say so) instead of failing the response."""
 
     if low is not None and high is not None and high < low:
-        raise ValueError(f"{what} maximum must be at least its minimum")
+        record_heal(info, f"{name}.range_swapped")
+        return high, low
+    return low, high
 
 
 def number_by_position(items: Any, field: str) -> tuple[Any, bool]:

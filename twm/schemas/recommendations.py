@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import Field, StringConstraints, model_validator
+from pydantic import Field, StringConstraints, ValidationInfo, model_validator
 
 from .agent_contract import (
     AgentContent,
@@ -12,7 +12,7 @@ from .agent_contract import (
     Text,
     UpperCode,
     case_insensitive,
-    ensure_ordered_range,
+    ordered_range,
     ensure_unique,
 )
 
@@ -37,8 +37,8 @@ class EstimateRange(AgentContent):
     maximum: Amount
 
     @model_validator(mode="after")
-    def validate_bounds(self) -> "EstimateRange":
-        ensure_ordered_range(self.minimum, self.maximum, "estimate")
+    def validate_bounds(self, info: ValidationInfo) -> "EstimateRange":
+        self.minimum, self.maximum = ordered_range(self.minimum, self.maximum, info, "estimate")
         return self
 
 

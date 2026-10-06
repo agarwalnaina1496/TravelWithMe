@@ -25,6 +25,26 @@ class GenerationConfig:
 
 
 @dataclass(frozen=True)
+class OutputRetryPolicy:
+    """How a response that breaks the output contract is regenerated.
+
+    Every attempt is a full generation the traveler waits for, so there is
+    exactly one retry: the answer to a contract that fails often is to prevent
+    the failure (heal it, derive what Backend can compute, tolerate the syntax
+    slip), never to retry more. The retry tells the model which rules the
+    previous attempt broke, and starts only while it is expected to finish
+    inside `budget_seconds` (judged by how long the first took), so a slow
+    upstream cannot push the turn past the UI's own request timeout.
+    """
+
+    max_attempts: int = 2
+    budget_seconds: float = 190.0
+
+    def allows_another(self, attempt: int, elapsed_seconds: float, last_attempt_seconds: float) -> bool:
+        return attempt < self.max_attempts and elapsed_seconds + last_attempt_seconds <= self.budget_seconds
+
+
+@dataclass(frozen=True)
 class AgentInvocation:
     """Provider-neutral model input prepared by the common Backend pipeline."""
 

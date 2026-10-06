@@ -495,7 +495,7 @@ def test_guide_violations_that_protect_a_consumer_stay_rejected(monkeypatch, why
 
 def test_an_itinerary_with_the_wrong_number_of_days_is_retried_with_the_rule_stated(monkeypatch):
     from twm.schemas.atlas import AtlasWorkingPlan
-    from twm.services.trip_commands.atlas_commands import _atlas_review
+    from twm.services.trip_commands.atlas_commands import atlas_review
 
     base = atlas()
     expected = len(base["final_itinerary"]["days"])
@@ -510,8 +510,127 @@ def test_an_itinerary_with_the_wrong_number_of_days_is_retried_with_the_rule_sta
     longer["final_itinerary"]["days"].append(deepcopy(base["final_itinerary"]["days"][0]))
     engine, adapter = service_with_outputs(monkeypatch, json.dumps(longer), json.dumps(base))
 
-    result = asyncio.run(engine.atlas({}, None, review=_atlas_review(plan)))
+    result = asyncio.run(engine.atlas({}, None, review=atlas_review(plan)))
 
     sent = [call.args[1].system_prompt for call in adapter.invoke.await_args_list]
     assert len(result.response["final_itinerary"]["days"]) == expected
     assert f"exactly {expected} days" in sent[1]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "check"),
+    [
+        (lambda o: first_item(o).update(estimated_cost_low=2000, estimated_cost_high=800),
+         lambda r: (first_item(r)["estimated_cost_low"], first_item(r)["estimated_cost_high"]) == (800, 2000)),
+        (lambda o: o["final_itinerary"]["budget_summary"]["lines"][0].update(amount_low=900, amount_high=300),
+         lambda r: r["final_itinerary"]["budget_summary"]["lines"][0]["amount_low"] == 300),
+    ],
+)
+def test_atlas_inverted_ranges_are_put_the_right_way_round(monkeypatch, mutate, check):
+    output = atlas()
+    mutate(output)
+    response, attempts, healed = run(monkeypatch, "atlas", output)
+
+    assert attempts == 1
+    assert check(response)
+    assert any(name.endswith("range_swapped") for name in healed)
+
+
+# --- retry policy -------------------------------------------------------------
+
+from twm.services.agent_engine import AgentExecutionService, OutputRetryPolicy  # noqa: E402
+
+
+def engine_with(monkeypatch, outputs, retry=None, clock=None):
+    engine, adapter = service_with_outputs(monkeypatch, *outputs)
+    engine = AgentExecutionService(adapter, engine._logger, "test-engine", retry=retry)
+    return engine, adapter
+
+
+def test_a_failing_response_gets_exactly_one_corrective_retry(monkeypatch):
+    broken = json.dumps({"status": "SUCCESS", "message": "x", "state_delta": {}, "options": []})
+    engine, adapter = engine_with(monkeypatch, [broken, broken])
+
+    with pytest.raises(AgentOutputError):
+        asyncio.run(engine.meridian({}, "message"))
+
+    assert adapter.invoke.await_count == 2
+
+
+def test_a_new_attempt_is_not_started_when_it_would_overrun_the_time_budget(monkeypatch):
+    broken = json.dumps({"status": "SUCCESS", "message": "x", "state_delta": {}, "options": []})
+    # Any attempt takes longer than the budget allows another of, so one try only.
+    engine, adapter = engine_with(
+        monkeypatch, [broken, broken], retry=OutputRetryPolicy(budget_seconds=0.0)
+    )
+
+    with pytest.raises(AgentOutputError):
+        asyncio.run(engine.meridian({}, "message"))
+
+    assert adapter.invoke.await_count == 1
+
+
+
+def test_a_healed_response_emits_a_queryable_event_with_provenance(monkeypatch):
+    sink = InMemorySink()
+    engine, _ = service_with_outputs(
+        monkeypatch, json.dumps(scrambled_ranks(meridian_success())), telemetry_sink=sink
+    )
+
+    asyncio.run(engine.meridian({}, "message"))
+
+    event = next(e for e in sink.events if e["event"] == "be.agent.output.normalized")
+    assert event["fields"]["agent"] == "meridian"
+    assert event["fields"]["prompt_version"] == "test-version"
+    assert event["fields"]["normalizations_applied"] == ["options.ranked_by_position"]
+    assert event["fields"]["normalization_count"] == 1
+
+
+# --- syntax slips: read, not retried ------------------------------------------
+
+SCOUT_REPLY = '{"message": "Hello there", "intent": "advise"}'
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"message": "Hello there", "intent": "advise",}',
+        '{"message": "Hello there", "intent": "advise", "state_delta": None}',
+        '{"message": "Hello there", // the reply\n "intent": "advise"}',
+        '{"message": "Hello there", /* note */ "intent": "advise"}',
+        '{"message": "Hello\nthere", "intent": "advise"}',
+        'Sure! Here is the JSON:\n```json\n{"message": "Hello there", "intent": "advise",}\n```\nHope that helps.',
+        '{"message": "Hello there", "intent": "advise", "state_delta": {"trip_context": {"flag": True, "gone": False,},},}',
+    ],
+    ids=["trailing-comma", "python-none", "line-comment", "block-comment", "raw-newline", "fenced-with-prose", "nested-python-literals"],
+)
+def test_a_syntax_slip_is_read_without_a_retry(monkeypatch, raw):
+    engine, adapter = service_with_outputs(monkeypatch, raw)
+
+    result = asyncio.run(engine.scout({}, "message"))
+
+    assert adapter.invoke.await_count == 1
+    assert result.response["message"].replace("\n", " ") == "Hello there"
+
+
+def test_repairs_never_touch_text_inside_a_string(monkeypatch):
+    tricky = '{"message": "None of these, True story, // not a comment, /* nor this */, trailing,]", "intent": "advise",}'
+    engine, _ = service_with_outputs(monkeypatch, tricky)
+
+    result = asyncio.run(engine.scout({}, "message"))
+
+    assert result.response["message"] == "None of these, True story, // not a comment, /* nor this */, trailing,]"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ['{"message": "cut off", "intent": "adv', '{"message": \'single quoted\'}'],
+    ids=["truncated", "single-quoted"],
+)
+def test_output_that_changes_meaning_is_still_retried(monkeypatch, raw):
+    engine, adapter = service_with_outputs(monkeypatch, raw, SCOUT_REPLY)
+
+    result = asyncio.run(engine.scout({}, "message"))
+
+    assert adapter.invoke.await_count == 2
+    assert result.response["message"] == "Hello there"

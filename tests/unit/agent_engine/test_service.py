@@ -19,7 +19,7 @@ from twm.services import (
 )
 from twm.services.agent_engine import service as service_module
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
-from tests.factories import recommendation_option, traveler_criteria
+from tests.factories import recommendation_option, traveler_criteria, two_attempts
 
 
 def service_with_outputs(
@@ -46,7 +46,7 @@ def service_with_outputs(
     logger = TelemetryLogger(
         TelemetrySettings(True, "test", payload_mode, 16_384), sink
     )
-    return AgentExecutionService(adapter, logger, "test-engine"), adapter
+    return AgentExecutionService(adapter, logger, "test-engine", retry=two_attempts()), adapter
 
 
 def meridian_success() -> dict:

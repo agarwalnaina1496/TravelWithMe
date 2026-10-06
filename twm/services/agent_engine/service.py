@@ -1,7 +1,6 @@
 """Common agent execution, parsing, and validation."""
 
 import json
-import re
 import time
 from dataclasses import dataclass, replace
 from typing import Any
@@ -19,6 +18,7 @@ from ...schemas import (
 from ...trust_boundary import frame_untrusted_payload
 from ...telemetry import TelemetryLogger
 from ...telemetry.sanitization import redact_error_detail
+from .json_decoding import decode_agent_json
 from .contracts import (
     AgentAdapter,
     AgentAdapterError,
@@ -28,6 +28,7 @@ from .contracts import (
     AgentName,
     AgentOutputError,
     GenerationConfig,
+    OutputRetryPolicy,
     OutputReview,
 )
 
@@ -37,13 +38,13 @@ OUTPUT_CONTRACT_INSTRUCTION = (
     "code fences. The object must match this JSON Schema:\n"
 )
 REDACTED_LOCATION = "<redacted>"
-# TWM-234: one retry (2 attempts total) when the model's own output fails our
-# schema/contract validation -- never infinite. The retry is corrective: it
-# tells the model which contract rules its previous output broke, using only
-# what Backend itself wrote (the failed rule's type, the schema-known path, and
-# our own validator's message) -- never a model-controlled string, so the
-# feedback cannot carry injected text back into the prompt.
-MAX_OUTPUT_VALIDATION_ATTEMPTS = 2
+# TWM-234: when the model's own output fails our schema/contract validation it
+# is regenerated -- never infinite (see OutputRetryPolicy for the attempt cap
+# and time budget). A retry is corrective: it tells the model which contract
+# rules its previous output broke, using only what Backend itself wrote (the
+# failed rule's type, the schema-known path, and our own validator's message)
+# -- never a model-controlled string, so the feedback cannot carry injected
+# text back into the prompt.
 MAX_FEEDBACK_FAILURES = 10
 
 
@@ -75,7 +76,9 @@ class AgentExecutionService:
         logger: TelemetryLogger,
         engine_name: str,
         generation: GenerationConfig | None = None,
+        retry: OutputRetryPolicy | None = None,
     ) -> None:
+        self._retry = retry or OutputRetryPolicy()
         self._adapter = adapter
         self._logger = logger
         self._engine_name = engine_name
@@ -125,7 +128,9 @@ class AgentExecutionService:
         )
 
         last_failure: _OutputValidationFailure | None = None
-        for attempt in range(1, MAX_OUTPUT_VALIDATION_ATTEMPTS + 1):
+        started = time.perf_counter()
+        for attempt in range(1, self._retry.max_attempts + 1):
+            attempt_started = time.perf_counter()
             invocation_result = await self._invoke(
                 agent,
                 _with_correction(invocation, last_failure),
@@ -139,10 +144,20 @@ class AgentExecutionService:
                 )
             except _OutputValidationFailure as failure:
                 last_failure = failure
-                will_retry = attempt < MAX_OUTPUT_VALIDATION_ATTEMPTS
-                self._log_output_validation_failure(
-                    agent, invocation_result.raw_output, failure, attempt, will_retry
+                now = time.perf_counter()
+                will_retry = self._retry.allows_another(
+                    attempt, now - started, now - attempt_started
                 )
+                self._log_output_validation_failure(
+                    agent,
+                    invocation_result.raw_output,
+                    failure,
+                    attempt,
+                    will_retry,
+                    budget_reached=attempt < self._retry.max_attempts and not will_retry,
+                )
+                if not will_retry:
+                    break
                 continue
 
             if applied_normalizations:
@@ -158,7 +173,9 @@ class AgentExecutionService:
                     operation=f"{agent}.response.validate",
                     attempt=attempt,
                     status="normalized",
+                    prompt_version=release.version,
                     normalizations_applied=applied_normalizations,
+                    normalization_count=len(applied_normalizations),
                 )
 
             self._logger.info(
@@ -181,6 +198,7 @@ class AgentExecutionService:
         failure: _OutputValidationFailure,
         attempt: int,
         will_retry: bool,
+        budget_reached: bool = False,
     ) -> None:
         # TWM-234: a single malformed/off-schema generation is common LLM
         # noise, not necessarily a broken prompt -- one fresh retry (a brand
@@ -188,7 +206,13 @@ class AgentExecutionService:
         # most of them without ever surfacing a failure to the traveler.
         # Only the final attempt logs at error severity and raises.
         log = self._logger.warning if will_retry else self._logger.error
-        outcome = "retrying with a fresh attempt" if will_retry else "giving up"
+        outcome = (
+            "retrying with a fresh attempt"
+            if will_retry
+            else "giving up (retry time budget reached)"
+            if budget_reached
+            else "giving up"
+        )
         log(
             f"FastAPI rejected {agent.capitalize()} response from "
             f"{self._engine_name}. Detail - AgentOutputValidationError: "
@@ -343,37 +367,6 @@ def _build_invocation(
     )
 
 
-_MARKDOWN_FENCE_RE = re.compile(
-    r"```(?:json)?\s*\n(?P<body>.*?)\n```", re.DOTALL
-)
-
-
-def _decode_agent_json(raw_output: str) -> Any:
-    # Layered fallback for LLM formatting deviations the prompt forbids but
-    # cannot fully prevent: try the raw string first, then a fenced block
-    # found anywhere in it, then the outermost {...} span as a last resort.
-    try:
-        return json.loads(raw_output)
-    except (TypeError, json.JSONDecodeError):
-        pass
-
-    fence_match = _MARKDOWN_FENCE_RE.search(raw_output)
-    if fence_match:
-        try:
-            return json.loads(fence_match.group("body"))
-        except json.JSONDecodeError:
-            pass
-
-    start, end = raw_output.find("{"), raw_output.rfind("}")
-    if start != -1 and end > start:
-        try:
-            return json.loads(raw_output[start : end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    raise json.JSONDecodeError("Unable to decode agent output", raw_output, 0)
-
-
 def _parse_and_validate(
     agent: AgentName,
     raw_output: str,
@@ -381,7 +374,7 @@ def _parse_and_validate(
     review: OutputReview | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     try:
-        decoded = _decode_agent_json(raw_output)
+        decoded = decode_agent_json(raw_output)
     except (TypeError, json.JSONDecodeError):
         raise _OutputValidationFailure(
             [{"type": "json_invalid", "loc": []}]

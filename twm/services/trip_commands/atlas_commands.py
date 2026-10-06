@@ -44,7 +44,7 @@ async def apply_atlas(
         payload=agent_state,
     )
     response = _normalize_atlas_response(
-        await engine.atlas(agent_state, None, review=_atlas_review(working_plan))
+        await engine.atlas(agent_state, None, review=atlas_review(working_plan))
     )
     response_data = response.model_dump(mode="json", exclude_none=True)
     logger.info(
@@ -79,7 +79,7 @@ async def apply_atlas(
     }
 
 
-def _atlas_review(working_plan: AtlasWorkingPlan) -> OutputReview:
+def atlas_review(working_plan: AtlasWorkingPlan) -> OutputReview:
     """The itinerary covers exactly the approved plan's days: judged before the
     response is accepted, so a mismatch is retried with the rule stated."""
 

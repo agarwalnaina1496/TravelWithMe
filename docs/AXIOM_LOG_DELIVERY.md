@@ -158,6 +158,58 @@ Save the following queries after the smoke test. Axiom may expose OpenTelemetry 
 | order by _time desc
 ```
 
+### TWM - Agent contract: heals by rule
+
+Every response that was healed during validation emits `be.agent.output.normalized` with the rule names in `normalizations_applied`, the `prompt_version`, and `normalization_count`. A rule that fires often is prompt or schema drift worth fixing at the source.
+
+```apl
+['twm-production']
+| where attributes.event == 'be.agent.output.normalized'
+| mv-expand heal = attributes.fields.normalizations_applied
+| summarize responses=count() by agent=tostring(attributes.fields.agent), prompt_version=tostring(attributes.fields.prompt_version), heal=tostring(heal)
+| order by responses desc
+```
+
+### TWM - Agent contract: heal rate
+
+```apl
+['twm-production']
+| where attributes.event in ('be.agent.output.normalized', 'be.agent.response.received')
+| summarize healed=countif(attributes.event == 'be.agent.output.normalized'), accepted=countif(attributes.event == 'be.agent.response.received') by agent=tostring(attributes.fields.agent), day=bin(_time, 1d)
+| extend heal_rate = todouble(healed) / todouble(accepted)
+| order by day desc
+```
+
+### TWM - Agent contract: rejected attempts
+
+`status` is `retrying` for an attempt that was regenerated and `failed` when the turn gave up (attempts or the retry time budget ran out).
+
+```apl
+['twm-production']
+| where attributes.event == 'be.agent.output.invalid'
+| summarize attempts=count() by agent=tostring(attributes.fields.agent), status=tostring(attributes.fields.status), attempt=tolong(attributes.fields.attempt), day=bin(_time, 1d)
+| order by day desc
+```
+
+### TWM - Agent contract: retry rate
+
+There is exactly one retry and every one is a full generation the traveler waits for, so the target is a retry rate under 2%. A rate above that means a failure class is not yet healed or derived: read the `be.agent.output.invalid` rows for that agent (the `validation_failures` field names the rule) and fix it at the source.
+
+```apl
+['twm-production']
+| where attributes.event in ('be.agent.invocation.started', 'be.agent.output.invalid')
+| summarize first_attempts=countif(attributes.event == 'be.agent.invocation.started' and tolong(attributes.fields.attempt) == 1), retries=countif(attributes.event == 'be.agent.output.invalid' and tostring(attributes.fields.status) == 'retrying') by agent=tostring(attributes.fields.agent), hour=bin(_time, 1h)
+| extend retry_rate = todouble(retries) / todouble(first_attempts)
+| order by hour desc
+```
+
+## Recommended monitors (agent contract health)
+
+The Personal plan allows three monitors; spend two on the agent contract. Create them once in Axiom (**Monitors > New monitor**) on the production dataset, against the queries above:
+
+1. **Turns failing the contract** — `be.agent.output.invalid` with `attributes.fields.status == 'failed'`; alert when the count over 15 minutes is greater than 0. Each one is a traveler-visible failure.
+2. **Contract drift** — the heal rate query grouped by `prompt_version` (alert when it exceeds 25% over one hour with at least 20 accepted responses) or the retry rate query (alert when it exceeds 5% over one hour with at least 20 first attempts). A new prompt or model that suddenly needs healing shows up here before it shows up as failures.
+
 Keep query time ranges narrow to conserve Personal-plan query compute.
 
 ## Token rotation

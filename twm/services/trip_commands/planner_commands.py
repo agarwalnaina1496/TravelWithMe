@@ -160,7 +160,7 @@ async def apply_guide(
         await engine.guide(
             agent_state,
             request.message,
-            review=_guide_review(state, previous_awaiting),
+            review=guide_review(state, previous_awaiting),
         )
     )
     response_data = response.model_dump(mode="json", exclude_none=True)
@@ -416,7 +416,7 @@ def _merge_guide_delta(
     _validate_guide_transition(state, planner_delta, previous_awaiting)
 
 
-def _guide_review(state: dict[str, Any], previous_awaiting: str | None) -> OutputReview:
+def guide_review(state: dict[str, Any], previous_awaiting: str | None) -> OutputReview:
     """The Guide plan rules, judged on a copy of the trip before the response
     is accepted -- so a plan that breaks them is retried with the rule stated
     instead of failing the traveler's turn afterwards."""
