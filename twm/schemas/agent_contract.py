@@ -3,9 +3,10 @@
 An agent's output model does three jobs, and this module keeps them apart:
 
 1. **The LLM contract** -- the fields the model genuinely decides. This is the
-   JSON Schema shown to the model, so anything Backend can compute itself
-   (a rank number, a derived ``trip_type``, an echo of the request) is hidden
-   from it with ``SkipJsonSchema`` and filled in deterministically.
+   JSON Schema shown to the model (``llm_output_schema``), so anything Backend
+   can compute itself (a derived ``trip_type``, an echo of the request) is
+   marked ``derived(...)``: left out of what the model sees, filled in
+   deterministically, and still part of the published API schema.
 2. **Boundary tolerance** -- lossless healing of harmless slips (an empty list
    where the field should be absent, a repeated item, tiers in the wrong
    order, an unknown key, ``"success"`` for ``"SUCCESS"``, ``""`` for ``null``,
@@ -30,6 +31,7 @@ from pydantic import (
     BaseModel,
     BeforeValidator,
     ConfigDict,
+    Field,
     StringConstraints,
     ValidationInfo,
     model_validator,
@@ -44,6 +46,44 @@ Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 # Longest title the trips table stores (varchar(120)).
 MAX_TITLE_CHARS = 120
+
+# Marks a field Backend derives. It stays in the model (and in the published
+# OpenAPI response schema) but is not part of what the LLM is asked to produce.
+DERIVED_KEY = "x-derived"
+
+
+def derived(**field_options: Any) -> Any:
+    """A ``Field`` for a value Backend computes rather than asks the model for."""
+
+    return Field(json_schema_extra={DERIVED_KEY: True}, **field_options)
+
+
+def llm_output_schema(model: type[BaseModel]) -> dict[str, Any]:
+    """The JSON Schema shown to the model: the model's schema without its
+    derived fields."""
+
+    def strip(node: Any) -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                hidden = [
+                    name
+                    for name, schema in properties.items()
+                    if isinstance(schema, dict) and schema.get(DERIVED_KEY)
+                ]
+                for name in hidden:
+                    del properties[name]
+                if isinstance(node.get("required"), list):
+                    node["required"] = [n for n in node["required"] if n not in hidden]
+            for child in node.values():
+                strip(child)
+        elif isinstance(node, list):
+            for child in node:
+                strip(child)
+
+    schema = model.model_json_schema()
+    strip(schema)
+    return schema
 
 
 def record_heal(info: ValidationInfo, name: str) -> None:

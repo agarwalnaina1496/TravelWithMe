@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from ...schemas.agent_contract import HEALED_KEY
+from ...schemas.agent_contract import HEALED_KEY, llm_output_schema
 from ...prompt_registry import PromptRelease, load_prompt_release
 from ...schemas import (
     AtlasAgentOutput,
@@ -354,7 +354,7 @@ def _build_invocation(
     message: str | None,
     generation: GenerationConfig,
 ) -> AgentInvocation:
-    output_schema = output_model.model_json_schema()
+    output_schema = llm_output_schema(output_model)
     schema_json = json.dumps(
         output_schema, ensure_ascii=False, separators=(",", ":")
     )

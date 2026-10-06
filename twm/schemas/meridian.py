@@ -10,7 +10,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic.json_schema import SkipJsonSchema
 
 from .agent_contract import (
     AgentContent,
@@ -19,6 +18,7 @@ from .agent_contract import (
     Text,
     case_insensitive,
     clean_title,
+    derived,
     ensure_unique,
     record_heal,
 )
@@ -110,7 +110,7 @@ class MeridianAgentOutput(AgentContent):
     message: Text
     generated_at: Optional[str] = None
     # Derived from the options below; hidden from the schema shown to the model.
-    trip_type: SkipJsonSchema[Optional[Literal["single", "circuit", "mixed"]]] = None
+    trip_type: Optional[Literal["single", "circuit", "mixed"]] = derived(default=None)
     traveler_criteria: Annotated[Optional[list[TravelerCriterion]], EmptyAsNone] = None
     options: list[RecommendationOption] = Field(default_factory=list)
     constraint_adjustment_suggestions: Annotated[Optional[list[Text]], EmptyAsNone] = None

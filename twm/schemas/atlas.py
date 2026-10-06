@@ -10,7 +10,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from pydantic.json_schema import SkipJsonSchema
 
 from ..trust_boundary import validate_phase_state
 from .agent_contract import (
@@ -22,6 +21,7 @@ from .agent_contract import (
     OptionalText,
     Text,
     case_insensitive,
+    derived,
     ordered_range,
     number_by_position,
     record_heal,
@@ -155,7 +155,7 @@ class AtlasTripSummary(AgentContent):
     destinations: list[Text]
     # The number of days in the itinerary (derived by AtlasFinalItinerary);
     # hidden from the model rather than asked to agree with its own day list.
-    trip_duration: SkipJsonSchema[int] = Field(default=1, ge=1)
+    trip_duration: int = derived(default=1, ge=1)
     num_travelers: Annotated[Optional[int], Field(ge=1), IntOrNone] = None
     overview: Text
     route_rationale: Text
@@ -176,7 +176,7 @@ class AtlasTimelineItem(AgentContent):
     reference: AtlasReference
     # Derived from booking_readiness (present means advance action applies);
     # hidden from the model so the two can never disagree.
-    requires_advance_booking: SkipJsonSchema[bool] = False
+    requires_advance_booking: bool = derived(default=False)
     booking_readiness: Optional[AtlasBookingReadiness] = None
     # TWM-226: candidate gateway hubs for a TRAVEL leg whose own endpoint town
     # has no realistic long-haul transport -- presented as equal options (the
@@ -334,8 +334,8 @@ class AtlasBudgetSummary(AgentContent):
     currency: Text
     lines: list[AtlasBudgetLine] = Field(min_length=1)
     # Always the sum of the lines (calculated below); hidden from the model.
-    total_low: SkipJsonSchema[int] = Field(default=0, ge=0)
-    total_high: SkipJsonSchema[int] = Field(default=0, ge=0)
+    total_low: int = derived(default=0, ge=0)
+    total_high: int = derived(default=0, ge=0)
 
     @model_validator(mode="after")
     def calculate_totals(self) -> "AtlasBudgetSummary":

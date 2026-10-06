@@ -8,6 +8,7 @@ import pytest
 
 from twm.prompt_registry import PromptRelease
 from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
+from twm.schemas.agent_contract import llm_output_schema
 from twm.trust_boundary import UNTRUSTED_DATA_PREAMBLE
 from twm.services import (
     AgentAdapterError,
@@ -172,7 +173,7 @@ def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
     assert adapter.invoke.await_count == 1
     _, invocation = adapter.invoke.await_args.args
     schema_json = json.dumps(
-        MeridianAgentOutput.model_json_schema(),
+        llm_output_schema(MeridianAgentOutput),
         ensure_ascii=False,
         separators=(",", ":"),
     )
