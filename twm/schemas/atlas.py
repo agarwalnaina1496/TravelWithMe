@@ -16,36 +16,49 @@ from ..trust_boundary import validate_phase_state
 from .agent_contract import (
     AgentContent,
     EmptyAsNone,
+    IntOrNone,
+    LenientInt,
+    NullAsEmptyList,
+    OptionalText,
     Text,
+    case_insensitive,
     ensure_ordered_range,
+    number_by_position,
     record_heal,
 )
 from .common import AgentMeta
 from .trip_context import TripContext
 
 
-VerificationStatus = Literal["VERIFIED", "GENERAL_GUIDANCE"]
-TimelineKind = Literal["TRAVEL", "STAY", "MEAL", "ACTIVITY", "FREE_TIME"]
+VerificationStatus = case_insensitive(Literal["VERIFIED", "GENERAL_GUIDANCE"])
+TimelineKind = case_insensitive(Literal["TRAVEL", "STAY", "MEAL", "ACTIVITY", "FREE_TIME"])
 # TWM-217: `dates` and `traveler_count` are gone — a day-numbered plan is
 # always dateless (dates come from the composed trip dates / per-entity
 # search prefs, never an Atlas guess) and a free-form count is represented
 # by `summary.travelers.source` downstream, not an assumption.
-AtlasAssumptionCategory = Literal[
-    "arrival_departure_window",
-    "stay_area",
-    "budget",
-    "other",
-]
+AtlasAssumptionCategory = case_insensitive(
+    Literal[
+        "arrival_departure_window",
+        "stay_area",
+        "budget",
+        "other",
+    ]
+)
 # Atlas never sees a real reservation, so "confirmed" is deliberately absent —
 # TWM never holds or verifies a booking at all. TWM-217: `unresolved` is gone
 # — an item whose booking status is merely uncertain carries
 # `needs_verification: true` on its note instead.
-AtlasBookingReadiness = Literal["suggested", "needs_advance_booking"]
+AtlasBookingReadiness = case_insensitive(Literal["suggested", "needs_advance_booking"])
 # TWM-226: which trip endpoint a candidate gateway hub serves. `origin` for a
 # hub the traveler passes through to *leave* a hubless origin town, `destination`
 # for a hub they pass through to *reach* a hubless destination town.
-AtlasHubSide = Literal["origin", "destination"]
-AtlasAccessGap = Literal["air", "rail"]
+AtlasHubSide = case_insensitive(Literal["origin", "destination"])
+AtlasAccessGap = case_insensitive(Literal["air", "rail"])
+# Whole-number estimates and distances: a fractional or "1,500" slip is
+# rounded / parsed rather than failing the itinerary.
+Estimate = Annotated[int, Field(ge=0), LenientInt]
+OptionalEstimate = Annotated[Optional[int], Field(ge=0), LenientInt]
+Distance = Annotated[int, Field(gt=0), LenientInt]
 
 
 class AtlasTransportHub(AgentContent):
@@ -62,9 +75,9 @@ class AtlasTransportHub(AgentContent):
     # All three are positive: a gateway sits a real surface transfer from the
     # town and a real long-haul distance from the trip's other endpoint, so a
     # zero on any of them is a degenerate "hub" that is not a hub.
-    last_mile_km: int = Field(gt=0)
-    last_mile_duration_minutes: int = Field(gt=0)
-    long_haul_distance_km: int = Field(gt=0)
+    last_mile_km: Distance
+    last_mile_duration_minutes: Distance
+    long_haul_distance_km: Distance
 
 
 class AtlasAssumption(AgentContent):
@@ -74,23 +87,18 @@ class AtlasAssumption(AgentContent):
 
 class AtlasReference(AgentContent):
     status: VerificationStatus
-    source_title: Optional[Text] = None
-    source_url: Optional[Text] = None
+    source_title: OptionalText = None
+    source_url: OptionalText = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def _unsourced_claim_is_general_guidance(cls, data: Any, info: ValidationInfo) -> Any:
+    @model_validator(mode="after")
+    def unsourced_claim_is_general_guidance(self, info: ValidationInfo) -> "AtlasReference":
         # "Verified" is a claim the output has to back with a source. Without
         # one the honest reading is general guidance -- lowering the claim,
         # never inventing a source -- rather than discarding the itinerary.
-        if (
-            isinstance(data, dict)
-            and data.get("status") == "VERIFIED"
-            and not (data.get("source_title") and data.get("source_url"))
-        ):
+        if self.status == "VERIFIED" and not (self.source_title and self.source_url):
+            self.status = "GENERAL_GUIDANCE"
             record_heal(info, "reference.unsourced_verified_downgraded")
-            return {**data, "status": "GENERAL_GUIDANCE"}
-        return data
+        return self
 
 
 class AtlasWorkingDay(BaseModel):
@@ -121,9 +129,7 @@ class AtlasWorkingPlan(BaseModel):
         normalized = [place.casefold() for place in allocated]
         if len(normalized) != len(set(normalized)):
             raise ValueError("each approved place must be allocated exactly once")
-        if self.approved_places and set(normalized) != {
-            place.casefold() for place in self.approved_places
-        }:
+        if set(normalized) != {place.casefold() for place in self.approved_places}:
             raise ValueError("days must allocate every approved place and no others")
         return self
 
@@ -146,23 +152,23 @@ class AtlasTripSummary(AgentContent):
     # The number of days in the itinerary (derived by AtlasFinalItinerary);
     # hidden from the model rather than asked to agree with its own day list.
     trip_duration: SkipJsonSchema[int] = Field(default=1, ge=1)
-    num_travelers: Optional[int] = Field(default=None, ge=1)
+    num_travelers: Annotated[Optional[int], Field(ge=1), IntOrNone] = None
     overview: Text
     route_rationale: Text
 
 
 class AtlasTimelineItem(AgentContent):
-    start_time: Optional[Text] = None
-    end_time: Optional[Text] = None
+    start_time: OptionalText = None
+    end_time: OptionalText = None
     kind: TimelineKind
     title: Text
     location: Text
     detail: Text
-    movement_guidance: Optional[Text] = None
-    from_city: Optional[Text] = None
-    to_city: Optional[Text] = None
-    estimated_cost_low: Optional[int] = Field(default=None, ge=0)
-    estimated_cost_high: Optional[int] = Field(default=None, ge=0)
+    movement_guidance: OptionalText = None
+    from_city: OptionalText = None
+    to_city: OptionalText = None
+    estimated_cost_low: OptionalEstimate = None
+    estimated_cost_high: OptionalEstimate = None
     reference: AtlasReference
     # Derived from booking_readiness (present means advance action applies);
     # hidden from the model so the two can never disagree.
@@ -236,8 +242,8 @@ class AtlasStayTierEstimate(AgentContent):
     applied to transit `estimated_cost_low/high`."""
 
     tier: StayTier
-    estimated_cost_low: int = Field(ge=0)
-    estimated_cost_high: int = Field(ge=0)
+    estimated_cost_low: Estimate
+    estimated_cost_high: Estimate
 
     @model_validator(mode="after")
     def validate_range(self) -> "AtlasStayTierEstimate":
@@ -261,8 +267,8 @@ class AtlasDay(AgentContent):
     primary_location: Text
     summary: Text
     timeline: list[AtlasTimelineItem] = Field(min_length=1)
-    notes: list[AtlasDayNote] = Field(default_factory=list)
-    backup_plan: Optional[Text] = None
+    notes: Annotated[list[AtlasDayNote], NullAsEmptyList] = Field(default_factory=list)
+    backup_plan: OptionalText = None
     # TWM-204: present only when this day involves an overnight stay --
     # Atlas's own judgment call, the same as backup_plan above. Absent for
     # a day-trip/pure-transit/departure day with no overnight stay.
@@ -274,9 +280,10 @@ class AtlasDay(AgentContent):
         if not (isinstance(value, list) and value and all(isinstance(item, dict) for item in value)):
             return value
         order = {tier: index for index, tier in enumerate(_STAY_TIER_ORDER)}
-        if not all(item.get("tier") in order for item in value):
+        rank = lambda item: order.get(str(item.get("tier")).strip().casefold().replace("-", "_").replace(" ", "_"))  # noqa: E731
+        if any(rank(item) is None for item in value):
             return value
-        ordered = sorted(value, key=lambda item: order[item["tier"]])
+        ordered = sorted(value, key=rank)
         if ordered != value:
             record_heal(info, "stay_price_estimate.tiers_ordered")
         return ordered
@@ -302,8 +309,8 @@ class AtlasDay(AgentContent):
 
 class AtlasBudgetLine(AgentContent):
     category: Text
-    amount_low: int = Field(ge=0)
-    amount_high: int = Field(ge=0)
+    amount_low: Estimate
+    amount_high: Estimate
     note: Text
 
     @model_validator(mode="after")
@@ -345,9 +352,9 @@ class AtlasFinalItinerary(AgentContent):
     trip_summary: AtlasTripSummary
     days: list[AtlasDay] = Field(min_length=1)
     budget_summary: AtlasBudgetSummary
-    practical_notes: list[AtlasPracticalNote]
-    sources: list[AtlasSource]
-    assumptions: list[AtlasAssumption] = Field(default_factory=list)
+    practical_notes: Annotated[list[AtlasPracticalNote], NullAsEmptyList] = Field(default_factory=list)
+    sources: Annotated[list[AtlasSource], NullAsEmptyList] = Field(default_factory=list)
+    assumptions: Annotated[list[AtlasAssumption], NullAsEmptyList] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -365,12 +372,9 @@ class AtlasFinalItinerary(AgentContent):
             data["trip_summary"] = {k: v for k, v in summary.items() if k != "assumptions"}
             record_heal(info, "assumptions.relocated_into_final_itinerary")
         # A day's number is its position in the list.
-        days = data.get("days")
-        if isinstance(days, list) and all(isinstance(day, dict) for day in days):
-            numbered = [{**day, "day_number": number} for number, day in enumerate(days, 1)]
-            if numbered != days:
-                record_heal(info, "days.numbered_by_position")
-            data["days"] = numbered
+        data["days"], changed = number_by_position(data.get("days"), "day_number")
+        if changed:
+            record_heal(info, "days.numbered_by_position")
         return data
 
     @model_validator(mode="after")

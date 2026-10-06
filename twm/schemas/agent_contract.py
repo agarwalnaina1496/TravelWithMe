@@ -8,18 +8,23 @@ An agent's output model does three jobs, and this module keeps them apart:
    from it with ``SkipJsonSchema`` and filled in deterministically.
 2. **Boundary tolerance** -- lossless healing of harmless slips (an empty list
    where the field should be absent, a repeated item, tiers in the wrong
-   order, an unknown key). Declared next to the field it heals, so a contract
-   and its tolerance cannot drift apart. Every heal that fires is recorded on
-   the validation context and surfaces as ``be.agent.output.normalized``.
+   order, an unknown key, ``"success"`` for ``"SUCCESS"``, ``""`` for ``null``,
+   ``1500.5`` for an integer). Declared next to the field it heals, so a
+   contract and its tolerance cannot drift apart. Every heal that fires is
+   recorded on the validation context and surfaces as
+   ``be.agent.output.normalized``.
 3. **Rejection** -- reserved for what a downstream consumer or the trust
    boundary genuinely depends on. A rule that only checks that the model
    echoed or derived something correctly belongs in (1), not here.
 
 Healing never invents a value: it relocates, merges, de-duplicates, orders,
-drops an empty or unknown value, or lowers a claim the output cannot support.
+re-cases, rounds, drops an empty or unknown value, or lowers a claim the
+output cannot support.
 """
 
-from typing import Annotated, Any, Optional
+import math
+import re
+from typing import Annotated, Any, Optional, get_args
 
 from pydantic import (
     BaseModel,
@@ -36,6 +41,9 @@ HEALED_KEY = "healed"
 
 # The one non-empty trimmed string every agent contract uses.
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+# Longest title the trips table stores (varchar(120)).
+MAX_TITLE_CHARS = 120
 
 
 def record_heal(info: ValidationInfo, name: str) -> None:
@@ -69,16 +77,53 @@ class AgentContent(BaseModel):
         return data
 
 
+# --- absent / empty ---------------------------------------------------------
+
+
+def _blank(value: Any) -> bool:
+    return (isinstance(value, str) and not value.strip()) or (
+        isinstance(value, (list, dict)) and not value
+    )
+
+
 def _empty_as_none(value: Any, info: ValidationInfo) -> Any:
-    if isinstance(value, (list, dict, str)) and not value:
+    if _blank(value):
         record_heal(info, f"{info.field_name}.empty_as_absent")
         return None
     return value
 
 
-# ``[]`` / ``{}`` / ``""`` for an optional field means "nothing to say" -- the
-# same as leaving it out. Use as ``Annotated[Optional[...], EmptyAsNone]``.
+# ``[]`` / ``{}`` / ``""`` / whitespace for an optional field means "nothing to
+# say" -- the same as leaving it out. Use as ``Annotated[Optional[...], EmptyAsNone]``.
 EmptyAsNone = BeforeValidator(_empty_as_none)
+
+# An optional piece of text: blank is absent.
+OptionalText = Annotated[Optional[Text], EmptyAsNone]
+
+
+def _null_as_empty_list(value: Any, info: ValidationInfo) -> Any:
+    if value is None:
+        record_heal(info, f"{info.field_name}.null_as_empty")
+        return []
+    return value
+
+
+# ``null`` for a list that defaults to empty is the empty list.
+NullAsEmptyList = BeforeValidator(_null_as_empty_list)
+
+
+def _null_as_empty_object(value: Any, info: ValidationInfo) -> Any:
+    if value is None:
+        record_heal(info, f"{info.field_name}.null_as_default")
+        return {}
+    return value
+
+
+# ``null`` for a nested object that has defaults is that object's defaults.
+NullAsDefault = BeforeValidator(_null_as_empty_object)
+
+
+# --- repeated / ordered -----------------------------------------------------
 
 
 def dedupe_casefold(values: list[Any]) -> list[Any]:
@@ -120,6 +165,142 @@ def ensure_ordered_range(low: Optional[float], high: Optional[float], what: str)
 
     if low is not None and high is not None and high < low:
         raise ValueError(f"{what} maximum must be at least its minimum")
+
+
+def number_by_position(items: Any, field: str) -> tuple[Any, bool]:
+    """Set ``field`` on each dict in ``items`` to its 1-based position.
+
+    Returns ``(items, changed)``; anything that is not a list of dicts is
+    returned untouched so validation reports it.
+    """
+
+    if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+        return items, False
+    numbered = [{**item, field: number} for number, item in enumerate(items, 1)]
+    return numbered, numbered != items
+
+
+# --- enums and numbers ------------------------------------------------------
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[\s\-]+", "_", text.strip()).casefold()
+
+
+def case_insensitive(literal: Any) -> Any:
+    """A ``Literal`` that also accepts the model's casing/spacing of a member
+    ("success", "Soft Fail", "Mid-range") -- the member itself is never guessed,
+    only matched."""
+
+    members = {_slug(member): member for member in get_args(literal) if isinstance(member, str)}
+
+    def match(value: Any, info: ValidationInfo) -> Any:
+        if isinstance(value, str):
+            member = members.get(_slug(value))
+            if member is not None and member != value:
+                record_heal(info, f"{info.field_name}.recased")
+                return member
+        return value
+
+    return Annotated[literal, BeforeValidator(match)]
+
+
+_NUMBER_NOISE = re.compile(r"[,\s₹$€£]|\bINR\b|\bRs\.?", re.IGNORECASE)
+
+
+def _parse_number(value: Any, info: ValidationInfo) -> Any:
+    """``"1,500"`` / ``"₹1,500"`` -> ``1500.0``; anything else is left alone."""
+
+    if isinstance(value, str):
+        try:
+            number = float(_NUMBER_NOISE.sub("", value))
+        except ValueError:
+            return value
+        if math.isfinite(number):
+            record_heal(info, f"{info.field_name}.number_parsed")
+            return number
+    return value
+
+
+def _lenient_number(value: Any, info: ValidationInfo) -> Any:
+    return _parse_number(value, info)
+
+
+# A numeric field that also accepts a formatted number string.
+LenientNumber = BeforeValidator(_lenient_number)
+
+
+def _lenient_int(value: Any, info: ValidationInfo) -> Any:
+    value = _parse_number(value, info)
+    if isinstance(value, float) and math.isfinite(value):
+        if value != int(value):
+            record_heal(info, f"{info.field_name}.rounded")
+        return round(value)
+    return value
+
+
+# An integer field (an estimate, a distance) that also accepts "1,500" and a
+# fractional 1250.5 -- rounded, since it is an estimate either way.
+LenientInt = BeforeValidator(_lenient_int)
+
+
+def _int_or_none(value: Any, info: ValidationInfo) -> Any:
+    if value is None:
+        return None
+    parsed = _lenient_int(value, info)
+    if isinstance(parsed, int) and not isinstance(parsed, bool):
+        return parsed
+    record_heal(info, f"{info.field_name}.unreadable_dropped")
+    return None
+
+
+# An optional integer echo (e.g. a traveler count) that is simply absent when
+# the model wrote something that is not a number ("2 adults, 1 child").
+IntOrNone = BeforeValidator(_int_or_none)
+
+
+def _upper_code(value: Any, info: ValidationInfo) -> Any:
+    if isinstance(value, str) and value != value.strip().upper():
+        record_heal(info, f"{info.field_name}.uppercased")
+        return value.strip().upper()
+    return value
+
+
+# An ISO-style code the model wrote in the wrong case ("inr").
+UpperCode = BeforeValidator(_upper_code)
+
+
+# --- titles -------------------------------------------------------------------
+
+
+def clean_title(value: Any) -> Optional[str]:
+    """A generated title the trips table can store: one line, trimmed, at most
+    ``MAX_TITLE_CHARS``, cut at a word boundary. ``None`` when there is nothing
+    usable (blank, or not text at all)."""
+
+    if not isinstance(value, str):
+        return None
+    collapsed = " ".join(value.split())
+    if len(collapsed) <= MAX_TITLE_CHARS:
+        return collapsed or None
+    head = collapsed[:MAX_TITLE_CHARS]
+    if collapsed[MAX_TITLE_CHARS] != " " and " " in head:
+        head = head[: head.rfind(" ")]
+    return head.rstrip(" ,;:-–—") or None
+
+
+def _generated_title(value: Any, info: ValidationInfo) -> Any:
+    cleaned = clean_title(value)
+    if cleaned != value:
+        record_heal(info, f"{info.field_name}.cleaned")
+    return cleaned
+
+
+# A title an agent generated; always storable or absent.
+GeneratedTitle = BeforeValidator(_generated_title)
+
+
+# --- structure ----------------------------------------------------------------
 
 
 def relocate_into(

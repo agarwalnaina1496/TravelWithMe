@@ -7,17 +7,30 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationInfo,
+    field_validator,
     model_validator,
 )
 
 from ..trust_boundary import assert_agent_delta_within_boundary, validate_phase_state
-from .agent_contract import AgentContent, Deduped, Text, relocate_into
+from .agent_contract import (
+    AgentContent,
+    Deduped,
+    GeneratedTitle,
+    NullAsDefault,
+    NullAsEmptyList,
+    OptionalText,
+    Text,
+    case_insensitive,
+    number_by_position,
+    record_heal,
+    relocate_into,
+)
 from .common import AgentMeta
 from .scout import BoundedMessage
 from .trip_context import FIXED_KEYS, TripContext
 
 
-GuidePace = Literal["relaxed", "balanced", "packed"]
+GuidePace = case_insensitive(Literal["relaxed", "balanced", "packed"])
 # No "is this the first message" distinction — Guide's job is identical
 # every turn (extract whatever the message contains, check the gates in
 # order, ask the next missing one or generate the plan once all are known),
@@ -38,10 +51,10 @@ GuideAwaiting = Literal[(*FIXED_KEYS, "anything_else")]
 
 class GuideDay(AgentContent):
     day_number: int = Field(ge=1)
-    date: Optional[str] = None
-    places: list[Text] = Field(default_factory=list)
+    date: OptionalText = None
+    places: Annotated[list[Text], NullAsEmptyList, Deduped] = Field(default_factory=list)
     pace: GuidePace
-    buffer_note: Optional[Text] = None
+    buffer_note: OptionalText = None
 
 
 class GuideConversationContext(BaseModel):
@@ -113,7 +126,17 @@ class GuidePlannerStateDelta(BaseModel):
     # `Trip.title` column once (see trip_commands/planner_commands.py);
     # Guide itself never checks who set an existing title, only whether one
     # is set.
-    generated_title: Optional[str] = None
+    generated_title: Annotated[Optional[str], GeneratedTitle] = None
+
+    @field_validator("day_plan", mode="before")
+    @classmethod
+    def _days_numbered_by_position(cls, value: Any, info: ValidationInfo) -> Any:
+        # A day's number is its place in the plan; the later checks that the
+        # plan is sequential from 1 then hold by construction.
+        numbered, changed = number_by_position(value, "day_number")
+        if changed:
+            record_heal(info, "day_plan.numbered_by_position")
+        return numbered
 
     @model_validator(mode="before")
     @classmethod
@@ -135,14 +158,14 @@ class GuideStateDelta(BaseModel):
         return self
 
 
-GuideOutcome = Literal["continue", "reopen_destination_discovery"]
+GuideOutcome = case_insensitive(Literal["continue", "reopen_destination_discovery"])
 
 
 class GuideAgentOutput(AgentContent):
     """Canonical generated Guide output before Backend provenance is attached."""
 
     message: Text
-    state_delta: GuideStateDelta = Field(default_factory=GuideStateDelta)
+    state_delta: Annotated[GuideStateDelta, NullAsDefault] = Field(default_factory=GuideStateDelta)
     outcome: GuideOutcome = "continue"
 
 

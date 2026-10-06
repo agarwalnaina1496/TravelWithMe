@@ -15,7 +15,10 @@ from pydantic.json_schema import SkipJsonSchema
 from .agent_contract import (
     AgentContent,
     EmptyAsNone,
+    NullAsDefault,
     Text,
+    case_insensitive,
+    clean_title,
     ensure_unique,
     record_heal,
 )
@@ -76,14 +79,16 @@ class MeridianStateDelta(BaseModel):
         return self
 
 
-MeridianStatus = Literal[
-    "NEEDS_CLARIFICATION",
-    "SUCCESS",
-    "SOFT_FAIL",
-    "HARD_FAIL",
-    "BUDGET_FAIL",
-    "CONFLICT_FAIL",
-]
+MeridianStatus = case_insensitive(
+    Literal[
+        "NEEDS_CLARIFICATION",
+        "SUCCESS",
+        "SOFT_FAIL",
+        "HARD_FAIL",
+        "BUDGET_FAIL",
+        "CONFLICT_FAIL",
+    ]
+)
 
 _OPTION_STATUSES = {"SUCCESS", "SOFT_FAIL"}
 _FAILURE_STATUSES = {"SOFT_FAIL", "HARD_FAIL", "BUDGET_FAIL", "CONFLICT_FAIL"}
@@ -101,7 +106,7 @@ class MeridianAgentOutput(AgentContent):
     """
 
     status: MeridianStatus
-    state_delta: MeridianStateDelta = Field(default_factory=MeridianStateDelta)
+    state_delta: Annotated[MeridianStateDelta, NullAsDefault] = Field(default_factory=MeridianStateDelta)
     message: Text
     generated_at: Optional[str] = None
     # Derived from the options below; hidden from the schema shown to the model.
@@ -137,6 +142,7 @@ class MeridianAgentOutput(AgentContent):
         self._validate_option_consistency()
         self._derive_trip_type()
         self._derive_conversation_context(info)
+        self._clean_generated_title(info)
         self._validate_soft_fail_tradeoffs()
         self._drop_misplaced_suggestions(info)
         return self
@@ -194,12 +200,28 @@ class MeridianAgentOutput(AgentContent):
             awaiting = context.get("awaiting")
             if not isinstance(awaiting, str) or not awaiting.strip():
                 raise ValueError("NEEDS_CLARIFICATION requires one non-empty awaiting value")
-        elif context.get("awaiting") is not None or "awaiting" not in context:
+        else:
+            if context.get("awaiting") is not None:
+                record_heal(info, "awaiting.cleared_on_terminal_outcome")
             context["awaiting"] = None
-            record_heal(info, "awaiting.cleared_on_terminal_outcome")
         context["last_meridian_message"] = self.message
         # The one canonical home is inside conversation_context.
         matcher_state.pop("last_meridian_message", None)
+
+    def _clean_generated_title(self, info: ValidationInfo) -> None:
+        """The title is stored in a 120-character column; whatever the model
+        produced is made storable, or dropped."""
+
+        matcher_state = self.state_delta.matcher_state
+        if "generated_title" not in matcher_state:
+            return
+        cleaned = clean_title(matcher_state["generated_title"])
+        if cleaned != matcher_state["generated_title"]:
+            record_heal(info, "generated_title.cleaned")
+        if cleaned is None:
+            del matcher_state["generated_title"]
+        else:
+            matcher_state["generated_title"] = cleaned
 
     def _validate_soft_fail_tradeoffs(self) -> None:
         if self.status != "SOFT_FAIL":

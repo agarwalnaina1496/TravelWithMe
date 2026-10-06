@@ -1,12 +1,18 @@
 """Engine-neutral execution contracts."""
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional, Protocol
+from typing import Any, Callable, Literal, Optional, Protocol
 
 from ...prompt_registry import PromptRelease
 
 
 AgentName = Literal["scout", "meridian", "guide", "atlas"]
+
+# A Backend business rule applied to an agent's schema-valid output before it
+# is accepted: returns the plain-language rules it breaks (empty when fine).
+# A violation is retried like any other contract failure -- the model is told
+# the rule -- instead of surfacing to the traveler after the engine returned.
+OutputReview = Callable[[dict[str, Any]], list[str]]
 
 
 @dataclass(frozen=True)
@@ -62,12 +68,18 @@ class AgentEngine(Protocol):
         ...
 
     async def guide(
-        self, trip_state: dict[str, Any], message: Optional[str]
+        self,
+        trip_state: dict[str, Any],
+        message: Optional[str],
+        review: Optional[OutputReview] = None,
     ) -> AgentExecution:
         ...
 
     async def atlas(
-        self, trip_state: dict[str, Any], message: Optional[str]
+        self,
+        trip_state: dict[str, Any],
+        message: Optional[str],
+        review: Optional[OutputReview] = None,
     ) -> AgentExecution:
         ...
 

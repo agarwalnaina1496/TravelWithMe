@@ -28,6 +28,7 @@ from .contracts import (
     AgentName,
     AgentOutputError,
     GenerationConfig,
+    OutputReview,
 )
 
 OUTPUT_CONTRACT_INSTRUCTION = (
@@ -91,20 +92,27 @@ class AgentExecutionService:
         return await self._execute("meridian", trip_state, message)
 
     async def guide(
-        self, trip_state: dict[str, Any], message: str | None
+        self,
+        trip_state: dict[str, Any],
+        message: str | None,
+        review: OutputReview | None = None,
     ) -> AgentExecution:
-        return await self._execute("guide", trip_state, message)
+        return await self._execute("guide", trip_state, message, review)
 
     async def atlas(
-        self, trip_state: dict[str, Any], message: str | None = None
+        self,
+        trip_state: dict[str, Any],
+        message: str | None = None,
+        review: OutputReview | None = None,
     ) -> AgentExecution:
-        return await self._execute("atlas", trip_state, message)
+        return await self._execute("atlas", trip_state, message, review)
 
     async def _execute(
         self,
         agent: AgentName,
         trip_state: dict[str, Any],
         message: str | None,
+        review: OutputReview | None = None,
     ) -> AgentExecution:
         release = load_prompt_release(agent)
         definition = AGENT_DEFINITIONS[agent]
@@ -127,7 +135,7 @@ class AgentExecutionService:
             )
             try:
                 response, applied_normalizations = _parse_and_validate(
-                    agent, invocation_result.raw_output, definition
+                    agent, invocation_result.raw_output, definition, review
                 )
             except _OutputValidationFailure as failure:
                 last_failure = failure
@@ -367,7 +375,10 @@ def _decode_agent_json(raw_output: str) -> Any:
 
 
 def _parse_and_validate(
-    agent: AgentName, raw_output: str, definition: AgentDefinition
+    agent: AgentName,
+    raw_output: str,
+    definition: AgentDefinition,
+    review: OutputReview | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     try:
         decoded = _decode_agent_json(raw_output)
@@ -382,10 +393,18 @@ def _parse_and_validate(
     healed: list[str] = []
     try:
         parsed = definition.output_model.model_validate(decoded, context={HEALED_KEY: healed})
-        return parsed.model_dump(mode="json", exclude_none=True), healed
     except ValidationError as error:
         failures = _sanitized_validation_failures(error, definition.output_model)
         raise _OutputValidationFailure(failures) from None
+    response = parsed.model_dump(mode="json", exclude_none=True)
+    # Backend business rules the schema cannot know (they depend on the trip),
+    # judged here so the model gets to correct them on the retry.
+    violations = review(response) if review is not None else []
+    if violations:
+        raise _OutputValidationFailure(
+            [{"type": "business_rule", "loc": [], "reason": reason} for reason in violations]
+        )
+    return response, healed
 
 
 def _sanitized_validation_failures(

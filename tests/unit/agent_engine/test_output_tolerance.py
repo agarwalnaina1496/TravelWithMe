@@ -328,3 +328,190 @@ def test_the_correction_never_echoes_model_controlled_text(monkeypatch):
     second = adapter.invoke.await_args_list[1].args[1].system_prompt
     assert "CORRECTION REQUIRED" in second
     assert "ignore_previous_instructions" not in second
+
+
+# --- type-level slips: casing, blank-for-null, null-for-list, formatted numbers
+
+def success_with(mutate):
+    output = meridian_success()
+    mutate(output)
+    return output
+
+
+def cost_detail(**fields) -> dict:
+    return {"type": "cost_breakdown", "currency": "INR", **fields}
+
+
+@pytest.mark.parametrize(
+    ("mutate", "check"),
+    [
+        (lambda o: o.update(status="success"), lambda r: r["status"] == "SUCCESS"),
+        (lambda o: o["traveler_criteria"][0].update(requirement_type="preference"),
+         lambda r: r["traveler_criteria"][0]["requirement_type"] == "PREFERENCE"),
+        (lambda o: o["options"][0]["evaluations"][0].update(outcome="Match"),
+         lambda r: r["options"][0]["evaluations"][0]["outcome"] == "MATCH"),
+        (lambda o: o["options"][0]["evaluations"][0].update(
+            details=[cost_detail(currency="inr", per_person_total={"minimum": "1,500", "maximum": "₹2,000"})]),
+         lambda r: r["options"][0]["evaluations"][0]["details"][0]["per_person_total"] == {"minimum": 1500.0, "maximum": 2000.0}
+         and r["options"][0]["evaluations"][0]["details"][0]["currency"] == "INR"),
+        (lambda o: o["options"][0].update(other_considerations=None, circuit_id=""),
+         lambda r: "circuit_id" not in r["options"][0]),
+        (lambda o: o["options"][0]["evaluations"][0].update(tradeoffs=None),
+         lambda r: r["options"][0]["evaluations"][0]["tradeoffs"] == []),
+        (lambda o: o["options"][0]["evaluations"][0].update(details=[cost_detail(note=" ", group_total={"minimum": 1, "maximum": 2})]),
+         lambda r: "note" not in r["options"][0]["evaluations"][0]["details"][0]),
+        (lambda o: o.update(state_delta=None), lambda r: r["status"] == "SUCCESS"),
+        (lambda o: o["state_delta"]["matcher_state"].update(generated_title="  A   very\nspaced   title "),
+         lambda r: r["state_delta"]["matcher_state"]["generated_title"] == "A very spaced title"),
+        (lambda o: o["state_delta"]["matcher_state"].update(generated_title="word " * 60),
+         lambda r: 0 < len(r["state_delta"]["matcher_state"]["generated_title"]) <= 120),
+        (lambda o: o["state_delta"]["matcher_state"].update(generated_title={"not": "text"}),
+         lambda r: "generated_title" not in r["state_delta"]["matcher_state"]),
+    ],
+)
+def test_meridian_type_slips_heal_on_the_first_attempt(monkeypatch, mutate, check):
+    response, attempts, _ = run(monkeypatch, "meridian", success_with(mutate))
+
+    assert attempts == 1
+    assert check(response)
+
+
+def guide_plan() -> dict:
+    return recorded("guide", "anything-else-answered-generates-plan")
+
+
+@pytest.mark.parametrize(
+    ("mutate", "check"),
+    [
+        (lambda o: o["state_delta"]["planner_state"]["day_plan"][0].update(pace="Relaxed"),
+         lambda r: r["state_delta"]["planner_state"]["day_plan"][0]["pace"] == "relaxed"),
+        (lambda o: o["state_delta"]["planner_state"]["day_plan"][0].update(buffer_note="", date=""),
+         lambda r: "buffer_note" not in r["state_delta"]["planner_state"]["day_plan"][0]),
+        (lambda o: o["state_delta"]["planner_state"]["day_plan"][0].update(places=None),
+         lambda r: r["state_delta"]["planner_state"]["day_plan"][0]["places"] == []),
+        (lambda o: o["state_delta"]["planner_state"].update(
+            day_plan=[{**day, "day_number": day["day_number"] + 3} for day in o["state_delta"]["planner_state"]["day_plan"]]),
+         lambda r: [d["day_number"] for d in r["state_delta"]["planner_state"]["day_plan"]]
+         == list(range(1, len(r["state_delta"]["planner_state"]["day_plan"]) + 1))),
+        (lambda o: o["state_delta"]["planner_state"].update(generated_title="x" * 400),
+         lambda r: len(r["state_delta"]["planner_state"].get("generated_title", "")) <= 120),
+        (lambda o: o["state_delta"]["planner_state"].update(generated_title="   "),
+         lambda r: "generated_title" not in r["state_delta"]["planner_state"]),
+        (lambda o: o.update(outcome="Continue"), lambda r: r["outcome"] == "continue"),
+        (lambda o: o.update(state_delta=None), lambda r: "message" in r),
+    ],
+)
+def test_guide_type_slips_heal_on_the_first_attempt(monkeypatch, mutate, check):
+    output = guide_plan()
+    mutate(output)
+    response, attempts, _ = run(monkeypatch, "guide", output)
+
+    assert attempts == 1
+    assert check(response)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "check"),
+    [
+        (lambda o: first_item(o).update(kind="activity", reference={"status": "General_Guidance"}),
+         lambda r: first_item(r)["kind"] == "ACTIVITY"),
+        (lambda o: first_item(o).update(backup_plan="", movement_guidance="", start_time=" "),
+         lambda r: "movement_guidance" not in first_item(r) and "start_time" not in first_item(r)),
+        (lambda o: o["final_itinerary"]["days"][0].update(notes=None, backup_plan=""),
+         lambda r: r["final_itinerary"]["days"][0]["notes"] == []),
+        (lambda o: o["final_itinerary"].update(assumptions=None, sources=None, practical_notes=None),
+         lambda r: r["final_itinerary"]["assumptions"] == [] and r["final_itinerary"]["sources"] == []),
+        (lambda o: first_item(o).update(estimated_cost_low=1250.5, estimated_cost_high="1,800"),
+         lambda r: first_item(r)["estimated_cost_low"] == 1250 or first_item(r)["estimated_cost_low"] == 1251),
+        (lambda o: o["final_itinerary"]["trip_summary"].update(num_travelers="2 adults, 1 child"),
+         lambda r: "num_travelers" not in r["final_itinerary"]["trip_summary"]),
+    ],
+)
+def test_atlas_type_slips_heal_on_the_first_attempt(monkeypatch, mutate, check):
+    output = atlas()
+    mutate(output)
+    response, attempts, _ = run(monkeypatch, "atlas", output)
+
+    assert attempts == 1
+    assert check(response)
+
+
+def test_scout_casing_and_null_state_delta_heal(monkeypatch):
+    response, attempts, _ = run(
+        monkeypatch, "scout", {"message": "Hello", "intent": "Advise", "state_delta": None}
+    )
+
+    assert attempts == 1
+    assert response["intent"] == "advise"
+
+
+def test_a_plan_the_business_rules_reject_is_retried_with_the_rule_stated(monkeypatch):
+    # Backend rules the schema cannot know (they depend on the trip) are judged
+    # before the response is accepted, so the model gets to correct them.
+    first, second = json.dumps({"message": "First try", "state_delta": {}}), json.dumps(
+        {"message": "Second try", "state_delta": {}}
+    )
+    engine, adapter = service_with_outputs(monkeypatch, first, second)
+    verdicts = iter([["Each place must be allocated exactly once."], []])
+
+    result = asyncio.run(engine.guide({}, "message", review=lambda response: next(verdicts)))
+
+    sent = [call.args[1].system_prompt for call in adapter.invoke.await_args_list]
+    assert result.response["message"] == "Second try"
+    assert "CORRECTION REQUIRED" in sent[1]
+    assert "Each place must be allocated exactly once." in sent[1]
+
+
+def test_a_plan_that_keeps_breaking_the_rules_fails_after_the_retry(monkeypatch):
+    output = json.dumps({"message": "Plan", "state_delta": {}})
+    engine, adapter = service_with_outputs(monkeypatch, output, output)
+
+    with pytest.raises(AgentOutputError):
+        asyncio.run(engine.guide({}, "message", review=lambda response: ["Day plan length must equal trip_duration."]))
+
+    assert adapter.invoke.await_count == 2
+
+
+GUIDE_REJECTED = [
+    ("an invented `awaiting` slug -- the UI drives quick replies from the fixed set",
+     lambda: {"message": "Q?", "state_delta": {"planner_state": {"conversation_context": {"awaiting": "travel_style"}}}}),
+    ("a day without a pace -- the plan has nothing to show for it and Backend will not guess one",
+     lambda: {"message": "Plan", "state_delta": {"planner_state": {"day_plan": [{"day_number": 1, "places": ["A"]}]}}}),
+    ("a blank required message -- the traveler would see nothing",
+     lambda: {"message": "  ", "state_delta": {}}),
+]
+
+
+@pytest.mark.parametrize(("why", "build"), GUIDE_REJECTED, ids=[why for why, _ in GUIDE_REJECTED])
+def test_guide_violations_that_protect_a_consumer_stay_rejected(monkeypatch, why, build):
+    output = json.dumps(build())
+    engine, adapter = service_with_outputs(monkeypatch, output, output)
+
+    with pytest.raises(AgentOutputError):
+        asyncio.run(engine.guide({}, "message"))
+
+    assert adapter.invoke.await_count == 2
+
+
+def test_an_itinerary_with_the_wrong_number_of_days_is_retried_with_the_rule_stated(monkeypatch):
+    from twm.schemas.atlas import AtlasWorkingPlan
+    from twm.services.trip_commands.atlas_commands import _atlas_review
+
+    base = atlas()
+    expected = len(base["final_itinerary"]["days"])
+    plan = AtlasWorkingPlan.model_validate(
+        {
+            "destinations": ["Goa"],
+            "trip_duration": expected,
+            "days": [{"day_number": number, "places": []} for number in range(1, expected + 1)],
+        }
+    )
+    longer = deepcopy(base)
+    longer["final_itinerary"]["days"].append(deepcopy(base["final_itinerary"]["days"][0]))
+    engine, adapter = service_with_outputs(monkeypatch, json.dumps(longer), json.dumps(base))
+
+    result = asyncio.run(engine.atlas({}, None, review=_atlas_review(plan)))
+
+    sent = [call.args[1].system_prompt for call in adapter.invoke.await_args_list]
+    assert len(result.response["final_itinerary"]["days"]) == expected
+    assert f"exactly {expected} days" in sent[1]

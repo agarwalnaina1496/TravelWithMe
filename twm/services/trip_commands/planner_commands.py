@@ -1,13 +1,17 @@
 """Planner-phase (Guide) command handling."""
 
+import copy
 from typing import Any
 
+from pydantic import ValidationError
+
 from ...persistence.contracts import RecommendationRecord
-from ...schemas.guide import GuideRequest
+from ...schemas.guide import GuideAgentOutput, GuideRequest
 from ...schemas.trip_context import BUDGET_KEY, DESTINATIONS_KEY, TRIP_DURATION_KEY
 from ...telemetry import TelemetryLogger
-from ..agent_engine import AgentEngine
+from ..agent_engine import AgentEngine, OutputReview
 from ..response_normalization import _normalize_guide_response
+from .atlas_commands import build_working_plan
 from .errors import InvalidTripCommandError
 from .party_seed import seed_party_from_num_travelers
 from .state import merge_operational_state, merge_trip_context, set_stage
@@ -153,7 +157,11 @@ async def apply_guide(
         payload=request_data,
     )
     response = _normalize_guide_response(
-        await engine.guide(agent_state, request.message)
+        await engine.guide(
+            agent_state,
+            request.message,
+            review=_guide_review(state, previous_awaiting),
+        )
     )
     response_data = response.model_dump(mode="json", exclude_none=True)
     logger.info(
@@ -174,29 +182,8 @@ async def apply_guide(
             engine, logger, state, message, latest_recommendation
         )
 
-    delta = response.state_delta
-    merge_trip_context(state["trip_context"], delta.trip_context.model_dump(mode="json"))
-
-    # Same shared primitive apply_meridian uses for matcher_state — an
-    # agent's own operational memory merges the same way regardless of
-    # which specialist owns it: a dict field recurses (conversation_context
-    # overwrites just its awaiting key), everything else replaces wholesale
-    # when included (places/day_plan), and an omitted field is left alone.
-    planner_delta = delta.planner_state
-    planner_delta_dict: dict[str, Any] = {}
-    if planner_delta.conversation_context is not None:
-        planner_delta_dict["conversation_context"] = (
-            planner_delta.conversation_context.model_dump(mode="json")
-        )
-    if planner_delta.places is not None:
-        planner_delta_dict["places"] = list(planner_delta.places)
-    if planner_delta.day_plan is not None:
-        planner_delta_dict["day_plan"] = [
-            day.model_dump(mode="json") for day in planner_delta.day_plan
-        ]
-    merge_operational_state(planner, planner_delta_dict)
-
-    _validate_guide_transition(state, planner_delta, previous_awaiting)
+    planner_delta = response.state_delta.planner_state
+    _merge_guide_delta(state, response.state_delta, previous_awaiting)
     planner["revision"] = int(planner.get("revision", 0)) + 1
     generated_title = _guide_generated_title(planner, planner_delta, previous_awaiting)
 
@@ -396,6 +383,59 @@ def apply_reopen_revisit(
     }
 
 
+def _merge_guide_delta(
+    state: dict[str, Any], delta: Any, previous_awaiting: str | None
+) -> None:
+    """Apply a Guide `state_delta` to `state` and enforce the plan rules.
+
+    One function for both the real apply and the pre-acceptance review, so the
+    rules cannot drift between them.
+    """
+
+    merge_trip_context(state["trip_context"], delta.trip_context.model_dump(mode="json"))
+
+    # Same shared primitive apply_meridian uses for matcher_state — an
+    # agent's own operational memory merges the same way regardless of
+    # which specialist owns it: a dict field recurses (conversation_context
+    # overwrites just its awaiting key), everything else replaces wholesale
+    # when included (places/day_plan), and an omitted field is left alone.
+    planner_delta = delta.planner_state
+    planner_delta_dict: dict[str, Any] = {}
+    if planner_delta.conversation_context is not None:
+        planner_delta_dict["conversation_context"] = (
+            planner_delta.conversation_context.model_dump(mode="json")
+        )
+    if planner_delta.places is not None:
+        planner_delta_dict["places"] = list(planner_delta.places)
+    if planner_delta.day_plan is not None:
+        planner_delta_dict["day_plan"] = [
+            day.model_dump(mode="json") for day in planner_delta.day_plan
+        ]
+    merge_operational_state(state["planner_state"], planner_delta_dict)
+
+    _validate_guide_transition(state, planner_delta, previous_awaiting)
+
+
+def _guide_review(state: dict[str, Any], previous_awaiting: str | None) -> OutputReview:
+    """The Guide plan rules, judged on a copy of the trip before the response
+    is accepted -- so a plan that breaks them is retried with the rule stated
+    instead of failing the traveler's turn afterwards."""
+
+    def review(response: dict[str, Any]) -> list[str]:
+        if response.get("outcome") == "reopen_destination_discovery":
+            return []  # nothing is merged on that path
+        probe = copy.deepcopy(state)
+        try:
+            _merge_guide_delta(
+                probe, GuideAgentOutput.model_validate(response).state_delta, previous_awaiting
+            )
+        except InvalidTripCommandError as error:
+            return [str(error)]
+        return []
+
+    return review
+
+
 def _guide_generated_title(
     planner: dict[str, Any], planner_delta: Any, previous_awaiting: str | None
 ) -> str | None:
@@ -457,24 +497,25 @@ def _coerce_trip_duration(trip_duration: Any) -> int:
 
 
 def _validate_day_plan(state: dict[str, Any]) -> None:
+    """The plan rules (length == trip_duration, sequential days, each approved
+    place allocated exactly once) live in `AtlasWorkingPlan` -- the same model
+    Atlas is later handed -- so a plan Guide may return is exactly a plan Atlas
+    can accept."""
+
     planner = state["planner_state"]
-    day_plan = planner.get("day_plan") or []
-    places = planner.get("places") or []
-    trip_duration = state["trip_context"].get(TRIP_DURATION_KEY)
+    trip_context = state["trip_context"]
+    trip_duration = trip_context.get(TRIP_DURATION_KEY)
     if trip_duration is None:
         raise InvalidTripCommandError("Guide returned a day plan without a known duration.")
-    trip_duration = _coerce_trip_duration(trip_duration)
-    if len(day_plan) != trip_duration:
-        raise InvalidTripCommandError("Day plan length must equal trip_duration.")
-    day_numbers = [day["day_number"] for day in day_plan]
-    if day_numbers != list(range(1, trip_duration + 1)):
-        raise InvalidTripCommandError("Day numbers must be sequential from 1.")
-    allocated = [place for day in day_plan for place in day["places"]]
-    if len(allocated) != len({place.casefold() for place in allocated}):
-        raise InvalidTripCommandError("Each place must be allocated exactly once.")
-    if {place.casefold() for place in allocated} != {
-        place.casefold() for place in places
-    }:
-        raise InvalidTripCommandError(
-            "Day plan must allocate every approved place and no others."
+    try:
+        build_working_plan(
+            {
+                DESTINATIONS_KEY: trip_context.get(DESTINATIONS_KEY) or [],
+                TRIP_DURATION_KEY: _coerce_trip_duration(trip_duration),
+                "places": planner.get("places") or [],
+                "day_plan": planner.get("day_plan") or [],
+            }
         )
+    except ValidationError as error:
+        reason = error.errors()[0]["msg"].removeprefix("Value error, ")
+        raise InvalidTripCommandError(reason[:1].upper() + reason[1:] + ".") from None

@@ -4,7 +4,17 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import Field, StringConstraints, model_validator
 
-from .agent_contract import AgentContent, Text, ensure_ordered_range, ensure_unique
+from .agent_contract import (
+    AgentContent,
+    LenientNumber,
+    NullAsEmptyList,
+    OptionalText,
+    Text,
+    UpperCode,
+    case_insensitive,
+    ensure_ordered_range,
+    ensure_unique,
+)
 
 
 CurrencyCode = Annotated[
@@ -15,8 +25,9 @@ CurrencyCode = Annotated[
         max_length=3,
         pattern=r"^[A-Z]{3}$",
     ),
+    UpperCode,
 ]
-Amount = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+Amount = Annotated[float, Field(ge=0, allow_inf_nan=False), LenientNumber]
 
 
 class EstimateRange(AgentContent):
@@ -50,7 +61,7 @@ class CostLineItem(AgentContent):
     label: Text
     per_person: Optional[EstimateRange] = None
     group: Optional[EstimateRange] = None
-    note: Optional[Text] = None
+    note: OptionalText = None
 
     @model_validator(mode="after")
     def validate_estimates(self) -> "CostLineItem":
@@ -66,7 +77,7 @@ class CostBreakdownDetail(AgentContent):
     items: list[CostLineItem] = Field(default_factory=list)
     per_person_total: Optional[EstimateRange] = None
     group_total: Optional[EstimateRange] = None
-    note: Optional[Text] = None
+    note: OptionalText = None
 
     @model_validator(mode="after")
     def validate_totals(self) -> "CostBreakdownDetail":
@@ -98,8 +109,8 @@ RecommendationDetail = Annotated[
     Union[BulletDetail, FactsDetail, CostBreakdownDetail],
     Field(discriminator="type"),
 ]
-CriterionOutcome = Literal["MATCH", "TRADEOFF", "MISMATCH"]
-RequirementType = Literal["HARD", "PREFERENCE"]
+CriterionOutcome = case_insensitive(Literal["MATCH", "TRADEOFF", "MISMATCH"])
+RequirementType = case_insensitive(Literal["HARD", "PREFERENCE"])
 
 
 class TravelerCriterion(AgentContent):
@@ -117,7 +128,7 @@ class CriterionEvaluation(AgentContent):
     outcome: CriterionOutcome
     conclusion: Text
     details: list[RecommendationDetail] = Field(min_length=1)
-    tradeoffs: list[Text] = Field(default_factory=list)
+    tradeoffs: Annotated[list[Text], NullAsEmptyList] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_semantics(self) -> "CriterionEvaluation":
@@ -130,13 +141,13 @@ class CriterionEvaluation(AgentContent):
 
 class RecommendationOption(AgentContent):
     rank: Annotated[int, Field(ge=1, le=3)]
-    type: Literal["single", "circuit"]
+    type: case_insensitive(Literal["single", "circuit"])
     name: Text
-    destination_id: Optional[Text] = None
-    circuit_id: Optional[Text] = None
+    destination_id: OptionalText = None
+    circuit_id: OptionalText = None
     summary: Text
     evaluations: list[CriterionEvaluation] = Field(min_length=1)
-    other_considerations: list[Text] = Field(default_factory=list)
+    other_considerations: Annotated[list[Text], NullAsEmptyList] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_identity_and_evaluations(self) -> "RecommendationOption":

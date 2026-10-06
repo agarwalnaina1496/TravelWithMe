@@ -5,7 +5,7 @@ from typing import Any
 from ...schemas.atlas import AtlasRequest, AtlasWorkingPlan
 from ...schemas.trip_context import DESTINATIONS_KEY, TRIP_DURATION_KEY
 from ...telemetry import TelemetryLogger
-from ..agent_engine import AgentEngine
+from ..agent_engine import AgentEngine, OutputReview
 from ..response_normalization import _normalize_atlas_response
 from .errors import InvalidTripCommandError
 
@@ -43,7 +43,9 @@ async def apply_atlas(
         trip_id=trip_id,
         payload=agent_state,
     )
-    response = _normalize_atlas_response(await engine.atlas(agent_state, None))
+    response = _normalize_atlas_response(
+        await engine.atlas(agent_state, None, review=_atlas_review(working_plan))
+    )
     response_data = response.model_dump(mode="json", exclude_none=True)
     logger.info(
         f"Returning Atlas response. Response - {logger.format_json(response_data)}",
@@ -75,6 +77,22 @@ async def apply_atlas(
         "message": None,
         "agent_meta": response.agent_meta.model_dump(mode="json"),
     }
+
+
+def _atlas_review(working_plan: AtlasWorkingPlan) -> OutputReview:
+    """The itinerary covers exactly the approved plan's days: judged before the
+    response is accepted, so a mismatch is retried with the rule stated."""
+
+    def review(response: dict[str, Any]) -> list[str]:
+        days = len(response["final_itinerary"]["days"])
+        if days != working_plan.trip_duration:
+            return [
+                f"The itinerary must have exactly {working_plan.trip_duration} days, "
+                "one per day of the approved plan."
+            ]
+        return []
+
+    return review
 
 
 def build_working_plan(guide_state: dict[str, Any]) -> AtlasWorkingPlan:

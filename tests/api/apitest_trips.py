@@ -234,7 +234,7 @@ class FakeCommandEngine:
             prompt_release=PromptRelease("scout", "1.0.0", "test"),
         )
 
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         # No guide_event on the payload any more — a fresh call has no
         # places yet, same signal apply_guide's own gating logic uses.
@@ -292,7 +292,7 @@ class FakeHandoffEngine(FakeCommandEngine):
 
 
 class FakeGuideLifecycleEngine(FakeCommandEngine):
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         planner_state = dict(trip_state["planner_state"])
         # APPROVE_PLAN never reaches the engine — Backend applies it
@@ -319,7 +319,7 @@ class FakeGuideLifecycleEngine(FakeCommandEngine):
 
 
 class FakeAtlasLifecycleEngine(FakeGuideLifecycleEngine):
-    async def atlas(self, trip_state, message):
+    async def atlas(self, trip_state, message, review=None):
         self.calls.append(("atlas", trip_state, message))
         working_plan = trip_state["working_plan"]
         return AgentExecution(
@@ -389,7 +389,7 @@ class FakeDayPlanClarificationEngine(FakeCommandEngine):
     duration gate and everything else is left untouched until the
     traveler's next message resolves it. Second turn applies the answer."""
 
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         if len(self.calls) == 1:
             return AgentExecution(
@@ -413,7 +413,7 @@ class FakeDayPlanClarificationEngine(FakeCommandEngine):
 class FakeGuideReversalEngine(FakeCommandEngine):
     """Guide proposes reopen_destination_discovery; Backend validates and hands off to Meridian."""
 
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         return AgentExecution(
             response={
@@ -442,7 +442,7 @@ class FakeGuideReversalEngine(FakeCommandEngine):
 class FakeGuideOrdinaryEditEngine(FakeCommandEngine):
     """Guide handles a normal edit and stays with outcome = continue (the default)."""
 
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         places = [*trip_state["planner_state"]["places"], "Anjuna Beach"]
         return AgentExecution(
@@ -1092,7 +1092,7 @@ class FakeGuideClearsGateWithoutPlanEngine(FakeCommandEngine):
     returns neither `places` nor `day_plan` — the exact completeness failure
     the deleted APPROVE_PLACES guard used to catch."""
 
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         return AgentExecution(
             response={
@@ -1137,7 +1137,7 @@ class FakeGuideGeneratesTitleEngine(FakeCommandEngine):
     """Guide clears the terminal `anything_else` gate, returns a day_plan
     (required by _validate_guide_transition), and also produces a title."""
 
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         return AgentExecution(
             response={
@@ -1373,7 +1373,7 @@ class FakeGuideEditReturningBothPlacesAndDayPlanEngine(FakeCommandEngine):
     that legitimately returns both `places` and a reallocated `day_plan` in
     the same delta — must not be mistaken for single-step generation."""
 
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         return AgentExecution(
             response={
@@ -1433,7 +1433,7 @@ def test_ordinary_edit_returning_both_places_and_day_plan_does_not_refire_plan_g
 
 
 class FakeTradeoffExplainingEngine(FakeCommandEngine):
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         return AgentExecution(
             response={
@@ -2309,7 +2309,7 @@ def test_day_plan_survives_a_backend_owned_clarification_round_trip(
 
 
 class FakeGuidePreferenceEngine(FakeCommandEngine):
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         return AgentExecution(
             response={
@@ -2368,7 +2368,7 @@ def test_guide_free_form_delta_overwrites_rather_than_unions(
 
 
 class FakeGuideMisallocatedDayPlanEngine(FakeCommandEngine):
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         self.calls.append(("guide", trip_state, message))
         return AgentExecution(
             response={
@@ -2936,7 +2936,7 @@ class FakeFailingEngine(FakeCommandEngine):
     async def meridian(self, trip_state, message):
         raise RuntimeError("agent service unavailable")
 
-    async def guide(self, trip_state, message):
+    async def guide(self, trip_state, message, review=None):
         raise RuntimeError("agent service unavailable")
 
 
