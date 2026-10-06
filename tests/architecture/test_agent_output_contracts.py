@@ -8,7 +8,7 @@ that quietly reverts to strict ``BaseModel`` would bring the "one harmless key
 costs the whole response" failure mode back, so it fails here instead.
 
 Behaviour of the tolerance itself is covered by the slip catalogue in
-``tests/unit/agent_engine/test_output_tolerance.py``.
+``tests/unit/agent_engine/test_tolerance_*.py``.
 """
 
 import types

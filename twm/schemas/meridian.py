@@ -112,7 +112,7 @@ class MeridianAgentOutput(AgentContent):
     # Derived from the options below; hidden from the schema shown to the model.
     trip_type: Optional[Literal["single", "circuit", "mixed"]] = derived(default=None)
     traveler_criteria: Annotated[Optional[list[TravelerCriterion]], EmptyAsNone] = None
-    options: list[RecommendationOption] = Field(default_factory=list)
+    options: list[RecommendationOption] = Field(default_factory=list, max_length=MAX_OPTIONS)
     constraint_adjustment_suggestions: Annotated[Optional[list[Text]], EmptyAsNone] = None
 
     @field_validator("options", mode="before")

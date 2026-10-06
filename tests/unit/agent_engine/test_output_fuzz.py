@@ -1,6 +1,6 @@
 """TWM-234: a healer or validator must never crash on a hostile shape.
 
-The slip catalogue (``test_output_tolerance.py``) proves the slips we thought
+The slip catalogue (``test_tolerance_*.py``) proves the slips we thought
 of heal. This is the other half: seeded, random damage to every recorded
 completion -- wrong types, nulls, empties, huge numbers, deleted keys -- must
 only ever produce a clean ``ValidationError`` (a retry) or a valid response.

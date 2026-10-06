@@ -62,7 +62,8 @@ def guide_review(state: dict[str, Any], previous_awaiting: str | None) -> Output
     def review(response: dict[str, Any]) -> list[str]:
         if response.get("outcome") == "reopen_destination_discovery":
             return []  # nothing is merged on that path
-        probe = copy.deepcopy(state)
+        # Only these two branches are read or written by the rules.
+        probe = {key: copy.deepcopy(state[key]) for key in ("trip_context", "planner_state")}
         try:
             merge_guide_delta(
                 probe, GuideAgentOutput.model_validate(response).state_delta, previous_awaiting

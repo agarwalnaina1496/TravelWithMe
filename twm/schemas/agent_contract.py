@@ -262,17 +262,26 @@ def case_insensitive(literal: Any) -> Any:
     return Annotated[literal, BeforeValidator(match)]
 
 
-_NUMBER_NOISE = re.compile(r"[,\s₹$€£]|\bINR\b|\bRs\.?", re.IGNORECASE)
+# A formatted amount, and only that: an optional currency mark, digits (plain, or
+# grouped by commas -- 1,500 / 10,00,000 -- or by spaces in threes), an optional
+# fraction, an optional trailing mark. Anything looser ("2 3", "1-2 lakh") is
+# not a number and is left for validation to reject.
+_NUMBER_FORMAT = re.compile(
+    r"^\s*(?:₹|\$|€|£|rs\.?|inr)?\s*"
+    r"(?P<number>-?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3}|\d{1,3}(?:[ ]\d{3})+|\d+)(?:\.\d+)?)"
+    r"\s*(?:/-|inr)?\s*$",
+    re.IGNORECASE,
+)
 
 
 def _parse_number(value: Any, info: ValidationInfo) -> Any:
-    """``"1,500"`` / ``"₹1,500"`` -> ``1500.0``; anything else is left alone."""
+    """``"1,500"`` / ``"₹ 12,500/-"`` -> a number; anything else is left alone."""
 
     if isinstance(value, str):
-        try:
-            number = float(_NUMBER_NOISE.sub("", value))
-        except ValueError:
+        match = _NUMBER_FORMAT.match(value)
+        if match is None:
             return value
+        number = float(re.sub(r"[, ]", "", match.group("number")))
         if math.isfinite(number):
             record_heal(info, f"{info.field_name}.number_parsed")
             return number
