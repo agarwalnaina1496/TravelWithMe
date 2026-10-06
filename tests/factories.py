@@ -1,5 +1,12 @@
 """Focused test data factories for public API contracts."""
 
+from twm.services.agent_engine import OutputRetryPolicy
+
+
+def two_attempts() -> OutputRetryPolicy:
+    """The retry policy the contract tests assume: one retry, no time limit."""
+    return OutputRetryPolicy(max_attempts=2, budget_seconds=10_000)
+
 
 def traveler_criteria() -> list[dict]:
     return [
@@ -7,7 +14,6 @@ def traveler_criteria() -> list[dict]:
             "id": "pace",
             "label": "Relaxed pace",
             "requirement_type": "PREFERENCE",
-            "source_context_paths": ["travel_style.pace"],
         }
     ]
 

@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends
 from ..dependencies import get_engine, get_logger
 from ..schemas import AtlasRequest, AtlasResponse, GuideRequest, GuideResponse
 from ..services import AgentEngine
+from ..services.trip_commands.atlas_commands import atlas_review
+from ..services.trip_commands.guide_plan_rules import guide_review
 from ..services.response_normalization import (
     _normalize_atlas_response,
     _normalize_guide_response,
@@ -37,10 +39,19 @@ async def guide(
     )
     # No guide_event field on the agent payload — every MESSAGE turn is
     # handled identically (see guide.md); APPROVE_PLAN is never forwarded
-    # to Guide in the real trip-command flow (planner_commands.py), and
+    # to Guide in the real trip-command flow (planner_commands.py / guide_plan_rules.py), and
     # this stateless debug route mirrors that by not exposing it either.
     agent_state = payload.trip_state.model_dump(mode="json")
-    execution = await engine.guide(agent_state, payload.message)
+    # The same plan rules the trip-command flow applies, judged on this request's
+    # own state, so a plan Backend would refuse is retried here too.
+    planner = agent_state["planner_state"]
+    review_state = {"trip_context": agent_state["trip_context"], "planner_state": planner}
+    previous_awaiting = planner.get("conversation_context", {}).get("awaiting")
+    execution = await engine.guide(
+        agent_state,
+        payload.message,
+        review=guide_review(review_state, previous_awaiting),
+    )
     response = _normalize_guide_response(execution)
     response_data = response.model_dump(mode="json", exclude_none=True)
     logger.info(
@@ -70,7 +81,9 @@ async def atlas(
         agent="atlas",
         payload=request_data,
     )
-    execution = await engine.atlas(request_data, None)
+    execution = await engine.atlas(
+        request_data, None, review=atlas_review(payload.working_plan)
+    )
     response = _normalize_atlas_response(execution)
     response_data = response.model_dump(mode="json", exclude_none=True)
     logger.info(

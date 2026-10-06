@@ -6,18 +6,31 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StringConstraints,
+    ValidationInfo,
+    field_validator,
     model_validator,
 )
 
 from ..trust_boundary import assert_agent_delta_within_boundary, validate_phase_state
+from .agent_contract import (
+    AgentContent,
+    Deduped,
+    GeneratedTitle,
+    NullAsDefault,
+    NullAsEmptyList,
+    OptionalText,
+    Text,
+    case_insensitive,
+    number_by_position,
+    record_heal,
+    relocate_into,
+)
 from .common import AgentMeta
 from .scout import BoundedMessage
 from .trip_context import FIXED_KEYS, TripContext
 
 
-GuideText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-GuidePace = Literal["relaxed", "balanced", "packed"]
+GuidePace = case_insensitive(Literal["relaxed", "balanced", "packed"])
 # No "is this the first message" distinction — Guide's job is identical
 # every turn (extract whatever the message contains, check the gates in
 # order, ask the next missing one or generate the plan once all are known),
@@ -36,14 +49,12 @@ GuideEvent = Literal["MESSAGE", "APPROVE_PLAN"]
 GuideAwaiting = Literal[(*FIXED_KEYS, "anything_else")]
 
 
-class GuideDay(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class GuideDay(AgentContent):
     day_number: int = Field(ge=1)
-    date: Optional[str] = None
-    places: list[GuideText] = Field(default_factory=list)
+    date: OptionalText = None
+    places: Annotated[list[Text], NullAsEmptyList, Deduped] = Field(default_factory=list)
     pace: GuidePace
-    buffer_note: Optional[GuideText] = None
+    buffer_note: OptionalText = None
 
 
 class GuideConversationContext(BaseModel):
@@ -60,7 +71,7 @@ class GuidePlannerState(BaseModel):
     conversation_context: GuideConversationContext = Field(
         default_factory=GuideConversationContext
     )
-    places: list[GuideText] = Field(default_factory=list)
+    places: list[Text] = Field(default_factory=list)
     day_plan: list[GuideDay] = Field(default_factory=list)
 
 
@@ -104,7 +115,8 @@ class GuidePlannerStateDelta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conversation_context: Optional[GuideConversationContext] = None
-    places: Optional[list[GuideText]] = None
+    # A place named twice (even differing only by case) is one place.
+    places: Annotated[Optional[list[Text]], Deduped] = None
     day_plan: Optional[list[GuideDay]] = None
     # TWM-232: a short LLM-generated trip title, produced only on the turn
     # Guide clears `awaiting` from "anything_else" and only when
@@ -114,15 +126,24 @@ class GuidePlannerStateDelta(BaseModel):
     # `Trip.title` column once (see trip_commands/planner_commands.py);
     # Guide itself never checks who set an existing title, only whether one
     # is set.
-    generated_title: Optional[str] = None
+    generated_title: Annotated[Optional[str], GeneratedTitle] = None
 
-    @model_validator(mode="after")
-    def validate_places_unique(self) -> "GuidePlannerStateDelta":
-        if self.places is not None:
-            normalized = [place.casefold() for place in self.places]
-            if len(normalized) != len(set(normalized)):
-                raise ValueError("places must be unique")
-        return self
+    @field_validator("day_plan", mode="before")
+    @classmethod
+    def _days_numbered_by_position(cls, value: Any, info: ValidationInfo) -> Any:
+        # A day's number is its place in the plan; the later checks that the
+        # plan is sequential from 1 then hold by construction.
+        numbered, changed = number_by_position(value, "day_number")
+        if changed:
+            record_heal(info, "day_plan.numbered_by_position")
+        return numbered
+
+    @model_validator(mode="before")
+    @classmethod
+    def _awaiting_belongs_in_conversation_context(cls, data: Any, info: ValidationInfo) -> Any:
+        # `awaiting` lives on `conversation_context`; a sibling of it on
+        # `planner_state` has exactly one possible destination.
+        return relocate_into(data, container="conversation_context", field="awaiting", info=info)
 
 
 class GuideStateDelta(BaseModel):
@@ -137,16 +158,14 @@ class GuideStateDelta(BaseModel):
         return self
 
 
-GuideOutcome = Literal["continue", "reopen_destination_discovery"]
+GuideOutcome = case_insensitive(Literal["continue", "reopen_destination_discovery"])
 
 
-class GuideAgentOutput(BaseModel):
+class GuideAgentOutput(AgentContent):
     """Canonical generated Guide output before Backend provenance is attached."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    message: GuideText
-    state_delta: GuideStateDelta = Field(default_factory=GuideStateDelta)
+    message: Text
+    state_delta: Annotated[GuideStateDelta, NullAsDefault] = Field(default_factory=GuideStateDelta)
     outcome: GuideOutcome = "continue"
 
 

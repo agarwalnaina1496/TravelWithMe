@@ -4,10 +4,8 @@ and deterministic remove_place command (TWM-232)."""
 import pytest
 
 from twm.services.trip_commands.errors import InvalidTripCommandError
-from twm.services.trip_commands.planner_commands import (
-    _validate_day_plan,
-    apply_remove_place,
-)
+from twm.services.trip_commands.guide_plan_rules import validate_day_plan as _validate_day_plan
+from twm.services.trip_commands.planner_commands import apply_remove_place
 
 
 def _state(trip_duration: object, day_plan: list[dict]) -> dict:
@@ -135,3 +133,22 @@ def test_remove_place_rejects_wrong_day_number() -> None:
     )
     with pytest.raises(InvalidTripCommandError, match="not on Day 2"):
         apply_remove_place(logger, state, "Orchha", day_number=2)
+
+
+def test_a_trip_longer_than_the_planner_supports_is_explained_plainly() -> None:
+    with pytest.raises(InvalidTripCommandError, match=r"^A trip can be planned for 1 to 60 days\.$"):
+        _validate_day_plan(_state(61, _day_plan(61)))
+
+
+def test_a_blank_place_name_is_explained_plainly() -> None:
+    state = _state(2, [{"day_number": 1, "places": ["Ram Jhula"]}, {"day_number": 2, "places": ["Ghat"]}])
+    state["planner_state"]["day_plan"][1]["places"] = [" "]
+    state["planner_state"]["places"] = ["Ram Jhula", " "]
+
+    with pytest.raises(InvalidTripCommandError, match=r"^Destination and place names cannot be blank\.$"):
+        _validate_day_plan(state)
+
+
+def test_a_broken_plan_rule_keeps_its_own_plain_wording() -> None:
+    with pytest.raises(InvalidTripCommandError, match=r"^The day plan must have exactly one entry for each day of the trip.$"):
+        _validate_day_plan(_state(3, _day_plan(2)))

@@ -8,6 +8,7 @@ import pytest
 
 from twm.prompt_registry import PromptRelease
 from twm.schemas import MeridianAgentOutput, ScoutAgentOutput
+from twm.schemas.agent_contract import llm_output_schema
 from twm.trust_boundary import UNTRUSTED_DATA_PREAMBLE
 from twm.services import (
     AgentAdapterError,
@@ -19,7 +20,7 @@ from twm.services import (
 )
 from twm.services.agent_engine import service as service_module
 from twm.telemetry import InMemorySink, PayloadMode, TelemetryLogger, TelemetrySettings
-from tests.factories import recommendation_option, traveler_criteria
+from tests.factories import recommendation_option, traveler_criteria, two_attempts
 
 
 def service_with_outputs(
@@ -46,7 +47,7 @@ def service_with_outputs(
     logger = TelemetryLogger(
         TelemetrySettings(True, "test", payload_mode, 16_384), sink
     )
-    return AgentExecutionService(adapter, logger, "test-engine"), adapter
+    return AgentExecutionService(adapter, logger, "test-engine", retry=two_attempts()), adapter
 
 
 def meridian_success() -> dict:
@@ -172,7 +173,7 @@ def test_common_service_validates_meridian_semantics(monkeypatch) -> None:
     assert adapter.invoke.await_count == 1
     _, invocation = adapter.invoke.await_args.args
     schema_json = json.dumps(
-        MeridianAgentOutput.model_json_schema(),
+        llm_output_schema(MeridianAgentOutput),
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -484,8 +485,8 @@ def test_common_service_rejects_double_encoded_output(monkeypatch) -> None:
 def test_common_service_raises_after_retry_on_invalid_output(monkeypatch) -> None:
     sink = InMemorySink()
     invalid = {
-        "status": "HARD_FAIL",
-        "message": "Invalid because conversation context is missing.",
+        "status": "SUCCESS",
+        "message": "Invalid because a success carries no options.",
         "state_delta": {},
         "options": [],
     }
@@ -508,7 +509,7 @@ def test_common_service_raises_after_retry_on_invalid_output(monkeypatch) -> Non
     assert len(invalid_events) == 2
     assert invalid_events[0]["level"] == "WARNING"
     assert invalid_events[1]["level"] == "ERROR"
-    assert "HARD_FAIL" in invalid_events[1]["message"]
+    assert "SUCCESS" in invalid_events[1]["message"]
     assert invalid_events[1]["response"] == json.dumps(invalid)
 
 
@@ -518,9 +519,8 @@ def test_common_service_redacts_model_controlled_validation_locations(
     sensitive_key = "passport_ABC123"
     invalid = {
         "message": "Invalid",
-        "state_delta": {},
+        "state_delta": {sensitive_key: "secret"},
         "intent": "advise",
-        sensitive_key: "secret",
     }
     encoded = json.dumps(invalid)
     engine, adapter = service_with_outputs(monkeypatch, encoded, encoded)
@@ -530,5 +530,5 @@ def test_common_service_redacts_model_controlled_validation_locations(
 
     assert adapter.invoke.await_count == 2
     assert captured.value.failures == [
-        {"type": "extra_forbidden", "loc": ["<redacted>"]}
+        {"type": "extra_forbidden", "loc": ["state_delta", "<redacted>"]}
     ]

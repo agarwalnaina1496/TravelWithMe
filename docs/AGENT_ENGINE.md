@@ -18,7 +18,7 @@ validate request
   -> normalize the public response
 ```
 
-If the completion is invalid, FastAPI returns a CORS-enabled `502` immediately — there is no repair/regeneration retry, so each turn costs exactly one model invocation regardless of outcome. Adapter timeouts return a CORS-enabled `504`. Parsing failures are infrastructure failures; they must never be represented as a successful Scout response or as Meridian `HARD_FAIL`.
+If the completion breaks the output contract, FastAPI regenerates it **once** — every attempt is a full generation the traveler waits for, so retries are kept to one and the fix for a contract that fails often is to prevent the failure instead. The retry tells the model which rules the first attempt broke (Backend-written text only, never a model-controlled string) and starts only while it is expected to finish inside 190 seconds (deliberately below the UI's 200s request timeout, judged by how long the first attempt took). Harmless slips are healed during validation without costing an attempt (see `twm/schemas/agent_contract.py`), and Backend rules that depend on the trip (the Guide day plan, the Atlas day count) are judged before a response is accepted so they are retried the same way. When attempts run out FastAPI returns a CORS-enabled `502`. Adapter timeouts return a CORS-enabled `504`. Parsing failures are infrastructure failures; they must never be represented as a successful Scout response or as Meridian `HARD_FAIL`.
 
 FastAPI converts the selected Pydantic output schema into one compact instruction in the system prompt. Both adapters perform one raw model invocation and return the exact generated text. Neither adapter parses the completion. This keeps malformed-output behavior identical across engines.
 

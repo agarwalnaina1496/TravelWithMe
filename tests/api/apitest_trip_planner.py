@@ -1,11 +1,12 @@
 """API tests for stateless Guide agent execution."""
 
 import json
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 
 from twm.prompt_registry import PromptRelease, load_prompt_release
+from tests.factories import two_attempts
 from twm.routers import trip_planner
 from twm.services import (
     AgentExecution,
@@ -210,6 +211,7 @@ def test_guide_api_forwards_state_and_message_with_no_guide_event(api_client: Te
             "current_title": None,
         },
         "Plan a relaxed trip.",
+        review=ANY,
     )
 
 
@@ -254,7 +256,7 @@ def test_guide_api_uses_prompt_schema_and_common_validation(
             raw_output=json.dumps(guide_places_output())
         )
     )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts())
     set_engine(api_client, engine)
 
     response = api_client.post(
@@ -363,7 +365,7 @@ def test_atlas_api_forwards_finalized_context_and_plan(
     }
     assert body["final_itinerary"]["budget_summary"]["total_low"] == 1700
     assert body["final_itinerary"]["budget_summary"]["total_high"] == 2600
-    engine.atlas.assert_awaited_once_with(payload, None)
+    engine.atlas.assert_awaited_once_with(payload, None, review=ANY)
 
 
 def test_atlas_api_uses_prompt_schema_and_common_validation(
@@ -373,7 +375,7 @@ def test_atlas_api_uses_prompt_schema_and_common_validation(
     adapter.invoke = AsyncMock(
         return_value=AgentInvocationResult(raw_output=json.dumps(atlas_output()))
     )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts())
     set_engine(api_client, engine)
 
     response = api_client.post(
@@ -403,9 +405,11 @@ def test_atlas_api_uses_prompt_schema_and_common_validation(
     ]
 
 
-def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
+def test_atlas_derives_booking_readiness_from_requires_advance_booking(
     api_client: TestClient,
 ) -> None:
+    # `requires_advance_booking` is derived from `booking_readiness`; a model
+    # that only says "requires advance booking" has said needs_advance_booking.
     invalid_output = atlas_output()
     invalid_output["final_itinerary"]["days"][0]["timeline"][0][
         "requires_advance_booking"
@@ -417,7 +421,7 @@ def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
     adapter.invoke = AsyncMock(
         return_value=AgentInvocationResult(raw_output=json.dumps(invalid_output))
     )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts())
     set_engine(api_client, engine)
 
     response = api_client.post(
@@ -433,20 +437,57 @@ def test_atlas_rejects_timeline_item_with_inconsistent_booking_readiness(
         },
     )
 
-    assert response.status_code == 502
-    assert adapter.invoke.await_count == 2
+    assert response.status_code == 200
+    assert adapter.invoke.await_count == 1
+    item = response.json()["final_itinerary"]["days"][0]["timeline"][0]
+    assert item["booking_readiness"] == "needs_advance_booking"
+    assert item["requires_advance_booking"] is True
+
+
+def test_atlas_drops_removed_fields_instead_of_failing_the_itinerary(
+    api_client: TestClient,
+) -> None:
+    """TWM-217: Atlas no longer asserts dates, judges budget fit, or emits a
+    separate unresolved list. An output still carrying one of those keys keeps
+    its itinerary; the key never reaches the response."""
+    output = atlas_output()
+    output["final_itinerary"]["trip_summary"]["date_range"] = "October"
+    output["final_itinerary"]["budget_summary"]["budget_fit"] = "Comfortable."
+    output["unresolved"] = [{"item": "x", "generic_guidance": "y"}]
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(output))
+    )
+    set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()))
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 1,
+                "approved_places": ["Ram Jhula"],
+                "days": [{"day_number": 1, "places": ["Ram Jhula"]}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert adapter.invoke.await_count == 1
+    body = response.json()
+    assert "unresolved" not in body
+    assert "date_range" not in body["final_itinerary"]["trip_summary"]
+    assert "budget_fit" not in body["final_itinerary"]["budget_summary"]
 
 
 def test_atlas_rejects_output_carrying_a_removed_field(
     api_client: TestClient,
 ) -> None:
-    """TWM-217: Atlas no longer asserts dates, judges budget fit, or emits a
-    separate unresolved list. An output carrying any of the removed fields is
-    rejected at the contract boundary."""
+    """TWM-217: `unresolved` is no longer a valid booking_readiness value --
+    a removed *value* is still rejected at the contract boundary (removed
+    *keys* are dropped; see the test below)."""
     removals = [
-        (lambda o: o["final_itinerary"]["trip_summary"].__setitem__("date_range", "October")),
-        (lambda o: o["final_itinerary"]["budget_summary"].__setitem__("budget_fit", "Comfortable.")),
-        (lambda o: o.__setitem__("unresolved", [{"item": "x", "generic_guidance": "y"}])),
         (lambda o: o["final_itinerary"]["days"][0]["timeline"][0].__setitem__("booking_readiness", "unresolved")),
     ]
     for mutate in removals:
@@ -456,7 +497,7 @@ def test_atlas_rejects_output_carrying_a_removed_field(
         adapter.invoke = AsyncMock(
             return_value=AgentInvocationResult(raw_output=json.dumps(output))
         )
-        set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine"))
+        set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()))
 
         response = api_client.post(
             "/atlas",
@@ -485,7 +526,7 @@ def test_atlas_api_note_carries_needs_verification_flag(
     adapter.invoke = AsyncMock(
         return_value=AgentInvocationResult(raw_output=json.dumps(output))
     )
-    set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine"))
+    set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()))
 
     response = api_client.post(
         "/atlas",
@@ -577,7 +618,7 @@ def test_atlas_api_returns_odisha_route_with_canonical_movement_endpoints(
     adapter.invoke = AsyncMock(
         return_value=AgentInvocationResult(raw_output=json.dumps(output))
     )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts())
     set_engine(api_client, engine)
 
     response = api_client.post(
@@ -631,7 +672,7 @@ def test_atlas_rejects_travel_item_with_only_one_movement_endpoint(
     adapter.invoke = AsyncMock(
         return_value=AgentInvocationResult(raw_output=json.dumps(invalid_output))
     )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts())
     set_engine(api_client, engine)
 
     response = api_client.post(
@@ -663,7 +704,7 @@ def test_atlas_rejects_movement_endpoints_on_a_non_travel_timeline_item(
     adapter.invoke = AsyncMock(
         return_value=AgentInvocationResult(raw_output=json.dumps(invalid_output))
     )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts())
     set_engine(api_client, engine)
 
     response = api_client.post(
@@ -683,11 +724,12 @@ def test_atlas_rejects_movement_endpoints_on_a_non_travel_timeline_item(
     assert adapter.invoke.await_count == 2
 
 
-def test_atlas_timeline_items_reject_any_structured_date_field(
+def test_atlas_timeline_items_never_carry_a_structured_date_field(
     api_client: TestClient,
 ) -> None:
     """TWM-217: Atlas no longer asserts dates. A timeline item carrying
-    departure_date or departure_month (on any kind) is rejected outright."""
+    departure_date or departure_month (on any kind) keeps the itinerary but
+    the date never reaches the response."""
     for field, value in (
         ("departure_date", "2026-10-05"),
         ("departure_month", "2026-10"),
@@ -702,7 +744,7 @@ def test_atlas_timeline_items_reject_any_structured_date_field(
         adapter.invoke = AsyncMock(
             return_value=AgentInvocationResult(raw_output=json.dumps(output))
         )
-        set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine"))
+        set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()))
 
         response = api_client.post(
             "/atlas",
@@ -717,8 +759,8 @@ def test_atlas_timeline_items_reject_any_structured_date_field(
             },
         )
 
-        assert response.status_code == 502, field
-        assert adapter.invoke.await_count == 2
+        assert response.status_code == 200, field
+        assert field not in response.json()["final_itinerary"]["days"][0]["timeline"][0]
 
 
 def _atlas_output_with_gateway_leg(hub_overrides: list[dict] | None = None) -> dict:
@@ -777,7 +819,7 @@ def _post_atlas(api_client: TestClient, output: dict) -> object:
         return_value=AgentInvocationResult(raw_output=json.dumps(output))
     )
     set_engine(
-        api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine")
+        api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts())
     )
     return api_client.post(
         "/atlas",
@@ -823,12 +865,13 @@ def test_atlas_omits_hubs_for_a_normally_connected_leg(api_client: TestClient) -
     assert leg["hubs"] is None
 
 
-def test_atlas_rejects_empty_hubs_list(api_client: TestClient) -> None:
-    """TWM-226: an unidentifiable hub means hubs is absent, never an empty
-    list presented as 'a set with nothing in it'."""
+def test_atlas_treats_an_empty_hubs_list_as_absent(api_client: TestClient) -> None:
+    """TWM-226: an unidentifiable hub means hubs is absent. An empty list says
+    the same thing, so it is read that way instead of failing the itinerary."""
     response = _post_atlas(api_client, _atlas_output_with_gateway_leg(hub_overrides=[]))
 
-    assert response.status_code == 502
+    assert response.status_code == 200
+    assert response.json()["final_itinerary"]["days"][0]["timeline"][0]["hubs"] is None
 
 
 def test_atlas_rejects_hubs_on_a_non_travel_timeline_item(
@@ -885,7 +928,7 @@ def _post_atlas_with_day_field(day_overrides: dict) -> tuple:
     adapter.invoke = AsyncMock(
         return_value=AgentInvocationResult(raw_output=json.dumps(output))
     )
-    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine")
+    engine = AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts())
     return adapter, engine
 
 
@@ -947,7 +990,7 @@ def test_atlas_omits_stay_price_estimate_for_a_day_with_no_overnight_stay(
     assert response.json()["final_itinerary"]["days"][0]["stay_price_estimate"] is None
 
 
-def test_atlas_rejects_stay_price_estimate_with_wrong_tier_order(
+def test_atlas_orders_stay_price_tiers_instead_of_rejecting_them(
     api_client: TestClient,
 ) -> None:
     adapter, engine = _post_atlas_with_day_field(
@@ -974,8 +1017,9 @@ def test_atlas_rejects_stay_price_estimate_with_wrong_tier_order(
         },
     )
 
-    assert response.status_code == 502
-    assert adapter.invoke.await_count == 2
+    assert response.status_code == 200
+    tiers = response.json()["final_itinerary"]["days"][0]["stay_price_estimate"]
+    assert [tier["tier"] for tier in tiers] == ["budget", "mid_range", "premium"]
 
 
 def test_atlas_rejects_stay_price_estimate_missing_a_tier(
@@ -1039,3 +1083,35 @@ def test_atlas_rejects_stay_price_estimate_with_decreasing_tier_low(
 
     assert response.status_code == 502
     assert adapter.invoke.await_count == 2
+
+
+def test_atlas_route_retries_an_itinerary_with_the_wrong_number_of_days(
+    api_client: TestClient,
+) -> None:
+    """The stateless /atlas route applies the same day-count rule as the
+    trip-command flow: the approved plan has 2 days, the itinerary has 1."""
+    adapter = AsyncMock()
+    adapter.invoke = AsyncMock(
+        return_value=AgentInvocationResult(raw_output=json.dumps(atlas_output()))
+    )
+    set_engine(api_client, AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()))
+
+    response = api_client.post(
+        "/atlas",
+        json={
+            "trip_context": {"origin_city": "Delhi", "num_travelers": 3},
+            "working_plan": {
+                "destinations": ["Rishikesh"],
+                "trip_duration": 2,
+                "approved_places": ["Ram Jhula", "Triveni Ghat"],
+                "days": [
+                    {"day_number": 1, "places": ["Ram Jhula"]},
+                    {"day_number": 2, "places": ["Triveni Ghat"]},
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 502
+    assert adapter.invoke.await_count == 2
+    assert "exactly 2 days" in adapter.invoke.await_args_list[1].args[1].system_prompt

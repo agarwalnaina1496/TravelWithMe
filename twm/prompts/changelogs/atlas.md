@@ -1,5 +1,16 @@
 # Atlas prompt changelog
 
+## Atlas 1.19.0 — 2026-10-06
+
+- **One field for advance booking (TWM-234).** A timeline item carried both
+  `requires_advance_booking` and `booking_readiness`, with a rule that the
+  second exists only when the first is true -- two encodings of one fact that
+  could disagree and fail a whole itinerary. Atlas now sets only
+  `booking_readiness` (`suggested` | `needs_advance_booking`) when advance
+  action applies; Backend derives `requires_advance_booking` from it, so the
+  response shape is unchanged.
+- No change to when advance booking applies or to any other instruction.
+
 ## Atlas 1.18.0 — 2026-10-01
 
 - **Output-shape example added (TWM-234 agent-output-reliability audit).**

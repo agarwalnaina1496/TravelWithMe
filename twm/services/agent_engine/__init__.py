@@ -10,6 +10,8 @@ from .contracts import (
     AgentInvocationResult,
     AgentOutputError,
     GenerationConfig,
+    OutputRetryPolicy,
+    OutputReview,
 )
 from .factory import build_agent_adapter, get_agent_engine
 from .langgraph import LangGraphAgentAdapter
@@ -31,6 +33,8 @@ __all__ = [
     "GenerationConfig",
     "LangGraphAgentAdapter",
     "N8NAgentAdapter",
+    "OutputRetryPolicy",
+    "OutputReview",
     "build_agent_adapter",
     "get_agent_engine",
 ]

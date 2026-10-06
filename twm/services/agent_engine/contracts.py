@@ -1,12 +1,18 @@
 """Engine-neutral execution contracts."""
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional, Protocol
+from typing import Any, Callable, Literal, Optional, Protocol
 
 from ...prompt_registry import PromptRelease
 
 
 AgentName = Literal["scout", "meridian", "guide", "atlas"]
+
+# A Backend business rule applied to an agent's schema-valid output before it
+# is accepted: returns the plain-language rules it breaks (empty when fine).
+# A violation is retried like any other contract failure -- the model is told
+# the rule -- instead of surfacing to the traveler after the engine returned.
+OutputReview = Callable[[dict[str, Any]], list[str]]
 
 
 @dataclass(frozen=True)
@@ -16,6 +22,26 @@ class GenerationConfig:
     max_output_tokens: int = 16_384
     temperature: float = 0.2
     timeout_seconds: int = 180
+
+
+@dataclass(frozen=True)
+class OutputRetryPolicy:
+    """How a response that breaks the output contract is regenerated.
+
+    Every attempt is a full generation the traveler waits for, so there is
+    exactly one retry: the answer to a contract that fails often is to prevent
+    the failure (heal it, derive what Backend can compute, tolerate the syntax
+    slip), never to retry more. The retry tells the model which rules the
+    previous attempt broke, and starts only while it is expected to finish
+    inside `budget_seconds` (judged by how long the first took), so a slow
+    upstream cannot push the turn past the UI's own request timeout.
+    """
+
+    max_attempts: int = 2
+    budget_seconds: float = 190.0
+
+    def allows_another(self, attempt: int, elapsed_seconds: float, last_attempt_seconds: float) -> bool:
+        return attempt < self.max_attempts and elapsed_seconds + last_attempt_seconds <= self.budget_seconds
 
 
 @dataclass(frozen=True)
@@ -62,12 +88,18 @@ class AgentEngine(Protocol):
         ...
 
     async def guide(
-        self, trip_state: dict[str, Any], message: Optional[str]
+        self,
+        trip_state: dict[str, Any],
+        message: Optional[str],
+        review: Optional[OutputReview] = None,
     ) -> AgentExecution:
         ...
 
     async def atlas(
-        self, trip_state: dict[str, Any], message: Optional[str]
+        self,
+        trip_state: dict[str, Any],
+        message: Optional[str],
+        review: Optional[OutputReview] = None,
     ) -> AgentExecution:
         ...
 

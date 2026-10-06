@@ -2,12 +2,21 @@
 
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import Field, StringConstraints, ValidationInfo, model_validator
+
+from .agent_contract import (
+    AgentContent,
+    LenientNumber,
+    NullAsEmptyList,
+    OptionalText,
+    Text,
+    UpperCode,
+    case_insensitive,
+    ordered_range,
+    ensure_unique,
+)
 
 
-NonEmptyString = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1)
-]
 CurrencyCode = Annotated[
     str,
     StringConstraints(
@@ -16,61 +25,43 @@ CurrencyCode = Annotated[
         max_length=3,
         pattern=r"^[A-Z]{3}$",
     ),
+    UpperCode,
 ]
-ContextPath = Annotated[
-    str,
-    StringConstraints(
-        strip_whitespace=True,
-        min_length=1,
-        pattern=r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$",
-    ),
-]
-Amount = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+Amount = Annotated[float, Field(ge=0, allow_inf_nan=False), LenientNumber]
 
 
-class EstimateRange(BaseModel):
+class EstimateRange(AgentContent):
     """Inclusive monetary estimate range in the containing block's currency."""
-
-    model_config = ConfigDict(extra="forbid")
 
     minimum: Amount
     maximum: Amount
 
     @model_validator(mode="after")
-    def validate_bounds(self) -> "EstimateRange":
-        if self.maximum < self.minimum:
-            raise ValueError("estimate maximum must be greater than or equal to minimum")
+    def validate_bounds(self, info: ValidationInfo) -> "EstimateRange":
+        self.minimum, self.maximum = ordered_range(self.minimum, self.maximum, info, "estimate")
         return self
 
 
-class BulletDetail(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class BulletDetail(AgentContent):
     type: Literal["bullets"]
-    items: list[NonEmptyString] = Field(min_length=1)
+    items: list[Text] = Field(min_length=1)
 
 
-class Fact(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: NonEmptyString
-    value: NonEmptyString
+class Fact(AgentContent):
+    label: Text
+    value: Text
 
 
-class FactsDetail(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class FactsDetail(AgentContent):
     type: Literal["facts"]
     facts: list[Fact] = Field(min_length=1)
 
 
-class CostLineItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: NonEmptyString
+class CostLineItem(AgentContent):
+    label: Text
     per_person: Optional[EstimateRange] = None
     group: Optional[EstimateRange] = None
-    note: Optional[NonEmptyString] = None
+    note: OptionalText = None
 
     @model_validator(mode="after")
     def validate_estimates(self) -> "CostLineItem":
@@ -80,15 +71,13 @@ class CostLineItem(BaseModel):
         return self
 
 
-class CostBreakdownDetail(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class CostBreakdownDetail(AgentContent):
     type: Literal["cost_breakdown"]
     currency: CurrencyCode
     items: list[CostLineItem] = Field(default_factory=list)
     per_person_total: Optional[EstimateRange] = None
     group_total: Optional[EstimateRange] = None
-    note: Optional[NonEmptyString] = None
+    note: OptionalText = None
 
     @model_validator(mode="after")
     def validate_totals(self) -> "CostBreakdownDetail":
@@ -120,34 +109,26 @@ RecommendationDetail = Annotated[
     Union[BulletDetail, FactsDetail, CostBreakdownDetail],
     Field(discriminator="type"),
 ]
-CriterionOutcome = Literal["MATCH", "TRADEOFF", "MISMATCH"]
-RequirementType = Literal["HARD", "PREFERENCE"]
+CriterionOutcome = case_insensitive(Literal["MATCH", "TRADEOFF", "MISMATCH"])
+RequirementType = case_insensitive(Literal["HARD", "PREFERENCE"])
 
 
-class TravelerCriterion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class TravelerCriterion(AgentContent):
+    """One material traveler ask. Provenance (which TripContext fields fed it)
+    is deliberately not part of the contract: nothing consumes it, and a single
+    free-text field routinely carries several asks."""
 
-    id: NonEmptyString
-    label: NonEmptyString
+    id: Text
+    label: Text
     requirement_type: RequirementType
-    source_context_paths: list[ContextPath] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_source_paths(self) -> "TravelerCriterion":
-        normalized_paths = [path.casefold() for path in self.source_context_paths]
-        if len(set(normalized_paths)) != len(normalized_paths):
-            raise ValueError("source context paths must be unique within a criterion")
-        return self
 
 
-class CriterionEvaluation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    criterion_id: NonEmptyString
+class CriterionEvaluation(AgentContent):
+    criterion_id: Text
     outcome: CriterionOutcome
-    conclusion: NonEmptyString
+    conclusion: Text
     details: list[RecommendationDetail] = Field(min_length=1)
-    tradeoffs: list[NonEmptyString] = Field(default_factory=list)
+    tradeoffs: Annotated[list[Text], NullAsEmptyList] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_semantics(self) -> "CriterionEvaluation":
@@ -158,17 +139,15 @@ class CriterionEvaluation(BaseModel):
         return self
 
 
-class RecommendationOption(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class RecommendationOption(AgentContent):
     rank: Annotated[int, Field(ge=1, le=3)]
-    type: Literal["single", "circuit"]
-    name: NonEmptyString
-    destination_id: Optional[NonEmptyString] = None
-    circuit_id: Optional[NonEmptyString] = None
-    summary: NonEmptyString
+    type: case_insensitive(Literal["single", "circuit"])
+    name: Text
+    destination_id: OptionalText = None
+    circuit_id: OptionalText = None
+    summary: Text
     evaluations: list[CriterionEvaluation] = Field(min_length=1)
-    other_considerations: list[NonEmptyString] = Field(default_factory=list)
+    other_considerations: Annotated[list[Text], NullAsEmptyList] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_identity_and_evaluations(self) -> "RecommendationOption":
@@ -182,11 +161,10 @@ class RecommendationOption(BaseModel):
                 "a circuit option requires circuit_id and forbids destination_id"
             )
 
-        criterion_ids = [
-            evaluation.criterion_id.casefold() for evaluation in self.evaluations
-        ]
-        if len(set(criterion_ids)) != len(criterion_ids):
-            raise ValueError("criterion evaluations must be unique within an option")
+        ensure_unique(
+            [evaluation.criterion_id for evaluation in self.evaluations],
+            "criterion evaluations within an option",
+        )
 
         currencies = {
             detail.currency

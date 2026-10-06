@@ -26,7 +26,7 @@ from twm.services import (
 )
 from twm.services.response_normalization import _normalize_meridian_response
 from twm.schemas.scout import ScoutResponse
-from tests.factories import recommendation_option, traveler_criteria
+from tests.factories import recommendation_option, traveler_criteria, two_attempts
 from twm.trust_boundary import (
     MAX_CONTAINER_ITEMS,
     MAX_DATA_DEPTH,
@@ -69,7 +69,7 @@ def common_engine(*outputs: dict) -> tuple[AgentExecutionService, AsyncMock]:
             for output in outputs
         ]
     )
-    return AgentExecutionService(adapter, logger_for_test(), "test-engine"), adapter
+    return AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()), adapter
 
 
 def meridian_success_output() -> dict:
@@ -119,9 +119,9 @@ def test_active_phase_prompt_releases_are_complete() -> None:
 
     assert load_prompt_versions() == {
         "scout": "1.11.0",
-        "meridian": "1.18.0",
+        "meridian": "1.19.0",
         "guide": "3.3.0",
-        "atlas": "1.18.0",
+        "atlas": "1.19.0",
     }
     guide_prompt = load_prompt_release("guide").content
     assert "Traveler authority" in guide_prompt
@@ -369,7 +369,7 @@ def test_meridian_api_uses_current_prompt_for_awaiting_continuation(
     assert response.status_code == 200
     assert response.json()["agent_meta"] == {
         "agent": "meridian",
-        "prompt_version": "1.18.0",
+        "prompt_version": "1.19.0",
     }
     release = load_prompt_release("meridian")
     agent, invocation = adapter.invoke.await_args.args
@@ -538,28 +538,38 @@ def test_meridian_api_rejects_invalid_traveler_criteria_coverage(
     assert_meridian_api_rejects(api_client, monkeypatch, output)
 
 
-def test_meridian_api_rejects_duplicate_source_paths(
-    api_client: TestClient, monkeypatch
-) -> None:
-    output = meridian_success_output()
-    output["traveler_criteria"].append(
-        {
-            "id": "budget",
-            "label": "Budget fit",
-            "requirement_type": "PREFERENCE",
-            "source_context_paths": ["travel_style.pace"],
-        }
+def post_meridian(api_client: TestClient, output: dict):
+    engine = async_engine()
+    engine.meridian.return_value = AgentExecution(
+        response=output,
+        prompt_release=PromptRelease("meridian", "2.0.0", "prompt"),
     )
-    output["options"][0]["evaluations"].append(
-        {
-            "criterion_id": "budget",
-            "outcome": "MATCH",
-            "conclusion": "The estimate fits the stated budget.",
-            "details": [{"type": "bullets", "items": ["Within range."]}],
-        }
+    set_engine(api_client, engine)
+    return api_client.post(
+        "/meridian",
+        json={
+            "trip_state": {
+                "trip_context": {},
+                "advisor_state": {"conversation_context": {}},
+                "matcher_state": {},
+            }
+        },
     )
 
-    assert_meridian_api_rejects(api_client, monkeypatch, output)
+
+def test_meridian_api_ignores_a_legacy_source_context_paths_key(
+    api_client: TestClient,
+) -> None:
+    # Criteria no longer carry provenance (nothing consumed it, and one
+    # free-text traveler field routinely feeds several asks). A model still
+    # sending it must not lose an otherwise good recommendation.
+    output = meridian_success_output()
+    output["traveler_criteria"][0]["source_context_paths"] = ["travel_style.pace"]
+
+    response = post_meridian(api_client, output)
+
+    assert response.status_code == 200
+    assert "source_context_paths" not in response.json()["traveler_criteria"][0]
 
 
 def test_meridian_api_rejects_hard_requirement_mismatch(
@@ -580,20 +590,8 @@ def test_meridian_api_rejects_hard_requirement_mismatch(
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda option: option.update({"verdict": "Legacy verdict"}),
         lambda option: option["evaluations"][0].update(
             {"details": [{"type": "note", "text": "Free-form note"}]}
-        ),
-        lambda option: option["evaluations"][0].update(
-            {
-                "details": [
-                    {
-                        "type": "cost_breakdown",
-                        "currency": "INR",
-                        "per_person_total": {"minimum": 5000, "maximum": 4000},
-                    }
-                ]
-            }
         ),
     ],
 )
@@ -604,6 +602,35 @@ def test_meridian_api_rejects_superseded_or_malformed_option_content(
     mutate(output["options"][0])
 
     assert_meridian_api_rejects(api_client, monkeypatch, output)
+
+
+def test_meridian_api_puts_an_inverted_estimate_range_the_right_way_round(
+    api_client: TestClient,
+) -> None:
+    output = meridian_success_output()
+    output["options"][0]["evaluations"][0]["details"] = [
+        {
+            "type": "cost_breakdown",
+            "currency": "INR",
+            "per_person_total": {"minimum": 5000, "maximum": 4000},
+        }
+    ]
+
+    response = post_meridian(api_client, output)
+
+    assert response.status_code == 200
+    cost = response.json()["options"][0]["evaluations"][0]["details"][0]
+    assert cost["per_person_total"] == {"minimum": 4000.0, "maximum": 5000.0}
+
+
+def test_meridian_api_drops_superseded_option_keys(api_client: TestClient) -> None:
+    output = meridian_success_output()
+    output["options"][0]["verdict"] = "Legacy verdict"
+
+    response = post_meridian(api_client, output)
+
+    assert response.status_code == 200
+    assert "verdict" not in response.json()["options"][0]
 
 
 def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
@@ -690,7 +717,7 @@ def test_langgraph_preserves_normalized_scout_and_meridian_api_contracts(
         },
         "message": "What budget should I use?",
         "options": [],
-        "agent_meta": {"agent": "meridian", "prompt_version": "1.18.0"},
+        "agent_meta": {"agent": "meridian", "prompt_version": "1.19.0"},
     }
 
 
@@ -706,7 +733,7 @@ def test_invalid_output_returns_cors_enabled_502(
     )
     set_engine(
         api_client,
-        AgentExecutionService(adapter, logger_for_test(), "test-engine"),
+        AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()),
     )
 
     response = api_client.post(
@@ -751,7 +778,7 @@ def test_meridian_self_heals_last_meridian_message_nested_outside_conversation_c
     )
     set_engine(
         api_client,
-        AgentExecutionService(adapter, logger_for_test(), "test-engine"),
+        AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()),
     )
 
     response = api_client.post(
@@ -776,7 +803,7 @@ def test_adapter_timeout_returns_cors_enabled_504(api_client: TestClient) -> Non
     )
     set_engine(
         api_client,
-        AgentExecutionService(adapter, logger_for_test(), "test-engine"),
+        AgentExecutionService(adapter, logger_for_test(), "test-engine", retry=two_attempts()),
     )
 
     response = api_client.post(
