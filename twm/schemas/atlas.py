@@ -195,7 +195,8 @@ class AtlasTimelineItem(AgentContent):
         data = {**data}
         # A model that says "needs advance booking" without picking a readiness
         # has said exactly `needs_advance_booking`.
-        if data.get("requires_advance_booking") is True and data.get("booking_readiness") is None:
+        flagged = str(data.get("requires_advance_booking")).strip().casefold() in {"true", "yes", "1"}
+        if flagged and data.get("booking_readiness") is None:
             data["booking_readiness"] = "needs_advance_booking"
             record_heal(info, "booking_readiness.taken_from_requires_advance_booking")
         # A cost range needs both ends; a lone bound is not a range (the UI only

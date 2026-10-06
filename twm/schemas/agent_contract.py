@@ -173,7 +173,10 @@ def ordered_range(
 
 
 def number_by_position(items: Any, field: str) -> tuple[Any, bool]:
-    """Set ``field`` on each dict in ``items`` to its 1-based position.
+    """Number the dicts in ``items`` 1..n in ``field``, honouring the order the
+    model meant: when every item already carries an integer, they are ordered
+    by it first (stable), so ``[2, 1, 3]`` becomes day 1, 2, 3 in the sequence
+    the model numbered them rather than the sequence it happened to list them.
 
     Returns ``(items, changed)``; anything that is not a list of dicts is
     returned untouched so validation reports it.
@@ -181,7 +184,13 @@ def number_by_position(items: Any, field: str) -> tuple[Any, bool]:
 
     if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
         return items, False
-    numbered = [{**item, field: number} for number, item in enumerate(items, 1)]
+    given = [item.get(field) for item in items]
+    ordered = (
+        sorted(items, key=lambda item: item[field])
+        if all(isinstance(value, int) and not isinstance(value, bool) for value in given)
+        else list(items)
+    )
+    numbered = [{**item, field: number} for number, item in enumerate(ordered, 1)]
     return numbered, numbered != items
 
 

@@ -434,13 +434,19 @@ def _format_location(location: list[Any]) -> str:
     return path.lstrip(".") or "(response root)"
 
 
+def _describe(failure: dict[str, Any]) -> str:
+    if failure["type"] == "json_invalid":
+        return "the response was not one complete, valid JSON object"
+    return failure.get("reason") or failure["type"]
+
+
 def _with_correction(
     invocation: AgentInvocation, failure: _OutputValidationFailure | None
 ) -> AgentInvocation:
     if failure is None:
         return invocation
     lines = [
-        f"- {_format_location(item['loc'])}: {item.get('reason') or item['type']}"
+        f"- {_format_location(item['loc'])}: {_describe(item)}"
         for item in failure.failures[:MAX_FEEDBACK_FAILURES]
     ]
     notice = (

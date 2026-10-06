@@ -634,3 +634,36 @@ def test_output_that_changes_meaning_is_still_retried(monkeypatch, raw):
 
     assert adapter.invoke.await_count == 2
     assert result.response["message"] == "Hello there"
+
+
+def test_days_listed_out_of_order_keep_the_sequence_the_model_numbered_them(monkeypatch):
+    output = guide_plan()
+    days = output["state_delta"]["planner_state"]["day_plan"]
+    assert len(days) >= 2
+    days.reverse()  # listed last-day-first, numbered correctly
+    expected = [day["places"] for day in sorted(days, key=lambda day: day["day_number"])]
+
+    response, attempts, _ = run(monkeypatch, "guide", output)
+
+    healed_days = response["state_delta"]["planner_state"]["day_plan"]
+    assert attempts == 1
+    assert [day["day_number"] for day in healed_days] == list(range(1, len(days) + 1))
+    assert [day["places"] for day in healed_days] == expected
+
+
+def test_the_retry_names_a_syntax_failure_plainly(monkeypatch):
+    engine, adapter = service_with_outputs(monkeypatch, '{"message": "cut off', SCOUT_REPLY)
+
+    asyncio.run(engine.scout({}, "message"))
+
+    assert "not one complete, valid JSON object" in adapter.invoke.await_args_list[1].args[1].system_prompt
+
+
+def test_a_stringly_typed_advance_booking_flag_is_still_read(monkeypatch):
+    output = atlas()
+    first_item(output).update(requires_advance_booking="true", booking_readiness=None)
+
+    response, attempts, _ = run(monkeypatch, "atlas", output)
+
+    assert attempts == 1
+    assert first_item(response)["booking_readiness"] == "needs_advance_booking"
