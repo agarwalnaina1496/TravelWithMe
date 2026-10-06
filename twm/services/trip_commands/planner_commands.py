@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ...persistence.contracts import RecommendationRecord
+from ...schemas.atlas import MAX_TRIP_DAYS
 from ...schemas.guide import GuideAgentOutput, GuideRequest
 from ...schemas.trip_context import BUDGET_KEY, DESTINATIONS_KEY, TRIP_DURATION_KEY
 from ...telemetry import TelemetryLogger
@@ -517,5 +518,21 @@ def _validate_day_plan(state: dict[str, Any]) -> None:
             }
         )
     except ValidationError as error:
-        reason = error.errors()[0]["msg"].removeprefix("Value error, ")
-        raise InvalidTripCommandError(reason[:1].upper() + reason[1:] + ".") from None
+        raise InvalidTripCommandError(_plain_day_plan_reason(error)) from None
+
+
+def _plain_day_plan_reason(error: ValidationError) -> str:
+    """A day-plan failure in words a traveler (and the model, on a retry) can
+    act on. The plan rules we wrote are already plain; the generic type and
+    length checks are translated rather than echoed as library text."""
+
+    first = error.errors()[0]
+    if first["type"] == "value_error":
+        reason = first["msg"].removeprefix("Value error, ")
+        return reason[:1].upper() + reason[1:] + "."
+    field = first["loc"][0] if first["loc"] else None
+    if field == "trip_duration":
+        return f"A trip can be planned for 1 to {MAX_TRIP_DAYS} days."
+    if field in {"destinations", "approved_places", "days"}:
+        return "Destination and place names cannot be blank."
+    return "The day plan could not be accepted."

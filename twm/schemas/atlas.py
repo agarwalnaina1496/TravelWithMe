@@ -60,6 +60,9 @@ Estimate = Annotated[int, Field(ge=0), LenientInt]
 OptionalEstimate = Annotated[Optional[int], Field(ge=0), LenientInt]
 Distance = Annotated[int, Field(gt=0), LenientInt]
 
+# Longest trip the planner will build a day-by-day plan for.
+MAX_TRIP_DAYS = 60
+
 
 class AtlasTransportHub(AgentContent):
     """TWM-226: a plain geographic fact about a candidate gateway city for a
@@ -113,24 +116,24 @@ class AtlasWorkingPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     destinations: list[Text]
-    trip_duration: int = Field(ge=1, le=60)
+    trip_duration: int = Field(ge=1, le=MAX_TRIP_DAYS)
     approved_places: list[Text] = Field(default_factory=list)
     days: list[AtlasWorkingDay]
 
     @model_validator(mode="after")
     def validate_approved_plan(self) -> "AtlasWorkingPlan":
         if len(self.days) != self.trip_duration:
-            raise ValueError("working plan day count must equal trip_duration")
+            raise ValueError("the day plan must have exactly one entry for each day of the trip")
         if [day.day_number for day in self.days] != list(
             range(1, self.trip_duration + 1)
         ):
-            raise ValueError("working plan days must be sequential from 1")
+            raise ValueError("the days of the plan must be numbered 1, 2, 3 and so on")
         allocated = [place for day in self.days for place in day.places]
         normalized = [place.casefold() for place in allocated]
         if len(normalized) != len(set(normalized)):
-            raise ValueError("each approved place must be allocated exactly once")
+            raise ValueError("each place must be planned on exactly one day")
         if set(normalized) != {place.casefold() for place in self.approved_places}:
-            raise ValueError("days must allocate every approved place and no others")
+            raise ValueError("the day plan must schedule every approved place and no others")
         return self
 
 

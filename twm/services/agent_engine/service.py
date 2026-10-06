@@ -389,6 +389,13 @@ def _parse_and_validate(
     except ValidationError as error:
         failures = _sanitized_validation_failures(error, definition.output_model)
         raise _OutputValidationFailure(failures) from None
+    except Exception as error:
+        # A bug in a healer or validator must never become a 500 for the
+        # traveler: it is a failed attempt like any other, and the exception
+        # type is logged so it gets fixed.
+        raise _OutputValidationFailure(
+            [{"type": "validator_error", "loc": [], "reason": type(error).__name__}]
+        ) from None
     response = parsed.model_dump(mode="json", exclude_none=True)
     # Backend business rules the schema cannot know (they depend on the trip),
     # judged here so the model gets to correct them on the retry.
@@ -437,6 +444,8 @@ def _format_location(location: list[Any]) -> str:
 def _describe(failure: dict[str, Any]) -> str:
     if failure["type"] == "json_invalid":
         return "the response was not one complete, valid JSON object"
+    if failure["type"] == "validator_error":
+        return "a value had a type the contract could not read"
     return failure.get("reason") or failure["type"]
 
 

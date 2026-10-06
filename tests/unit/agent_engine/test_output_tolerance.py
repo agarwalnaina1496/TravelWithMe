@@ -20,6 +20,7 @@ import pytest
 from tests.factories import recommendation_option, traveler_criteria
 from tests.unit.agent_engine.test_service import service_with_outputs
 from twm.services import AgentOutputError
+from twm.services.agent_engine import AgentExecutionService, OutputRetryPolicy
 from twm.telemetry import InMemorySink
 
 FIXTURES = "tests/resources/harness_fixtures/{agent}__{case}__*.json"
@@ -538,8 +539,6 @@ def test_atlas_inverted_ranges_are_put_the_right_way_round(monkeypatch, mutate, 
 
 # --- retry policy -------------------------------------------------------------
 
-from twm.services.agent_engine import AgentExecutionService, OutputRetryPolicy  # noqa: E402
-
 
 def engine_with(monkeypatch, outputs, retry=None, clock=None):
     engine, adapter = service_with_outputs(monkeypatch, *outputs)
@@ -667,3 +666,30 @@ def test_a_stringly_typed_advance_booking_flag_is_still_read(monkeypatch):
 
     assert attempts == 1
     assert first_item(response)["booking_readiness"] == "needs_advance_booking"
+
+
+def test_a_crashing_validator_is_a_failed_attempt_not_a_server_error(monkeypatch):
+    from twm.schemas import ScoutAgentOutput
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("a healer had a bug")
+
+    monkeypatch.setattr(ScoutAgentOutput, "model_validate", explode)
+    sink = InMemorySink()
+    engine, adapter = service_with_outputs(monkeypatch, SCOUT_REPLY, SCOUT_REPLY, telemetry_sink=sink)
+
+    with pytest.raises(AgentOutputError) as captured:
+        asyncio.run(engine.scout({}, "message"))
+
+    assert adapter.invoke.await_count == 2
+    assert captured.value.failures[0]["type"] == "validator_error"
+
+
+def test_places_differing_only_by_whitespace_and_case_are_one_place(monkeypatch):
+    output = guide_with_a_repeated_place(recorded("guide", "rishikesh-start"))
+    output["state_delta"]["planner_state"]["places"] = ["Ram Jhula ", "ram jhula", "Triveni Ghat"]
+
+    response, attempts, _ = run(monkeypatch, "guide", output)
+
+    assert attempts == 1
+    assert response["state_delta"]["planner_state"]["places"] == ["Ram Jhula", "Triveni Ghat"]

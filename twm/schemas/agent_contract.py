@@ -126,13 +126,14 @@ NullAsDefault = BeforeValidator(_null_as_empty_object)
 # --- repeated / ordered -----------------------------------------------------
 
 
-def dedupe_casefold(values: list[Any]) -> list[Any]:
-    """First occurrence wins; strings compare case-insensitively."""
+def dedupe_casefold(values: list[str]) -> list[str]:
+    """First occurrence wins; compared case-insensitively and ignoring the
+    surrounding whitespace the string type will trim anyway."""
 
-    seen: set[Any] = set()
-    kept: list[Any] = []
+    seen: set[str] = set()
+    kept: list[str] = []
     for value in values:
-        key = value.casefold() if isinstance(value, str) else value
+        key = value.strip().casefold()
         if key not in seen:
             seen.add(key)
             kept.append(value)
@@ -140,8 +141,8 @@ def dedupe_casefold(values: list[Any]) -> list[Any]:
 
 
 def _deduped(value: Any, info: ValidationInfo) -> Any:
-    if not isinstance(value, list):
-        return value
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return value  # not a list of text: validation reports it
     kept = dedupe_casefold(value)
     if len(kept) != len(value):
         record_heal(info, f"{info.field_name}.deduplicated")
